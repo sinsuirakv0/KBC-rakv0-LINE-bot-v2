@@ -1,0 +1,25 @@
+{
+  "name": "kbc-rakv0-line-bot-v2",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "generate:protocol": "node scripts/native.cjs generate",
+    "build:native": "node scripts/native.cjs build",
+    "build": "npm run generate:protocol && npm run build:native && tsc",
+    "check": "tsc --noEmit",
+    "smoke": "node dist/smoke.js",
+    "start": "node --env-file-if-exists=.env dist/main.js"
+  },
+  "dependencies": {
+    "@evex/linejs": "npm:@jsr/evex__linejs@3.4.2",
+    "thrift": "0.25.0"
+  },
+  "overrides": { "thrift": "$thrift" },
+  "devDependencies": {
+    "@types/node": "^24",
+    "@types/thrift": "^0.10.17",
+    "typescript": "^5.7.2"
+  }
+}
