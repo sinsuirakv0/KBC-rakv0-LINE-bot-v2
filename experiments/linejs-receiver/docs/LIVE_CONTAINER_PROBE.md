@@ -42,6 +42,7 @@ Northflankでは[command override](https://northflank.com/docs/v1/application/ru
 - メッセージ本文・投稿者・トーク名・token・cursorは観測ログへ出さない。トーク・message IDは実験ごとのHMACで置換。実験内での相関にだけ使う。
 - `auth.json` と `checkpoint.json` は秘密情報。コンテナ内の制限した出力フォルダだけに置き、共有資料・Git・ログへ取り出さない。
 - 正常終了後は `/health` の状態を `finished` にして待機し、LINE通信しない。Botのreadyとは区別する。同じ出力フォルダにある `started` により同Run IDを再実行しない。
+- 再実験時はloader側から `PROBE_RUN_ID` を指定する。bootstrapはその値を検証して出力先へ使い、各観測行にもRun IDを記録する。開始前の履歴に含まれる `o.ping` と試験中の新着は時刻で分けて照合する。
 - Volumeがなければコンテナ交換でmarker・認証コピー・結果は失われる。配備前に確認し、実験終了前の再配備や自動更新を避ける。既存Serviceのrestart方針を未確認のまま「再接続しない」とは保証しない。
 
 ## 4. 実行・観測・切戻し

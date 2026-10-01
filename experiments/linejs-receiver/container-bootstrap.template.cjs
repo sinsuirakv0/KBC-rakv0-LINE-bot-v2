@@ -6,7 +6,7 @@ const { pathToFileURL } = require("node:url");
 // 配備用fileを作るときだけ、固定したsourceとlockをこの位置へ埋め込む。
 const assets = /* PROBE_ASSETS */ null;
 const packageDir = "/tmp/kbc-linejs-receiver";
-const runId = "receiver-20261001-a";
+const runId = process.env.PROBE_RUN_ID || "receiver-20261001-a";
 
 function runNode(script, args = []) {
   const result = spawnSync(process.execPath, [path.join(packageDir, script), ...args], {
@@ -17,6 +17,7 @@ function runNode(script, args = []) {
 
 (async () => {
   if (!assets) throw new Error("BuildRuntimeFileFirst");
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(runId)) throw new Error("InvalidRunId");
   fs.mkdirSync(packageDir, { recursive: true, mode: 0o700 });
   for (const [name, data] of Object.entries(assets)) {
     if (!/^(package\.json|package-lock\.json|\.npmrc|live-probe\.mjs|legacy-storage\.mjs)$/.test(name)) {

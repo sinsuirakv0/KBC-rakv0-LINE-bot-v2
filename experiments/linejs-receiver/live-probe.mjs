@@ -81,7 +81,7 @@ async function runLiveProbe() {
     controller.abort();
   }
   async function record(kind, data) {
-    const line = JSON.stringify({ at: new Date().toISOString(), kind, ...data }) + "\n";
+    const line = JSON.stringify({ at: new Date().toISOString(), kind, runId, ...data }) + "\n";
     logBytes += Buffer.byteLength(line);
     if (kind !== "finished" && logBytes > 5 * 1024 * 1024) throw failure("LogLimit");
     await appendFile(logPath, line, { mode: 0o600 });
