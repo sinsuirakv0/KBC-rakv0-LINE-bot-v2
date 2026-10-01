@@ -25,7 +25,8 @@ async function run() {
   const outputDir = resolve(process.env.PROBE_OUTPUT_DIR);
   const summary = JSON.parse(await readFile(resolve(outputDir, "summary.json"), "utf8"));
   if (summary.status !== "finished") throw new Error("ProbeMustBeFinished");
-  if (!summary.authUpdated) {
+  const sequenceChanged = summary.repliesQueued > 0;
+  if (!summary.authUpdated && !sequenceChanged) {
     console.log(JSON.stringify({ kind: "save-auth", changed: false }));
     return;
   }
@@ -33,18 +34,29 @@ async function run() {
   if (!probe["kbc.squareSyncOwnerMid"] || probe["kbc.squareSyncOwnerMid"] !== await storage.get("kbc.squareSyncOwnerMid")) {
     throw new Error("AuthOwnerMismatch");
   }
-  const keys = [".auth", "refreshToken", "expire"];
+  const keys = summary.authUpdated ? [".auth", "refreshToken", "expire"] : [];
   for (const key of keys) {
     const value = probe[key];
     if (value !== undefined && !["string", "number"].includes(typeof value)) throw new Error("InvalidAuthValue");
   }
   if (typeof probe[".auth"] !== "string" || !probe[".auth"]) throw new Error("NoProbeAuthToken");
+  let nextSequence;
+  if (sequenceChanged) {
+    const previousSequence = JSON.parse(String(await storage.get("reqseq") ?? "{}"));
+    const probeSequence = JSON.parse(String(probe.reqseq ?? "{}"));
+    for (const sequence of [previousSequence.sq, probeSequence.sq]) {
+      if (sequence !== undefined && (!Number.isSafeInteger(sequence) || sequence < 0)) throw new Error("InvalidRequestSequence");
+    }
+    nextSequence = JSON.stringify({ ...previousSequence, sq: Math.max(previousSequence.sq ?? 0, probeSequence.sq ?? 0) });
+  }
   // 更新された認証だけを引き継ぎ、旧Botのcheckpoint・機能データは維持する。
   for (const key of keys) {
     if (probe[key] !== undefined) await storage.set(key, probe[key]);
   }
+  if (nextSequence !== undefined) await storage.set("reqseq", nextSequence);
   await storage.flushBackup();
-  console.log(JSON.stringify({ kind: "save-auth", changed: true, persistedLocally: true, backupFlushed: backupConfigured }));
+  console.log(JSON.stringify({ kind: "save-auth", changed: true, authUpdated: summary.authUpdated,
+    sequenceUpdated: sequenceChanged, persistedLocally: true, backupFlushed: backupConfigured }));
 }
 
 await run().catch((error) => {

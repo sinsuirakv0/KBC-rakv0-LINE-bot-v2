@@ -43,6 +43,10 @@ Northflankでは[command override](https://northflank.com/docs/v1/application/ru
 - `auth.json` と `checkpoint.json` は秘密情報。コンテナ内の制限した出力フォルダだけに置き、共有資料・Git・ログへ取り出さない。
 - 正常終了後は `/health` の状態を `finished` にして待機し、LINE通信しない。Botのreadyとは区別する。同じ出力フォルダにある `started` により同Run IDを再実行しない。
 - 再実験時はloader側から `PROBE_RUN_ID` を指定する。bootstrapはその値を検証して出力先へ使い、各観測行にもRun IDを記録する。開始前の履歴に含まれる `o.ping` と試験中の新着は時刻で分けて照合する。
+- 追加実験の `PROBE_REPLY_ENABLED=1 / PROBE_COMPARE_CHAT=1` は既定無効。新着 `o.ping A01` または `o.ping B01` の最初のトークだけを試験OCにする。`o.ping` は空白を除去し、任意の `A00`〜`B99` 形式の試験番号だけをメタデータへ残す。
+- `recordEvents` は通知とトーク取得を同じIDで照合し、source / pageを記録する。`sendReplies` は受信から独立した単一Workerで、有限Queue32件・累計50件まで。入力・停止で待機を起こし、各送信後1秒待つ。過去入力・別OC・重複へ返信しない。送信失敗は再投稿せず実験を停止する。
+- 試験OCの通知が届いた場合だけ `fetchSquareChatEvents` を直列で追加し、イベントが残れば次の取得区間で継続する。100件/page・40回まで。全OCを常時巡回しない。RPC・HTTP各400回の共通上限に比較と送信も含む。これは本運用の完全なAPI Schedulerではない。
+- 送信時にLINEJSが保存する `reqseq` の `sq` も、終了後に旧Storageへ単調増加で引き継ぐ。認証が変わらなくても保存・既存backup flushを行い、他のsequence・旧checkpoint・機能データは維持する。
 - Volumeがなければコンテナ交換でmarker・認証コピー・結果は失われる。配備前に確認し、実験終了前の再配備や自動更新を避ける。既存Serviceのrestart方針を未確認のまま「再接続しない」とは保証しない。
 
 ## 4. 実行・観測・切戻し
@@ -120,3 +124,13 @@ CPUはProbeプロセスの `process.cpuUsage()`、Memoryはコンテナ全体の
 各取得の完了後に1秒待つため、通信時間を含む開始間隔は約1.16秒。OC別巡回なしで4トークのイベントを受けたことは確認できたが、参加OC総数・多OCでの保証・サーバーのAPI上限は判定できない。短時間で制限がなかったことを、送信・照会・背景処理を併用する本運用へ一般化しない。
 
 試験入力 `o.ping` は0件で、利用者からの送信件数との照合は実施できていない。自然な新着2件を、ほぼ同時入力の全件受信の証明にはしない。100件超のページ、長時間・切断・再開・実制限後の復帰、HTTP/2 PUSH、永続Inbox、通知配送も未確認。次は受付・checkpoint・復旧契約を具体化し、同時入力の照合と必要な比較を追加する。
+
+## 7. 2人による連続入力の実測と次の比較
+
+Run `receiver-20261001-b`、source `c118725745d002470cf4a4c7cb0c70241e9cbc4e`、bundle SHA-256 `7e81f17ef9f587ff08e29eba384ec307e1b32bcb11f6cef62c357f84e2d7dd8c`。20:45:21.985〜20:50:21.902 JSTの約5分、取得後1秒・送信なし。258回の取得・HTTP259回で正常終了し、4トーク・75イベント・異なる63メッセージ・重複2件を記録した。新着59件のうち試験トーク45件、他トーク14件。完全一致 `o.ping` は38件で、利用者の送信概数は「50くらい、数え間違いの可能性あり」。7件の他の本文は記録していないため、空白付き入力等だったかは判断できない。全件受信・欠落件数は未判定。
+
+`o.ping` のlagは122〜1197ms、p50 606ms、p95 1175ms。CPUは起動直後2区間を除く17区間で1コア比平均0.458%、割当比2.29%。cgroup currentは134.3〜143.8MiB。API制限は観測されなかった。全65件のメッセージイベントは `NOTIFICATION_MESSAGE` で、受信したpingの時刻差は最短約1156ms。通知から全メッセージが得られるという保証は確認できていない。
+
+SDKは[アカウント側の通知](https://github.com/evex-dev/linejs/blob/ef6c3d9f70dd41fa51053615d47f071f58cf8db3/packages/linejs/client/client.ts)と[トークのイベント取得](https://github.com/evex-dev/linejs/blob/ef6c3d9f70dd41fa51053615d47f071f58cf8db3/packages/linejs/client/features/square/mod.ts)を別に扱う。この結果から、試験OCに限定した `fetchSquareChatEvents` と通知のmessage ID照合を次の比較に追加する。通知の集約・保持やProbeの完全一致判定は仮説として残し、欠落原因が確定したとは扱わない。
+
+利用者の追加指定により `pong` 返信も準備した。番号付き20入力（A01〜A10、B01〜B10）で受信経路・番号・ID・API送信成功を照合する。API成功と利用者の画面での受信は区別する。模擬RPCで重複1件を1返信にまとめ、過去・別OCへの返信を除外し、Queueが空になった後の追加入力も配送した。3件の返信、Square sequenceの保存・引継ぎ、元の認証・checkpointの維持を確認。外部通信なし。実LINEでの返信・トーク経路の比較はこれから行う。
