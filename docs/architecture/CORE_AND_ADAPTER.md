@@ -1,20 +1,22 @@
 ﻿# Rust CoreとLINEJS Adapterの構成案
 
-作成・更新日: 2026-10-01（JST）
-状態: 実装前の提案。第一段階はOpenChat専用。
+作成日: 2026-10-01、更新日: 2026-10-02（JST）
+状態: 構成は実装前の提案。受信基本方針のOC PUSH・cursor単位の直列化・独立処理の有限並列は採用。第一段階はOpenChat専用。
 
 ## 1. 処理経路
 
 ```mermaid
 flowchart LR
-    L[LINE OpenChat] --> A[TypeScript受信・軽量正規化]
+    L[LINE OpenChat] -->|PUSH更新通知| A[TypeScript取得・軽量正規化]
     A -->|取得Batch| B[N-API Bridge]
     B --> I[Rust: 永続Inbox / checkpoint]
     I --> R[有限Worker / OCごとの順序・公平性]
     R --> C[Command / 通知・Session]
     C -->|CoreAction| B
     B --> D[TypeScript: 共通API実行]
+    A -->|取得要求| D
     D --> L
+    D -->|受信Batch| A
     D -->|actionResult / connectionState| B
     T[期限・実行枠・cooldown Timer] --> D
     T --> C
@@ -40,7 +42,7 @@ flowchart LR
 
 認証情報のTransportStoreと受信checkpointを分ける。checkpointにはアカウント所有者と接続世代の必要な識別を含める。新しい受信層が確定するcursorはRustの受付確認後に進める。SDK内部の先行cursorとは区別する。取得Batchとcheckpointの細かな構造はPhase 0で確定する。
 
-[最新3.4.2のProbe](../../experiments/linejs-receiver/docs/RECEIVER_PROBE.md)で、SDK既定PUSHのBuffer引継ぎ、ページ継続、同時取得、callback失敗、遅い接続準備に対策が必要と確認した。本採用は保留し、公開Square APIによる直列なBatch取得を比較基準として次の受付・復旧契約を定義する。
+[受信方式の決定](../decisions/PUSH_AND_BOUNDED_CONCURRENCY_V1.md)により、OC PUSHを基本にする。同じcursor系統の取得と受付確認は直列、独立したトークの取得・Command・配送は有限並列にする。[最新3.4.2のProbe](../../experiments/linejs-receiver/docs/RECEIVER_PROBE.md)でSDK既定ループに対策が必要と分かった点は残るため、無変更での本運用は保留する。公開Square APIの直列取得Probeを比較基準として、次の受付・復旧契約を定義する。
 
 LINE接続の復旧はAdapter共通部へ閉じ込め、Commandから再ログインやrefreshを呼ばせない。Coreは接続不可・制限を受け、新規の通知・Task・操作を抑止する。業務処理の再試行はCore、LINE接続の復旧は単一の接続管理で行い、同じ操作を両方で再試行しない。
 
@@ -97,7 +99,7 @@ ActionResultは新しいLINE取得Batchとは別に有限な結果経路で受�
 - 応答待ちのtimeoutと実通信の取消を分ける。取消せない通信を「終わった」として実並列数を増やさない。
 - すべてのAPI照会を単一の巨大FIFOに並べ、long pollが他の通信を塞ぐ形にも作り替えない。
 
-`fetchMyEvents` で受信できるイベントを起点にし、OC別補助取得は不足する種類だけへ限定する案を検証する。定周期取得とLINEJSのOC PUSH経路は[比較実験](../research/RECEIVER_AND_BACKGROUND_EXPERIMENTS.md)に従って評価する。SDK内部のBufferとcursor更新も、有限性・永続受付・再開の設計対象に含める。全OCの2秒巡回をそのままOC数に比例して増やさない。負Cache、重複照会の共有、期限起床と処理の分散で無通信時のAPI・CPUを減らす。
+PUSHを主な起点に `fetchMyEvents` の更新を取得し、OC別補助取得は不足する種類と必要なトークへ限定する。短時間RPCの全体上限はまず2並列を初期案とし、同じcursor系統の1取得もその内数とする。PUSH常時接続はRPCの配送枠を占有しない。並列数とAPI回数の予算を別々に管理し、[決定資料](../decisions/PUSH_AND_BOUNDED_CONCURRENCY_V1.md)の境界と[実測](../research/RECEIVER_AND_BACKGROUND_EXPERIMENTS.md)に従って調整する。SDK内部のBufferとcursor更新も、有限性・永続受付・再開の設計対象に含める。負Cache、重複照会の共有、期限起床と処理の分散で無通信時のAPI・CPUを減らす。
 
 通知予定のTimerはCore、通信枠のTimerはApiSchedulerが所有し、それぞれの必要な起床を失わない。LINEアカウントの接続Sessionと対話Sessionも別の概念・名前にする。
 

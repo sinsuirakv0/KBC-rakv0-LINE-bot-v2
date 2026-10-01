@@ -7,6 +7,7 @@
 - `docs/research/LEGACY_FINDINGS.md`
 - `docs/engineering/DOCUMENTATION.md`
 - 受信・常時処理の変更時は `docs/research/RECEIVER_AND_BACKGROUND_EXPERIMENTS.md`
+- 受信・並列制御の変更時は `docs/decisions/PUSH_AND_BOUNDED_CONCURRENCY_V1.md`
 
 ## 基本方針
 
@@ -14,6 +15,7 @@
 - 第一段階はOpenChat専用。参加OCは原則利用可能とし、個人・グループの許可設定は後続段階で扱う。
 - 新Botのコマンドprefixは `o.` 。例: `o.ping` 。旧版の `!` を新Botの既定値へ持ち込まない。
 - 第一段階は、多OCでの受信取りこぼし防止、通知の自律配送、全APIの負荷制御を最優先にする。
+- 基本の受信方式はOC PUSH。同じcursorの取得は直列、独立したトークの取得・Command・配送は有限並列にする。補助取得は不足する情報と必要なトークへ限定する。
 - BotロジックはRust Coreへ置き、TypeScriptはLINEJSの通信・認証・入出力を扱うAdapterとする。
 - LINEJSは最新公開版を使う。実装開始・依存更新時に公開版を再確認し、採用versionとlockを記録する。旧版用の独自パッチは採用版で必要性を確認してから扱う。
 - LINEJS / Node.jsのオブジェクトをRust Coreへ渡さず、version付きProtocolを使う。

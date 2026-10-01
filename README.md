@@ -20,12 +20,13 @@ LINEJSは最新公開版を採用する。2026-10-01の確認では `3.4.2` 。�
 
 - [移植計画](docs/plans/LINE_CORE_V2.md): 第一段階の設計・検証、機能移植の順序、完了条件。
 - [構成と責務の案](docs/architecture/CORE_AND_ADAPTER.md): Rust / TypeScript境界、受信受付、API制御、状態の所有者。
+- [PUSHと有限並列の決定](docs/decisions/PUSH_AND_BOUNDED_CONCURRENCY_V1.md): PUSHを基本に、同じcursorの取得は直列、独立したトークの取得・処理・配送は有限並列にする方針。
 - [旧版の調査・運用知見](docs/research/LEGACY_FINDINGS.md): 過去の対策、今回の障害報告、確認した実装と未確定の原因。
 - [文書の設計原則](docs/engineering/DOCUMENTATION.md): 仕様・実装・設計判断・関数の関係を記録し、コードと一緒に更新する運用。
 - [受信・常時処理の調査と実験](docs/research/RECEIVER_AND_BACKGROUND_EXPERIMENTS.md): LINEJSの実装確認、実施したオフライン検証、次に必要な比較。
 - [PUSH受信で得られる情報](docs/research/PUSH_RECEPTION.md): 現在の定期取得との違い、参加・退出等のイベント一覧、全体通知とトーク別詳細、追加取得とAPI削減の条件。
 - [旧コンテナでの受信実験](experiments/linejs-receiver/docs/LIVE_CONTAINER_PROBE.md): 既存認証・直列取得・資源使用量を実測。連続入力では完全一致 `o.ping` 38件を取得し、全件照合・実返信は未評価。停止・切戻し済み。同時入力の手動試験は運用観測へ回す。
 
-[直近の着手順](docs/plans/LINE_CORE_V2.md#10-直近の着手順)のAは、最新SDK配布物での認証なし検証と、既存コンテナでの短時間受信実測を実施。次はPUSHを主な取得起点とする案を基に、取得イベントの範囲と受付・復旧契約を具体化する。同時入力の手動試験は後続の運用観測へ回し、未確認のまま設計を進める。SDK既定PUSHの本採用は保留。本BotのRust Core・返信・通知は未実装。
+[直近の着手順](docs/plans/LINE_CORE_V2.md#10-直近の着手順)のAは、最新SDK配布物での認証なし検証と、既存コンテナでの短時間受信実測を実施。基本方針はPUSHと有限並列で確定し、次は取得イベントの範囲と受付・復旧契約を具体化する。同時入力の手動試験は後続の運用観測へ回す。SDK既定ループを無変更で本運用する判断は保留。本BotのRust Core・返信・通知は未実装。
 
 受信実験用には、試験OCへの有限な `pong` 返信と通知・トーク取得の比較経路を追加した。模擬検証と実コンテナの起動は確認済み。実LINEの試験入力との照合・返信確認は未完了。本BotのRust Command Runtimeとは区別する。
