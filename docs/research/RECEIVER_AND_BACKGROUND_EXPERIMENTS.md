@@ -145,3 +145,9 @@ PUSHでも `fetchMyEvents(limit: 100)` を使い、SDKが永続受付より先�
 初期化失敗後の再listenとLEGY signal伝搬は確認できた。Node RPCの実接続取消とRPC / PUSHの接続timeoutはloopbackで確認した。SDK既定PUSHの本採用は保留し、次は直列なBatch取得・全ページ・永続受付・checkpointの契約を定義する。
 
 着手順Aの認証なし確認を完了とする。実LINEの保持・再通知・制限、HTTP/2確立後のPUSH配送、0.2コアの負荷・CPUは着手順Dでの確認として残る。受信方式の本採用とPhase 0全体は未完了。
+
+## 11. 既存コンテナでの短時間受信実測
+
+同日、利用者の指定した旧Northflankコンテナとアカウントで、最新LINEJSの公開 `square.fetchMyEvents` を直列取得した。[条件・集計・切戻し](../../experiments/linejs-receiver/docs/LIVE_CONTAINER_PROBE.md#6-実測結果と判断)に詳細を残す。取得後1秒待機・5分・送信なしで、4トークの15イベント・6メッセージ（新着2件）を記録し、257回の取得中にAPI制限は観測されなかった。開始前が停止状態のため、旧BotのCPUとの差は測定していない。
+
+既存認証・owner・checkpointの再利用と、0.2コアでの受信のみのbaselineを確認した。同時入力の送信件数照合、保持・再通知・制限後の復帰、長時間Memory、多OC負荷、PUSHとの比較は残る。短時間の成功を受信・返信・通知の完全性へ読み替えず、永続受付と復旧契約を次に具体化する。

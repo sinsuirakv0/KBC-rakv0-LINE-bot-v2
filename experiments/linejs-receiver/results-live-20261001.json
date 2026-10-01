@@ -1,0 +1,30 @@
+{
+  "runId": "receiver-20261001-a",
+  "sourceCommit": "0d3327bb9599ce9c502b8f2be3848ed525aead61",
+  "bundleSha256": "c963ad18347af937d11f897aa87568e993aaecbabb503892e17c5cf5da7c40e7",
+  "sdk": "3.4.2",
+  "node": "v24.21.0",
+  "start": "2026-10-01T11:06:27.969Z",
+  "end": "2026-10-01T11:11:27.967Z",
+  "settings": { "intervalMs": 1000, "durationMs": 300000, "maxRequests": 400, "sendEnabled": false },
+  "summary": {
+    "status": "finished", "reason": "duration", "requests": 258, "httpRequests": 258,
+    "pages": 257, "events": 15, "messages": 6, "duplicates": 0, "pings": 0, "chats": 4,
+    "authUpdated": false, "methods": { "getProfile": 1, "fetchMyEvents": 257 }
+  },
+  "messages": { "historical": 4, "duringExperiment": 2, "duringExperimentLagMs": [565, 773], "expectedInputCount": null },
+  "fetchLatencySample": {
+    "count": 127, "from": "2026-10-01T11:09:01.060Z", "to": "2026-10-01T11:11:27.336Z",
+    "minMs": 154, "maxMs": 288, "meanMs": 157.86614173228347, "p50Ms": 156, "p95Ms": 161
+  },
+  "resources": {
+    "cpuMax": "20000 100000", "memoryMaxBytes": 512000000,
+    "sampleCount": 19, "excludedStartupSamples": 2, "reportedSamples": 17,
+    "probeCpuPercentOfOneCore": { "min": 0.465895606959536, "max": 1.0127524831677888, "mean": 0.6359865656547444 },
+    "probeCpuPercentOfQuota": { "min": 2.32947803479768, "max": 5.063762415838944, "mean": 3.179932828273722 },
+    "containerMemoryBytes": { "min": 138502144, "max": 152576000 },
+    "probeRssBytes": { "min": 102973440, "max": 115949568 }
+  },
+  "restored": { "replicas": 0, "status": "stopped", "command": "default", "imageCommit": "c6796e05ad76397acbd1e17f0635924e08f1d54e" },
+  "limitations": ["receive-only", "no simultaneous-input reconciliation", "no legacy CPU comparison", "partial RPC latency sample", "no long-duration memory result", "no server rate-limit guarantee", "no durable inbox or notification delivery"]
+}

@@ -1,7 +1,7 @@
 ﻿# 旧Northflankサービスでの受信実験
 
 作成日: 2026-10-01（JST）
-状態: 実行コードを準備。手元で構文・無通信の環境確認・模擬ページの検証を実施。Chromeで既存Service設定を確認済み。配備手順を調整中で、実LINE・コンテナでの測定は未実施。
+状態: 最新LINEJSによる受信のみの5分実験を完了。旧アカウントの再利用・受信・資源使用量を確認し、Serviceを元の停止状態とDefault configurationへ切戻し。同時入力の照合・本運用の受信方式は未確定。
 
 ## 1. 対象と確認範囲
 
@@ -48,7 +48,7 @@ Northflankでは[command override](https://northflank.com/docs/v1/application/ru
 
 実行場所は、旧Botの本体を起動しない状態の既存image内。実験packageは別フォルダへ置き、旧SDKのnode_modulesを上書きしない。`npm ci --ignore-scripts --no-audit --no-fund` でlock通りに導入する。
 
-以下はコンテナ内の実験フォルダに置いたscriptを実行する形。実際の起動command・保存場所は管理画面確認後に記録する。
+以下はコンテナ内の実験フォルダに置いたscriptを実行する形。今回の配備方法と保存場所は5節に記録する。
 
 ```sh
 node legacy-storage.mjs restore --old-receiver-stopped
@@ -74,14 +74,11 @@ node legacy-storage.mjs save-auth --old-receiver-stopped
 
 ## 5. 実施状況
 
-2026-10-01: latest SDK固定・構文確認・`--check` をWindows / Node.js v24.15.0で実行。`network=false`、cgroup情報は取得不可。NorthflankのURLを利用者から受領し管理画面を開いたが、Codex内ブラウザはログイン画面。Service設定・実稼働数・認証復元・実LINE接続・CPU測定・切替は未実施。
+2026-10-01: latest SDK固定・構文確認・`--check` をWindows / Node.js v24.15.0で実行。`network=false`、cgroup情報は取得不可。その後、利用者がログインしたChromeで既存Serviceを確認し、以下の実LINE実験を実施した。
 
 同日、既存SDKの `RequestClient.requestCore` だけを模擬応答へ置換する一時scriptで、Live Probeの記録・停止経路を確認。2ページ・2トーク・異なる3 IDと重複1件を区別し、次の模擬API制限codeで停止した。原本Storageを変更せず、観測ログにfixtureのtoken・本文・トークID・cursorを含めないことと、終了後 `/health` が `finished` を返すことを確認した。外部通信0回、local health確認のみ。試験用script・fixtureは回収し、恒久Test Frameworkは追加していない。これは実LINEでの制限発生や取りこぼし検証ではない。
 
-認証切戻しhelperも模擬の旧Storageで確認。認証3項目だけを更新し、checkpoint・機能データを維持した。owner不一致では変更前に停止し、backup未設定ではflush成功を報告しない。実サービスの旧image・GitHub backupとの接続は未確認。
-
-実測後は条件、開始・終了、取得数と照合、lag、API種別別回数、制限code、CPU・Memory、復旧結果をここに追記する。PUSHとの比較と本採用、取りこぼし防止の保証は、この受信のみの一回だけでは確定しない。
-
+認証切戻しhelperも模擬の旧Storageで確認。認証3項目だけを更新し、checkpoint・機能データを維持した。owner不一致では変更前に停止し、backup未設定ではflush成功を報告しない。実サービスでは旧imageのStorage初期化・既存認証の再利用が成功した。実験中の認証更新はなく、認証の切戻し保存は不要だった。
 
 同日、利用者がChromeでログイン後、指定Serviceの管理画面を確認した。
 
@@ -95,4 +92,30 @@ node legacy-storage.mjs save-auth --old-receiver-stopped
 | Volume / Runtime files | どちらも未追加 |
 | 保存設定 | GitHub repo / branch / token、暗号化Storage path / keyの設定名を確認。値は転記しない |
 
-Chromeのファイル転送は拡張機能のfile URL access設定で利用できなかったため、Runtime fileのエディタへ起動scriptを入力する方法を使う。固定した公開commitからsource / lockを取得し、bundleのSHA-256を確認して起動する。新リポジトリは利用者指定の公開 `KBC-rakv0-LINE-bot-v2` とする。切替・実接続はこれから行う。
+Chromeのファイル転送は利用できなかったため、CMD overrideのCustom commandへ、公開source取得用の小さなloaderをbase64で渡した。Runtime fileは保存していない。公開[新リポジトリ](https://github.com/sinsuirakv0/KBC-rakv0-LINE-bot-v2)の固定commit `0d3327bb9599ce9c502b8f2be3848ed525aead61` から5 assetとbootstrap templateを取得・再構成し、SHA-256 `c963ad18347af937d11f897aa87568e993aaecbabb503892e17c5cf5da7c40e7` を検証して起動した。旧image・既存環境変数を継承し、実験依存は `/tmp/kbc-linejs-receiver` へ分離した。
+
+Run IDは `receiver-20261001-a`、コンテナ内出力は `/app/logs/receiver-probe-receiver-20261001-a`。既存Storageを復元した後、replica 1の単一受信器を起動。受信終了後は通信せず待機し、`bootstrap-finished` を確認した。最後にreplica 0へ停止し、CMD overrideをDefault configurationへ戻した。旧Bot本体の再起動は行っていない。
+
+## 6. 実測結果と判断
+
+公開するのは[集計JSON](../results-live-20261001.json)。Northflank画面のメタデータログから集計し、認証・checkpoint・本文・トークID・message IDは取り出していない。
+
+| 項目 | 実測 |
+| --- | --- |
+| Runtime / SDK | Linux、Node.js v24.21.0、LINEJS 3.4.2 |
+| 計測期間 | 2026-10-01 20:06:27.969〜20:11:27.967 JST、約300秒 |
+| 取得条件 | 各取得後1秒待機、100件/page、RPC・HTTP各400回まで、送信なし |
+| API | `getProfile` 1回、`fetchMyEvents` 257回。HTTP 258回。期間終了で正常停止、API制限・API失敗は観測されず |
+| 受信 | 4トーク、15イベント、6メッセージ、重複0。メッセージの4件は開始前の履歴、2件は実験中の新着 |
+| 新着のlag | 565ms / 773ms。外部作成時刻との差で時計ずれを含む。2件だけなので応答性能の代表値にはしない |
+| 取得RPCの時間 | 後半127回の観測分: p50 156ms、p95 161ms、最大288ms。全257回の集計ではなく、返信時間でもない |
+| Probe CPU | 起動直後2区間を除く17区間: 1コア比0.466〜1.013%、平均0.636%。0.2コア割当比では2.33〜5.06%、平均3.18% |
+| コンテナMemory | 同17区間のcgroup current: 138,502,144〜152,576,000 bytes（132.1〜145.5MiB）。Probe RSSは98.2〜110.6MiB |
+| 実際の資源上限 | cgroup `cpu.max=20000 100000`、`memory.max=512000000`（488.3MiB）。管理画面の512MBとMiBを区別 |
+| 認証と復旧 | 旧認証・owner・checkpointを再利用成功。`authUpdated=false`。原本checkpointは変更せず、停止 0 / 0・Default configurationへ復帰 |
+
+CPUはProbeプロセスの `process.cpuUsage()`、Memoryはコンテナ全体のcgroup currentとProbe RSSを分けている。開始直後のcgroup currentは約223MiBだったが、その後132〜145.5MiBとなった。短時間でRSS・currentが増えており、長時間での頭打ちは未確認。旧サービスは開始前から停止していたため、旧BotのCPUとの差は測定していない。
+
+各取得の完了後に1秒待つため、通信時間を含む開始間隔は約1.16秒。OC別巡回なしで4トークのイベントを受けたことは確認できたが、参加OC総数・多OCでの保証・サーバーのAPI上限は判定できない。短時間で制限がなかったことを、送信・照会・背景処理を併用する本運用へ一般化しない。
+
+試験入力 `o.ping` は0件で、利用者からの送信件数との照合は実施できていない。自然な新着2件を、ほぼ同時入力の全件受信の証明にはしない。100件超のページ、長時間・切断・再開・実制限後の復帰、HTTP/2 PUSH、永続Inbox、通知配送も未確認。次は受付・checkpoint・復旧契約を具体化し、同時入力の照合と必要な比較を追加する。

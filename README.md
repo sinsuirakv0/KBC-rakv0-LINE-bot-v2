@@ -23,6 +23,6 @@ LINEJSは最新公開版を採用する。2026-10-01の確認では `3.4.2` 。�
 - [旧版の調査・運用知見](docs/research/LEGACY_FINDINGS.md): 過去の対策、今回の障害報告、確認した実装と未確定の原因。
 - [文書の設計原則](docs/engineering/DOCUMENTATION.md): 仕様・実装・設計判断・関数の関係を記録し、コードと一緒に更新する運用。
 - [受信・常時処理の調査と実験](docs/research/RECEIVER_AND_BACKGROUND_EXPERIMENTS.md): LINEJSの実装確認、実施したオフライン検証、次に必要な比較。
-- [旧コンテナでの受信実験](experiments/linejs-receiver/docs/LIVE_CONTAINER_PROBE.md): 既存アカウントの再利用、観測、停止・切戻し。コード準備済み、実LINE測定は未実施。
+- [旧コンテナでの受信実験](experiments/linejs-receiver/docs/LIVE_CONTAINER_PROBE.md): 既存アカウントで最新SDKの5分受信を実測。4トーク・新着2件を含む6メッセージ、API制限の観測なし。停止・切戻し済み。同時入力の照合は未完了。
 
-[直近の着手順](docs/plans/LINE_CORE_V2.md#10-直近の着手順)のAは、最新SDK配布物での認証なし検証を完了。利用者の指定により、次は既存コンテナで受信のみを実測し、[オフライン結果](experiments/linejs-receiver/docs/RECEIVER_PROBE.md)と合わせて受付・復旧契約へ引き継ぐ。SDK既定PUSHの本採用は保留。
+[直近の着手順](docs/plans/LINE_CORE_V2.md#10-直近の着手順)のAは、最新SDK配布物での認証なし検証と、既存コンテナでの短時間受信実測を実施。次は[オフライン結果](experiments/linejs-receiver/docs/RECEIVER_PROBE.md)と実測を基に受付・復旧契約を具体化し、同時入力の照合を追加する。SDK既定PUSHの本採用は保留。Rust Core・返信・通知は未実装。
