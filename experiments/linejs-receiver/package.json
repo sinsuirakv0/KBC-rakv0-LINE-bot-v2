@@ -1,0 +1,11 @@
+{
+  "name": "kbc-linejs-receiver-probe",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "probe": "node probe.mjs"
+  },
+  "dependencies": {
+    "@evex/linejs": "npm:@jsr/evex__linejs@3.4.2"
+  }
+}

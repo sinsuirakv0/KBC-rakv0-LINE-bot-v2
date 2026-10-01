@@ -1,0 +1,147 @@
+﻿# LINEJS受信・常時処理の調査と比較実験
+
+調査日: 2026-10-01（JST）
+状態: 実装調査、旧SDKのStream検証、最新3.4.2配布物での認証なし受信・取消Probeを実施。実LINEでの方式比較は未実施。
+
+## 1. 判断
+
+比較実験は必要。旧版の固定周期による取得に対して、LINEJSにはOpenChatのPUSH通知を起点とする取得経路があり、無通信時のAPI呼出・CPUや受信遅延を改善できる可能性がある。
+
+同時に、SDK内部のBuffer、cursor更新、再接続、ページ継続、イベント抽出を確認する必要がある。第一候補の比較対象に加えるが、PUSH採用はまだ確定しない。
+
+## 2. 対象と一次資料
+
+- 旧Bot: `D:/KBC/KBC-rakv0-line-bot` 、HEAD `c6796e0` 。
+- 手元SDK: `node_modules/@evex/linejs` 、 `3.1.4` 。既存のLEGY / PUSHパッチ適用状態を含む。
+- 最新公開版: [JSRの `3.4.2`](https://jsr.io/@evex/linejs) 。[Release](https://github.com/evex-dev/linejs/releases/tag/v3.4.2)は2026-09-07 08:56:38 UTC公開。
+- 開発元の調査commit: `ef6c3d9f70dd41fa51053615d47f071f58cf8db3` 。最新 `v3.4.2` のReleaseが指す `ef6c3d9` と一致。後述の10節で配布物そのものの実行検証を追加した。
+- [Polling実装](https://github.com/evex-dev/linejs/blob/ef6c3d9f70dd41fa51053615d47f071f58cf8db3/packages/linejs/base/polling/mod.ts)
+- [PUSH・Stream実装](https://github.com/evex-dev/linejs/blob/ef6c3d9f70dd41fa51053615d47f071f58cf8db3/packages/linejs/base/push/connManager.ts)
+- [Client.listen実装](https://github.com/evex-dev/linejs/blob/ef6c3d9f70dd41fa51053615d47f071f58cf8db3/packages/linejs/client/client.ts)
+
+手元 `3.1.4` の実行ファイルと、最新 `v3.4.2` に対応する開発元の固定commitを別々に確認した。比較時は採用versionとlockを記録する。以下のE1 / E2は手元 `3.1.4` での実行結果であり、最新版の配布物による実行結果とは区別する。
+
+## 3. SDKから分かったこと
+
+| 確認内容 | 比較実験への影響 |
+| --- | --- |
+| `listenSquareEvents()` はLEGY PUSHとSquare Streamを使う | 関数名だけで定周期pollingと判断しない |
+| Square PUSHの通知後にも `fetchMyEvents(limit: 100)` を呼ぶ | PUSHはAPI取得が不要になる方式ではない |
+| その取得で `subscriptionId` 、 `syncToken` を使う | 新規購読・再接続・再取得の契約を確認する |
+| SDK側でcursorを更新し、 `update:syncdata` を発行する | Rustの永続受付前に確定checkpointとして保存しない |
+| Streamの `highWaterMark: 200` を超える分を別配列へ保持する | CoreのQueueだけを有限にしてもSDK全体の上限にはならない |
+| `Polling.listenTarget` の既定は `[3, 8]` | OC専用の比較で不要なTalk購読・内部通信を始めないか確認する |
+| 手元3.1.4の高水準 `square:message` は `NOTIFICATION_MESSAGE` を抽出する経路 | rawの `square:event` とメッセージ・thread・参加退出の網羅性を比較する |
+
+調査したPUSH取得箇所には、 `continuationToken` を使って追加ページを排出する処理が見当たらない。これだけで欠落と断定せず、100件を超えるバックログの継続処理を比較条件へ入れる。
+
+## 4. 実施したオフライン実験
+
+環境: Windows、Node.js `v24.15.0` 、手元LINEJS `3.1.4` 。
+方法: 実際の `ConnManager.prototype.createAsyncReadableStream` を直接呼び出す。認証・Client接続・LINE API呼出・実メッセージは使用していない。
+
+### E1: consumerを遅らせて500件を投入
+
+異なるID、同じ本文・時刻を持つ500件を、読取開始前にenqueueした。
+
+- 新しい読取処理は500件すべてをID順に取得した。
+- `highWaterMark: 200` より多く投入しても受付は止まらなかった。
+- ソースの別配列には件数上限の検査がない。200はBuffer全体の最大容量ではない。
+
+これはSDK Stream単体の結果であり、LINEからの同時メッセージやCommand処理の成功を証明しない。
+
+### E2: 500件を投入してからStreamをrenew
+
+読取開始前に500件をenqueueし、 `renew()` 後のStreamから読む。
+
+- 新Streamから得られたのはID 200〜499の300件。
+- 旧Streamの内部Queueに入っていたID 0〜199は、新Streamへ引き継がれなかった。
+- 旧Streamも別途読めばよい場合と、接続取消で破棄する場合を区別する必要がある。
+
+この結果は「新Streamへの引継ぎ」の確認であり、旧Botで報告された無反応の原因確定ではない。PUSHを候補にする場合、renew / cancelと永続checkpointからの再取得を組み合わせて検証する。
+
+再実行の要点は、SDKの上記関数で作ったWriterへ連番500件を入れ、Aでは同じStreamを500件読む、Bでは `renew()` 後のStreamを300件読むこと。APIを呼ぶ `initializeConn()` やClientログインは不要。小さな一時検証で済むため、専用Frameworkや恒久テストは追加しない。
+
+## 5. 次に必要な比較
+
+| 比較 | 調べること | 実施条件・採用判断 |
+| --- | --- | --- |
+| E3: 旧raw取得とOC PUSH | 無通信API数、CPU、受信lag、同時入力、切断復帰、Buffer・checkpoint | 先にSDKの有限性・再開をオフライン確認。採用版と少数の実験OCを固定して順番に比較 |
+| E4: 全体イベントとOC別補助取得 | 参加退出・メンバー更新・thread等の網羅性、重複 | 同じ事象のIDと種別を突合。全体イベントで足りる種類だけ補助取得を減らす |
+| E5: 定期名前巡回と受信・期限による補完 | 名前の変更履歴の要件、照会回数、stale期間 | 未取得・期限切れ・必要な表示を起点にする案と比較。履歴要件を勝手に落とさない |
+| E6: 定期通知確認と最短期限Timer | 無入力でも通知が届くか、再起床、時計変更、再起動 | 仮想時刻・API mockで先に確認。通知遅延が要件内でAPI・CPUを減らせるか判断 |
+| E7: 背景処理の固定周期とdirty / 状態変更 / 期限 | 保存・GitHub同期・監視の呼出数と負荷 | 変更時の処理集約と最大未同期時間を比較。必要なhealth監視は維持 |
+
+SDKの100件取得境界と200件Stream境界は、オフライン再生で先に確認する。本番へ大量のメッセージやAPI要求を送って制限を探る方式にしない。同じアカウントの二重ログインも避ける。
+
+## 6. 常時処理の現状と扱い
+
+| 旧実装 | 現在分かったこと | 判断 |
+| --- | --- | --- |
+| `main.ts: listenRawSquareEvents` | 通常1秒、ページ継続25msの待機。実通信待ちは別 | PUSHとの比較対象 |
+| `ocJoinMessagePolling.ts` | OCごとに `fetchSquareChatEvents` 、次回期限は2秒、設定対象は60秒で再解決 | raw全体受信で補える種類と不足する種類を先に分類 |
+| `nameHistory/store.ts: scanKnownSquareNames` | 保存済みSquareを巡回し、最大20ページのメンバー検索 | 受信情報・必要時照会・期限付き補完との比較対象 |
+| `ocProfileStatus.ts` | bind / 状態変更で更新。表示名が同じならAPIを呼ばない | 現時点で定期更新へ作り替えない。起動時のOC列挙・変更数だけ観測 |
+| 通知・リマインダー | Timerとrunning等の状態を持つ | 期限起床と配送枠の進行を別々に検証 |
+| 保存・同期・受信health | 周期処理でも目的が異なる | dirty集約・期限監視・復旧判断を分け、単にTimerをすべて消さない |
+
+## 7. 結論の記録
+
+各比較はAPI回数、受信・通知の遅延、受付件数と未処理数、CPU、Memoryを同じ条件で記録する。実験対象・未確認点・採否とトレードオフは[文書運用](../engineering/DOCUMENTATION.md)に従う。
+
+現在の結論は「PUSHと補助巡回削減を比較すべき」「SDKのStream上限・renewとcheckpointは先に検証すべき」。実LINEでPUSHの方が安定・省CPUと確認した状態ではない。
+
+## 8. 最新公開版の改善と採用方針
+
+2026-10-01時点の最新公開版は `3.4.2` 。利用者の指定により、新Botは最新公開版を基準にする。実装開始・依存更新時には公開版を再確認し、具体的なversionをlockして比較条件と運用版を記録する。
+
+### 旧3.1.4からの主な改善
+
+| 版 | 確認した改善 | 今回の扱い |
+| --- | --- | --- |
+| [3.3.3](https://github.com/evex-dev/linejs/releases/tag/v3.3.3) | `BaseClient.config.timeout` をNode RPCとHTTP/2 PUSHのTCP / TLS接続へ適用。暗号化LEGY通信へ取消signalを伝搬し、PUSH接続失敗の未処理rejectを対処 | 無期限のAPI待ち・通知枠の停滞を調べる基準にする。取消後に実通信・実行枠が解放されるか確認 |
+| [3.4.1](https://github.com/evex-dev/linejs/releases/tag/v3.4.1) | listen / pusherの分離Promiseの失敗を捕捉。単一イベントの同期listener・復号失敗後もTalk / Square配送を継続。初期化失敗時にpolling状態を戻し、共有Streamへ元のエラーを伝える | エラー後の受信停止を改善できる修正として活用。終端エラーの復帰とasync handlerのrejectはAdapterでも扱う |
+| [3.4.2](https://github.com/evex-dev/linejs/releases/tag/v3.4.2) | E2EE動画の送信metadataへ呼出側が指定するdurationを反映 | 最新版に含まれる修正として採用。第一段階のOC受信・負荷制御の解決とは分ける |
+
+3.4.1にはreactionの `reqSeq` 初期化・保存を直列化する修正もあるが、通常のOC Commandの同時受信が直った証拠にはならない。初期接続の終端失敗は自動再試行されず、呼出側が新しいlistenを開始する必要がある。async event / log listenerのrejectも呼出側の責務として残る。
+
+### 旧パッチの再評価
+
+旧 `scripts/patch-linejs-legy-signal.mjs` は、LEGY外側Requestへのsignal追加、PUSH接続Promiseのcatch、response stream待機の500msから最大15秒への延長を行う。
+
+- [最新版のLEGY実装](https://github.com/evex-dev/linejs/blob/ef6c3d9f70dd41fa51053615d47f071f58cf8db3/packages/linejs/base/request/legy.ts)には `signal: request.signal` があり、signal追加パッチの目的は取り込まれている。
+- [最新版のPUSH接続実装](https://github.com/evex-dev/linejs/blob/ef6c3d9f70dd41fa51053615d47f071f58cf8db3/packages/linejs/base/push/conn.ts)には接続失敗のcatchとloggerの同期例外保護がある。
+- 同じPUSH接続実装の `read()` は、response streamが未準備なら500ms待って再確認する構造。旧版の15秒待機への変更は同じ形では取り込まれていない。0.2コア環境の遅い接続で必要か、取消・timeout・再接続と合わせて検証する。
+
+最新版をそのまま使う構成を基準にする。旧パッチの文字列置換を新版へそのまま移さず、再現した問題に必要な対策だけを検討する。
+
+### 最新版にも残る確認
+
+調査commitの `createAsyncReadableStream` は、200件のStream内部Queueに加え、件数上限のない別配列へ保持する構造である。`renew()` は別配列を再利用するが、旧Stream内部のQueueを新Streamへ移していない。旧3.1.4のE1 / E2で確認した性質に対応する構造が、最新3.4.2のソースにも残る。これは初回のソース調査結果であり、後の10節で配布物によるrenew / cancel / errorの確認を追加した。
+
+初回の最新ソース取得はGitHubへの接続timeoutで失敗し、Stream検証に到達しなかった。その後、公開レジストリから3.4.2配布物を取得してlockし、10節のProbeで同じStreamの性質を確認した。初回の失敗と、後の配布物による実行結果を区別する。
+
+PUSHでも `fetchMyEvents(limit: 100)` を使い、SDKが永続受付より先にcursorを更新する。100件超の継続取得、有限Buffer、永続checkpoint、同時入力、再接続後の再取得は引き続きE3で確認する。今回確認したReleaseからは、OCのサーバー側API制限値や、全APIの制限回避を保証する変更は確認できない。共通のAPI予算・cooldown・不要巡回の削減を設計する方針を維持する。
+
+開発元の3.4.1 / 3.4.2は実LINEアカウントでの検証を行っていないと記録している。また3.4.2には、Windows / Node 24のRPC取消テストがローカルで `TypeError` になった未解決記録がある。採用Runtimeで遅い通信・取消・終了時の挙動を確認し、エラー名だけで取消判定を固定しない。
+
+## 9. API観測と制御を入れる接点
+
+2026-10-01に最新3.4.2に対応する[BaseClient実装](https://github.com/evex-dev/linejs/blob/ef6c3d9f70dd41fa51053615d47f071f58cf8db3/packages/linejs/base/core/mod.ts)と[RequestClient実装](https://github.com/evex-dev/linejs/blob/ef6c3d9f70dd41fa51053615d47f071f58cf8db3/packages/linejs/base/request/mod.ts)を確認した。以下は初回のソース確認。custom fetchでRPC / PUSHが同じ経路を通ることは、後述の10節で配布物でも確認した。実LINEでの確認は行っていない。
+
+- `BaseClient.fetch` はcustom fetchを指定するとそれを優先し、未指定ならSDKのNode transportを選ぶ。
+- `BaseClient.fetchPush` はcustom fetchがあると `this.fetch` を使う。未指定ならHTTP/2用のNode PUSH transportを選ぶ。
+- したがって、API観測・制御のためにcustom fetchへ単純な `globalThis.fetch` wrapperを渡すと、SDKが選ぶPUSH transportも置き換わる。PUSH側のHTTP/2・streaming・取消・接続timeoutの契約を保持できるか先に検証する。
+- RequestClientはmethod名・pathを把握するが、fetch境界では暗号化されたRPCも通る。すべてをfetchのURLだけでCommand・API種別へ正確に分類できるとは扱わない。
+
+最初の検証では通常RPCと持続するPUSH接続を分け、観測・制御を差し込む場所を決める。受信接続が返信の通信枠を占有せず、SDK内部要求・再試行も観測できることを確認してから、ApiSchedulerの接続方法を確定する。SDKのtransportを失う設計や、二重の待機列・再試行を加える設計にしない。
+
+## 10. 最新配布物での受信Probe（着手順A）
+
+[詳細結果・関数の関係・再実行手順](../../experiments/linejs-receiver/docs/RECEIVER_PROBE.md)と[観測JSON](../../experiments/linejs-receiver/results.json)を記録した。LINEJS 3.4.2、Node.js v24.15.0、Undici 7.30.0をlockした環境で、認証なしのmockとloopbackを使って実施。新prefixは `o.` 、検証入力は `o.ping` 。
+
+同じ本文・時刻の500件を全件読取できた。一方、Stream更新・取消時の200件の引継ぎ不足、PUSH取得の継続ページ未排出、同時取得のcursor上書き、PUSH callbackの未処理reject、遅いresponse stream準備の失敗をSDKの実関数で観測した。模擬サーバー条件を実LINEの挙動や旧Bot障害の原因と読み替えない。
+
+初期化失敗後の再listenとLEGY signal伝搬は確認できた。Node RPCの実接続取消とRPC / PUSHの接続timeoutはloopbackで確認した。SDK既定PUSHの本採用は保留し、次は直列なBatch取得・全ページ・永続受付・checkpointの契約を定義する。
+
+着手順Aの認証なし確認を完了とする。実LINEの保持・再通知・制限、HTTP/2確立後のPUSH配送、0.2コアの負荷・CPUは着手順Dでの確認として残る。受信方式の本採用とPhase 0全体は未完了。

@@ -1,0 +1,180 @@
+{
+  "recordedAt": "2026-10-01T09:44:56.899Z",
+  "sdkVersion": "3.4.2",
+  "nodeVersion": "v24.15.0",
+  "undiciVersion": "7.30.0",
+  "sdkIntegrity": "sha512-nq7q2DKMdOUn1bK5I2sdTb0waaD0JkK/8Zi18T8iQA+nsHLJSlXuTYpvQcfrY2EFPu5IJ5HEUaiJfOkVIzTWIg==",
+  "lineNetwork": false,
+  "localRequests": 3,
+  "observations": [
+    {
+      "name": "burst",
+      "sent": 500,
+      "delivered": 500,
+      "chatCount": 3,
+      "ordered": true,
+      "sameTextAndTime": true
+    },
+    {
+      "name": "stream-renew",
+      "queuedBefore": 500,
+      "newStreamDelivered": 300,
+      "firstNewId": "200",
+      "readableFromOldStream": 200,
+      "internalQueueNotTransferred": 200
+    },
+    {
+      "name": "stream-cancel",
+      "queuedBefore": 500,
+      "newStreamDelivered": 300,
+      "firstNewId": "200",
+      "readableFromOldStream": 0,
+      "internalQueueNotTransferred": 200
+    },
+    {
+      "name": "stream-error",
+      "queuedBefore": 500,
+      "newStreamDelivered": 300,
+      "firstNewId": "200",
+      "readableFromOldStream": 0,
+      "internalQueueNotTransferred": 200
+    },
+    {
+      "name": "push-page",
+      "availableInMock": 250,
+      "fetched": 100,
+      "calls": 1,
+      "continuationDrained": false,
+      "cursorBeforeConsumer": "checkpoint-1",
+      "cursorChangedBeforeConsumer": true,
+      "emitted": [
+        "update:syncdata"
+      ]
+    },
+    {
+      "name": "raw-pages",
+      "delivered": 250,
+      "calls": 3,
+      "continuationTokens": [
+        null,
+        "100",
+        "200"
+      ]
+    },
+    {
+      "name": "concurrent-push",
+      "concurrentFetches": 2,
+      "requestedCursors": [
+        "checkpoint-0",
+        "checkpoint-0"
+      ],
+      "finalCursor": "older",
+      "responseOrder": [
+        2,
+        1
+      ],
+      "serverBehavior": "mock-only"
+    },
+    {
+      "name": "client-normal",
+      "rawIds": [
+        "0",
+        "1"
+      ],
+      "messageIds": [
+        "0",
+        "1"
+      ],
+      "errors": [],
+      "asyncCompletionOrder": []
+    },
+    {
+      "name": "client-sync-error",
+      "rawIds": [
+        "0",
+        "1"
+      ],
+      "messageIds": [
+        "1"
+      ],
+      "errors": [
+        "offline-listener-failure"
+      ],
+      "asyncCompletionOrder": []
+    },
+    {
+      "name": "client-async-handler",
+      "rawIds": [
+        "0",
+        "1"
+      ],
+      "messageIds": [
+        "0",
+        "1"
+      ],
+      "errors": [],
+      "asyncCompletionOrder": [
+        "1",
+        "0"
+      ]
+    },
+    {
+      "name": "startup-retry",
+      "attempts": 2,
+      "bothReadersReceivedOriginalError": true,
+      "pollingStateReset": true,
+      "retryDelivered": 1
+    },
+    {
+      "name": "push-callback-error",
+      "unhandledRejectionObserved": true,
+      "apiCalls": "mock-only"
+    },
+    {
+      "name": "push-delayed-readiness",
+      "responseReadyAfterMs": 1200,
+      "failedAfterMs": 813,
+      "error": "no resStream",
+      "cancellationReachedMockTransport": true,
+      "transport": "mock"
+    },
+    {
+      "name": "legy-cancel",
+      "outerSignalAborted": true,
+      "outcome": "AbortError",
+      "transport": "mock"
+    },
+    {
+      "name": "custom-fetch",
+      "routes": [
+        "/RPC",
+        "/PUSH"
+      ],
+      "pushUsesSameCustomTransport": true
+    },
+    {
+      "name": "node-rpc-abort",
+      "errorName": "AbortError",
+      "serverObservedAbort": true,
+      "network": "loopback"
+    },
+    {
+      "name": "node-rpc-connect-timeout",
+      "configuredMs": 100,
+      "elapsedMs": 950,
+      "errorName": "TypeError",
+      "causeCode": "UND_ERR_CONNECT_TIMEOUT",
+      "socketsOpenBeforeCleanup": 0,
+      "network": "loopback-tls-handshake"
+    },
+    {
+      "name": "node-push-connect-timeout",
+      "configuredMs": 100,
+      "elapsedMs": 1026,
+      "errorName": "TypeError",
+      "causeCode": "UND_ERR_CONNECT_TIMEOUT",
+      "socketsOpenBeforeCleanup": 0,
+      "network": "loopback-tls-handshake"
+    }
+  ]
+}
