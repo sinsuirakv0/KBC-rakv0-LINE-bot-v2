@@ -133,4 +133,8 @@ Run `receiver-20261001-b`、source `c118725745d002470cf4a4c7cb0c70241e9cbc4e`、
 
 SDKは[アカウント側の通知](https://github.com/evex-dev/linejs/blob/ef6c3d9f70dd41fa51053615d47f071f58cf8db3/packages/linejs/client/client.ts)と[トークのイベント取得](https://github.com/evex-dev/linejs/blob/ef6c3d9f70dd41fa51053615d47f071f58cf8db3/packages/linejs/client/features/square/mod.ts)を別に扱う。この結果から、試験OCに限定した `fetchSquareChatEvents` と通知のmessage ID照合を次の比較に追加する。通知の集約・保持やProbeの完全一致判定は仮説として残し、欠落原因が確定したとは扱わない。
 
-利用者の追加指定により `pong` 返信も準備した。番号付き20入力（A01〜A10、B01〜B10）で受信経路・番号・ID・API送信成功を照合する。API成功と利用者の画面での受信は区別する。模擬RPCで重複1件を1返信にまとめ、過去・別OCへの返信を除外し、Queueが空になった後の追加入力も配送した。3件の返信、Square sequenceの保存・引継ぎ、元の認証・checkpointの維持を確認。外部通信なし。実LINEでの返信・トーク経路の比較はこれから行う。
+利用者の追加指定により `pong` 返信も準備した。番号付き20入力（A01〜A10、B01〜B10）で受信経路・番号・ID・API送信成功を照合する。API成功と利用者の画面での受信は区別する。模擬RPCで重複1件を1返信にまとめ、過去・別OCへの返信を除外し、Queueが空になった後の追加入力も配送した。3件の返信、Square sequenceの保存・引継ぎ、元の認証・checkpointの維持を確認。外部通信なし。模擬script・fixtureはファイル単位で回収し、恒久Test Frameworkは追加していない。
+
+続いてRun `receiver-20261001-c`、source `dc6773755c814734110ae0d3bfe4f552ab0ccf25`、bundle SHA-256 `fba612a61b23b231b760d40930d9e5ed254fefe17ee80d0d8183c57ea324f8fb` で、返信・トーク比較を有効にして起動。21:11:25.765〜21:16:25.766 JST、255 RPC / HTTP、254取得page、22イベント・12メッセージ、4トーク、API失敗の観測なしで期間終了した。認証とcheckpointの再利用、返信有効設定を実コンテナで確認した。
+
+この期間は新着 `o.ping` が0件で試験OCを確定できず、`fetchSquareChatEvents / sendMessage` は各0回。実LINEでの返信・通知とトークの比較・20番号の照合は未評価。認証更新・送信sequence変更はなく、終了後は元の停止0 / 0・Default configurationへ戻した。試験入力を受けられる時間帯に、別Run IDで再検証する。

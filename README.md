@@ -25,4 +25,6 @@ LINEJSは最新公開版を採用する。2026-10-01の確認では `3.4.2` 。�
 - [受信・常時処理の調査と実験](docs/research/RECEIVER_AND_BACKGROUND_EXPERIMENTS.md): LINEJSの実装確認、実施したオフライン検証、次に必要な比較。
 - [旧コンテナでの受信実験](experiments/linejs-receiver/docs/LIVE_CONTAINER_PROBE.md): 既存アカウントで最新SDKの5分受信を実測。4トーク・新着2件を含む6メッセージ、API制限の観測なし。停止・切戻し済み。同時入力の照合は未完了。
 
-[直近の着手順](docs/plans/LINE_CORE_V2.md#10-直近の着手順)のAは、最新SDK配布物での認証なし検証と、既存コンテナでの短時間受信実測を実施。次は[オフライン結果](experiments/linejs-receiver/docs/RECEIVER_PROBE.md)と実測を基に受付・復旧契約を具体化し、同時入力の照合を追加する。SDK既定PUSHの本採用は保留。Rust Core・返信・通知は未実装。
+[直近の着手順](docs/plans/LINE_CORE_V2.md#10-直近の着手順)のAは、最新SDK配布物での認証なし検証と、既存コンテナでの短時間受信実測を実施。次は[オフライン結果](experiments/linejs-receiver/docs/RECEIVER_PROBE.md)と実測を基に受付・復旧契約を具体化し、同時入力の照合を追加する。SDK既定PUSHの本採用は保留。本BotのRust Core・返信・通知は未実装。
+
+受信実験用には、試験OCへの有限な `pong` 返信と通知・トーク取得の比較経路を追加した。模擬検証と実コンテナの起動は確認済み。実LINEの試験入力との照合・返信確認は未完了。本BotのRust Command Runtimeとは区別する。
