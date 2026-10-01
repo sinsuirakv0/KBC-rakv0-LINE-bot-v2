@@ -1,7 +1,7 @@
 ﻿# Rust CoreとLINEJS Adapterの構成案
 
 作成日: 2026-10-01、更新日: 2026-10-02（JST）
-状態: 構成は実装前の提案。受信基本方針のOC PUSH・cursor単位の直列化・独立処理の有限並列は採用。第一段階はOpenChat専用。
+状態: 全体構成は移植計画。3 crate・型生成・Native・最小PUSH Adapterと疎通Commandを実装済み。受信基本方針のOC PUSH・cursor単位の直列化・独立処理の有限並列は採用。第一段階はOpenChat専用。現行実装は[Runtime](../../crates/kbc-core/docs/RUNTIME.md)と[Adapter](../../apps/line/docs/ADAPTER.md)を参照。
 
 ## 1. 処理経路
 
@@ -106,6 +106,8 @@ PUSHを主な起点に `fetchMyEvents` の更新を取得し、OC別補助取得
 ## 7. 保存・停止・提案の負担
 
 DiscordのStorageはGitHubを正本とするが、旧LINEの保存・復元は機能別に調べる。機能データは原子的なローカル書込、変更の記録、有限バッチ同期を基本候補にし、GitHub失敗で受信を止めない。
+
+OCの長期ログは旧履歴を移行せず、新規開始する。既存の非公開GitHubストレージでOC MIDを親・トークMIDを子に置き、起動時に旧履歴を走査しない。長期ログと受信Inboxの保持・復旧は別の要件として扱う。[ログ保存の決定](../decisions/OC_LOG_STORAGE_V2.md)を参照。
 
 LINEにDiscordと同じnonce保証があるとは仮定しない。送信結果不明は照合・管理者対応を選べるようにし、単純な自動再投稿で重複を作らない。
 

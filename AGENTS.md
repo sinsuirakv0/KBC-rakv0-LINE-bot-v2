@@ -8,6 +8,10 @@
 - `docs/engineering/DOCUMENTATION.md`
 - 受信・常時処理の変更時は `docs/research/RECEIVER_AND_BACKGROUND_EXPERIMENTS.md`
 - 受信・並列制御の変更時は `docs/decisions/PUSH_AND_BOUNDED_CONCURRENCY_V1.md`
+- Runtime変更時は `crates/kbc-core/docs/RUNTIME.md`
+- Adapter変更時は `apps/line/docs/ADAPTER.md`
+- 起動・配備の変更時は `docs/operations/MINIMAL_BOT.md`
+- ログ保存・同期の変更時は `docs/decisions/OC_LOG_STORAGE_V2.md`
 
 ## 基本方針
 

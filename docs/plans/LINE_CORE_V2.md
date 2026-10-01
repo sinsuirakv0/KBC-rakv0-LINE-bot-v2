@@ -1,7 +1,7 @@
 ﻿# KBC LINE Bot Rust Core V2 計画
 
-作成・更新日: 2026-10-01（JST）
-状態: 初版。利用者の最新要件を反映。詳細仕様・原因・性能基準はPhase 0で確定する。
+作成日: 2026-10-01、更新日: 2026-10-02（JST）
+状態: 最小PUSH Botの実装・オフライン検証済み。第一段階全体は未完了。詳細仕様・原因・性能基準は観測で確定する。
 
 ## 1. 第一段階の目的
 
@@ -23,6 +23,7 @@
 | 構成・設計原則 | Discord Bot v2のCore / Protocol / N-API / Adapter分離を参照 |
 | 文書・開発運用 | Discordと同様、仕様・現行実装・設計判断・実験・運用・進捗を分けて記録し、実装と同時に更新 |
 | コマンド・表示・権限・保存データ | 旧LINE Botの現行実装と対応するdocsを参照 |
+| OCログ | 既存の非公開GitHubストレージで新規開始。旧履歴は引き継がず、OC MID（s）配下にトークMID（m）を配置 |
 | コマンドprefix | 利用者の指定により `!` から `o.` へ変更。例: `o.ping` 、 `o.help` |
 | LINEJS | 最新公開版を採用。2026-10-01時点は `3.4.2` 。実装開始・依存更新時に再確認してlock |
 | 第一段階の対象 | OpenChat専用。参加しているOCの各トークは原則すべて利用可能 |
@@ -141,6 +142,8 @@ Phase 0の[初回調査](../research/LEGACY_FINDINGS.md)は作成済み。障害
 
 保存仕様はDiscordのStorageを一律に流用せず、旧LINEの機能ごとに正本と復元順を確認する。旧データはコピーで検証し、変換をやり直せるようにする。
 
+ただしOCログは2026-10-02の利用者指定で旧履歴の移行を取りやめる。メッセージと参加・退出等の履歴を新規保存し、OC / トークの階層とファイル集約・検索を設計する。旧ログの変換Workflowは対象から外し、実削除の時期は確認する。[新しい保存方針](../decisions/OC_LOG_STORAGE_V2.md)を参照。
+
 ## 7. 測定と第一段階の受入条件
 
 応答を「LINE側の作成 → Adapter受信 → 永続受付 → Command開始・完了 → API実行開始 → 送信完了」に分解する。プロセス内は単調時計、外部時刻との差は時計ずれを含む参考値とする。
@@ -188,7 +191,9 @@ Phase 0で残る判断:
 
 ## 10. 直近の着手順
 
-最新3.4.2配布物でAの認証なし検証を完了し、既存Northflankサービスと旧Botアカウントで、取得後1秒待機の短時間実測・連続入力・返信有効起動を確認した。[実験結果と切戻し](../../experiments/linejs-receiver/docs/LIVE_CONTAINER_PROBE.md)を記録し、元の停止 0 / 0・Default configurationへ戻した。実LINEの全件照合・実返信は未評価。利用者の最新指定により、重なった入力の返信抜けを再現する手動試験は運用観測へ回し、次の設計の前提条件にしない。基本方針はPUSHと有限並列で確定し、SDK対策・Rust実装・本運用の検証は未完了。次はBの受付・復旧契約を進める。
+最新3.4.2配布物でAの認証なし検証を完了し、既存Northflankサービスと旧Botアカウントで、取得後1秒待機の短時間実測・連続入力・返信有効起動を確認した。[実験結果と切戻し](../../experiments/linejs-receiver/docs/LIVE_CONTAINER_PROBE.md)を記録し、元の停止 0 / 0・Default configurationへ戻した。実LINEの全件照合・実返信は未評価。重なった入力の返信抜けを再現する手動試験は利用者指定で運用観測へ回す。
+
+2026-10-02にB/Cの最小経路を実装。3 crate・型生成・Native、SQLiteの受信/Action/checkpoint同時保存、PUSH起点・ページ継続・指定chat補完、全RPC共通2枠、ping・期限通知を接続した。[Runtime](../../crates/kbc-core/docs/RUNTIME.md)と[Adapter](../../apps/line/docs/ADAPTER.md)に関数・上限・制約を記録。オフラインSmokeでID重複・rollback・再開・自律期限・実SDK Thrift初期応答・継続PUSH集約を確認した。次はDの少数OC確認で、先に[認証とコンテナ保存の扱い](../operations/MINIMAL_BOT.md)を確定する。一般Command Worker・旧権限/停止・thread・全機能移植・本運用負荷は未完了。
 
 | 順序 | 作業と成果物 | 完了条件 |
 | --- | --- | --- |

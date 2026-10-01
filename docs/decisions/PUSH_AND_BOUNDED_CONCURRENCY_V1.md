@@ -1,7 +1,7 @@
 ﻿# PUSHを基本にし、独立した処理を有限並列にする
 
 決定日: 2026-10-02（JST）
-状態: 採用（設計方針）。新Botへの実装・実LINEのPUSH比較は未実施。
+状態: 採用。最小Botへ実装・オフライン検証済み。実LINEのPUSH比較は未実施。現行の境界と制約は[Adapter実装](../../apps/line/docs/ADAPTER.md)を参照。
 
 ## 1. 問題と決定
 
@@ -50,7 +50,7 @@ SDK既定PUSHループには、[認証なしProbe](../../experiments/linejs-rece
 
 ## 6. 次の作業と参照
 
-次はBの受付・checkpoint・復旧契約を具体化する。cursor系統の識別、PUSH中と取得中の起床、全ページの受付、過負荷、共通API枠、切断・再起動の手順を定義する。手動の同時返信試験は利用者指定により今後の運用観測へ回し、この設計の前提条件にしない。
+最小経路の受付・checkpoint・ページ継続・期限起床・共通API枠を実装済み。次は[少数OCの実験](../operations/MINIMAL_BOT.md)。一般CommandのWorker・旧機能移植・本運用負荷は未完了。手動の同時返信試験は利用者指定により今後の運用観測へ回す。
 
 - [移植計画の着手順](../plans/LINE_CORE_V2.md#10-直近の着手順)
 - [構成と責務](../architecture/CORE_AND_ADAPTER.md)
