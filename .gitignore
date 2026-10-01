@@ -6,3 +6,8 @@ storage/
 .env*
 !.env.example
 *.log
+target/
+native/
+dist/
+*.sqlite*
+.tools/

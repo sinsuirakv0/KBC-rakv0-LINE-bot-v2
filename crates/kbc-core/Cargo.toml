@@ -1,0 +1,11 @@
+[package]
+name = "kbc-core"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+kbc-protocol = { path = "../kbc-protocol" }
+rusqlite = { version = "0.38", features = ["bundled"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "sync", "time"] }
