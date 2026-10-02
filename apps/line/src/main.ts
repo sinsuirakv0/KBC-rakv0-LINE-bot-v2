@@ -70,7 +70,8 @@ async function main(): Promise<void> {
     core = createCore({ databasePath: resolve(process.env.CORE_DATABASE_PATH ?? "storage/core.sqlite"), ownerId: client.profile.mid,
       maxRetainedEvents: integerSetting("CORE_MAX_RETAINED_EVENTS", 131072, 8192, 524288),
       contentDirectory: resolve(process.env.CONTENT_DIRECTORY ?? "content"),
-      searchDataPath: resolve(process.env.SEARCH_DATA_PATH ?? "data/search/catalog.json") });
+      searchDataPath: resolve(process.env.SEARCH_DATA_PATH ?? "data/search/catalog.json"),
+      ffmpegPath: process.env.FFMPEG_PATH?.trim() || (process.platform === "linux" ? "/usr/bin/ffmpeg" : undefined) });
     receiver = new Receiver(client, core, gate, controller.signal);
     const activeCore = core;
     const deliver = async () => {
@@ -85,7 +86,7 @@ async function main(): Promise<void> {
       }
     };
     started = true;
-    tasks.push(receiver.run(), deliver(), deliver());
+    tasks.push(receiver.run(), deliver(), deliver(), activeCore.runMediaJobs());
     await Promise.all(tasks);
   } finally {
     stop();

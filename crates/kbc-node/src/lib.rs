@@ -55,6 +55,16 @@ impl NativeCore {
     }
 
     #[napi]
+    pub async fn run_media_jobs(&self) -> Result<()> {
+        convert(self.runtime.run_media_jobs().await)
+    }
+
+    #[napi]
+    pub async fn prepare_attachment(&self, action_id: String) -> Result<Option<Buffer>> {
+        Ok(convert(self.runtime.prepare_attachment(&action_id).await)?.map(Buffer::from))
+    }
+
+    #[napi]
     pub async fn next_action(&self) -> Result<Option<Value>> {
         let action = convert(self.runtime.next_action().await)?;
         action

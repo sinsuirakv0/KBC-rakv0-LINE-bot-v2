@@ -3,12 +3,15 @@ use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::{
     CommandPlan,
-    search::{PAGE_SIZE, SESSION_TTL_MS, SearchCatalog, SearchSession, detail, image_url, label},
+    search::{
+        Operation, PAGE_SIZE, SESSION_TTL_MS, SearchCatalog, SearchSession, file_options, label,
+        motion_plan, origin_path,
+    },
 };
 use crate::Result;
 
 // 本文、配送期限、任意の画像URL。SDK固有の値はここへ渡さない。
-pub type Response = (String, i64, Option<String>);
+pub type Response = (String, i64, Option<crate::media::MediaRequest>);
 
 pub fn apply(
     tx: &Transaction<'_>,
@@ -87,16 +90,16 @@ fn apply_inner(
                 )]);
             }
             if session.results.len() <= 3 {
-                if session.origin && session.results.len() == 1 {
-                    return Ok(selected(catalog, &session, 0, now));
+                if !matches!(session.operation, Operation::Detail) && session.results.len() == 1 {
+                    return selected(tx, event, catalog, &session, 0, now);
                 }
-                if !session.origin {
+                if matches!(session.operation, Operation::Detail) {
                     return Ok(vec![(
                         session
                             .results
                             .iter()
                             .enumerate()
-                            .map(|(index, _)| detail(catalog.entry(&session, index)))
+                            .map(|(index, _)| catalog.detail(&session, index))
                             .collect::<Vec<_>>()
                             .join("\n\n"),
                         now,
@@ -131,15 +134,17 @@ fn apply_inner(
                 return Ok(Vec::new());
             };
             let mut session: SearchSession = serde_json::from_str(&payload)?;
+            let count = session
+                .files
+                .as_ref()
+                .map_or(session.results.len(), Vec::len);
             let input = text.trim();
             if matches!(input, "終了" | "取消" | "cancel") {
                 tx.execute("DELETE FROM sessions WHERE id=?1", [id])?;
                 return Ok(vec![("検索の受付を終了しました。".into(), now, None)]);
             }
             let page = match input {
-                "9" | "次" if (session.page + 1) * PAGE_SIZE < session.results.len() => {
-                    Some(session.page + 1)
-                }
+                "9" | "次" if (session.page + 1) * PAGE_SIZE < count => Some(session.page + 1),
                 "0" | "前" if session.page > 0 => Some(session.page - 1),
                 _ => None,
             };
@@ -160,9 +165,9 @@ fn apply_inner(
                 && input == number.to_string()
             {
                 let index = session.page * PAGE_SIZE + number - 1;
-                if index < session.results.len() {
+                if index < count {
                     tx.execute("DELETE FROM sessions WHERE id=?1", [id])?;
-                    return Ok(selected(catalog, &session, index, now));
+                    return selected(tx, event, catalog, &session, index, now);
                 }
             }
             if (input.len() == 1 && input.bytes().all(|byte| byte.is_ascii_digit()))
@@ -176,15 +181,90 @@ fn apply_inner(
 }
 
 fn selected(
+    tx: &Transaction<'_>,
+    event: &CoreEvent,
     catalog: &SearchCatalog,
     session: &SearchSession,
     index: usize,
     now: i64,
-) -> Vec<Response> {
-    let entry = catalog.entry(session, index);
-    let mut responses = vec![(detail(entry), now, None)];
-    if session.origin {
-        responses.push((String::new(), now, Some(image_url(session, entry))));
+) -> Result<Vec<Response>> {
+    use crate::media::MediaRequest;
+    if let Some(files) = &session.files {
+        let file = &files[index];
+        return Ok(vec![
+            (
+                format!(
+                    "{}\n{}\n{}",
+                    catalog.entry_label(session, 0),
+                    file.label,
+                    catalog.asset_url(&file.path)?
+                ),
+                now,
+                None,
+            ),
+            (
+                String::new(),
+                now,
+                Some(MediaRequest::Download {
+                    path: file.path.clone(),
+                }),
+            ),
+        ]);
     }
-    responses
+    let entry = catalog.entry(session, index);
+    let mut responses = vec![(catalog.detail(session, index), now, None)];
+    let request = match &session.operation {
+        Operation::Detail => return Ok(responses),
+        Operation::Origin { family, form } => origin_path(entry, &session.kind, family, form)
+            .map(|path| MediaRequest::Download { path }),
+        Operation::Motion(request) => {
+            responses[0]
+                .0
+                .push_str("\nモーション生成を受け付けました。");
+            motion_plan(entry, &session.kind, request)
+                .map(|plan| MediaRequest::Motion(Box::new(plan)))
+        }
+        Operation::File { form } => {
+            let CoreEvent::MessageReceived {
+                event_id,
+                chat_id,
+                sender_id,
+                ..
+            } = event;
+            let Some(owner) = sender_id else {
+                return Ok(vec![(
+                    "ファイル選択には送信者情報が必要です。".into(),
+                    now,
+                    None,
+                )]);
+            };
+            let count: i64 = tx.query_row("SELECT count(*) FROM sessions", [], |row| row.get(0))?;
+            if count >= 128 {
+                return Ok(vec![(
+                    "検索の受付が混み合っています。少し待って再度お試しください。".into(),
+                    now,
+                    None,
+                )]);
+            }
+            let mut next = session.clone();
+            next.files = Some(file_options(entry, &session.kind, form.as_deref()));
+            next.results = vec![session.results[index].clone()];
+            next.page = 0;
+            tx.execute("INSERT INTO sessions (id,chat,owner,action,payload,expires,revision) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![event_id, chat_id, owner, format!("{event_id}:1"), serde_json::to_string(&next)?, now + SESSION_TTL_MS, catalog.revision])?;
+            responses[0]
+                .0
+                .push_str("\n利用できるファイルを確認しています。");
+            Some(MediaRequest::FileList {
+                session_id: event_id.clone(),
+            })
+        }
+    };
+    if let Some(request) = request {
+        responses.push((String::new(), now, Some(request)));
+    } else {
+        responses[0]
+            .0
+            .push_str("\n指定した形態の素材はありません。");
+    }
+    Ok(responses)
 }

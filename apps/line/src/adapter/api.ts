@@ -10,7 +10,7 @@ export function errorCode(error: unknown): string {
 }
 
 type Job = { execute: () => Promise<unknown>; resolve: (value: unknown) => void; reject: (error: unknown) => void };
-export type SendAttempt = { started: boolean; method?: "sendMessage" | "destroyMessage"; beforeSend: () => void };
+export type SendAttempt = { started: boolean; method?: "sendMessage" | "destroyMessage" | "uploadMedia"; beforeSend: () => void };
 
 export class ApiScheduler {
   private queue: Job[] = [];
@@ -69,7 +69,7 @@ export class ApiScheduler {
 
   async checkUploadResponse(response: Response): Promise<void> {
     // SDKのOBS uploadはHTTP statusを検査しないので、共通transportで補う。
-    if (this.methodScope.getStore() === "uploadImage" && !response.ok) {
+    if (["uploadImage", "uploadMedia"].includes(this.methodScope.getStore() ?? "") && !response.ok) {
       await response.body?.cancel();
       throw Object.assign(new Error(`Http${response.status}`), { code: String(response.status) });
     }

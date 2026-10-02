@@ -11,8 +11,10 @@ use kbc_protocol::*;
 use rusqlite::{Connection, OptionalExtension, params};
 use tokio::sync::Notify;
 
+mod assets;
 mod commands;
-mod images;
+mod media;
+mod motion;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -29,7 +31,11 @@ pub struct Runtime {
     max_retained_events: u32,
     content: commands::content::ContentCatalog,
     search: commands::search::SearchCatalog,
-    images: images::ImageService,
+    assets: assets::AssetService,
+    media_root: std::path::PathBuf,
+    ffmpeg_path: Option<std::path::PathBuf>,
+    cancel: tokio_util::sync::CancellationToken,
+    media_worker_active: AtomicBool,
 }
 
 fn now_ms() -> i64 {
@@ -60,6 +66,11 @@ impl Runtime {
         if let Some(parent) = Path::new(&config.database_path).parent() {
             std::fs::create_dir_all(parent)?;
         }
+        let media_root = Path::new(&config.database_path)
+            .parent()
+            .unwrap_or(Path::new("storage"))
+            .join("media");
+        std::fs::create_dir_all(&media_root)?;
         let db = Connection::open(config.database_path)?;
         // Event・Action・checkpointを一つのtransactionで確定する。
         db.execute_batch("PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL;
@@ -99,7 +110,7 @@ impl Runtime {
         )?;
         // 取り出しただけの操作は再待機、通信開始済みは勝手に再投稿しない。
         db.execute(
-            "UPDATE actions SET status='queued' WHERE status='claimed'",
+            "UPDATE actions SET status='queued' WHERE status IN ('claimed','preparing')",
             [],
         )?;
         db.execute("UPDATE actions SET status='unknown', code='RestartDuringSend', completed=?1 WHERE status='sending'", [now_ms()])?;
@@ -113,6 +124,7 @@ impl Runtime {
             "DELETE FROM sessions WHERE expires<=?1 OR revision<>?2",
             params![now_ms(), search.revision],
         )?;
+        let assets = assets::AssetService::new(search.asset_commit()?)?;
         Ok(Self {
             database: Mutex::new(db),
             wake: Notify::new(),
@@ -121,7 +133,11 @@ impl Runtime {
             max_retained_events,
             content,
             search,
-            images: images::ImageService::new()?,
+            assets,
+            media_root,
+            ffmpeg_path: config.ffmpeg_path.map(Into::into),
+            cancel: tokio_util::sync::CancellationToken::new(),
+            media_worker_active: AtomicBool::new(false),
         })
     }
 
@@ -199,7 +215,7 @@ impl Runtime {
         if cleanup_due {
             // 未解決操作のIDは残す。頻繁な空checkpoint保存で全行を掃除しない。
             tx.execute("DELETE FROM events WHERE received < ?1 AND NOT EXISTS
-                (SELECT 1 FROM actions WHERE event_id=events.id AND status IN ('queued','claimed','sending','unknown'))", [now - RETENTION_MS])?;
+                (SELECT 1 FROM actions WHERE event_id=events.id AND status IN ('queued','preparing','claimed','sending','unknown'))", [now - RETENTION_MS])?;
             tx.execute(
                 "DELETE FROM actions WHERE status IN ('sent','failed') AND completed < ?1",
                 [now - RETENTION_MS],
@@ -233,30 +249,59 @@ impl Runtime {
             {
                 continue;
             }
-            let (responses, replacement) =
+            let (mut responses, replacement) =
                 commands::sessions::apply(&tx, &event, plan, &self.search, now)?;
+            if responses.iter().any(|(_, _, media)| media.is_some()) {
+                let count: i64 = tx.query_row("SELECT count(*) FROM actions WHERE status IN ('queued','preparing','claimed','sending','unknown') AND (json_extract(payload,'$.type')='prepareMedia' OR json_extract(payload,'$.attachment') IS NOT NULL)", [], |row|row.get(0))?;
+                if count >= media::MAX_MEDIA_JOBS {
+                    responses = vec![(
+                        "素材取得・生成が混み合っています。少し待って再度お試しください。".into(),
+                        now,
+                        None,
+                    )];
+                    tx.execute("DELETE FROM sessions WHERE id=?1", [event_id])?;
+                }
+            }
             let responses = commands::split_responses(responses)?;
-            for (index, (body, due, image_url)) in responses.into_iter().enumerate() {
+            for (index, (body, due, media)) in responses.into_iter().enumerate() {
                 let id = format!("{event_id}:{index}");
                 let is_prompt: bool = tx.query_row(
                     "SELECT EXISTS(SELECT 1 FROM sessions WHERE action=?1)",
                     [&id],
                     |row| row.get(0),
                 )?;
-                let action = CoreAction::SendMessage {
-                    action_id: id.clone(),
-                    event_id: event_id.clone(),
-                    chat_id: chat_id.clone(),
-                    related_message_id: message_id.clone(),
-                    text: body,
-                    image_url,
-                    replace_message_id: if index == 0 {
-                        replacement.clone()
-                    } else {
-                        None
-                    },
-                    is_prompt,
-                    created_at_ms: now,
+                let replace_message_id = if index == 0 {
+                    replacement.clone()
+                } else {
+                    None
+                };
+                let action = if let Some(request) = media {
+                    CoreAction::PrepareMedia {
+                        action_id: id.clone(),
+                        event_id: event_id.clone(),
+                        chat_id: chat_id.clone(),
+                        related_message_id: message_id.clone(),
+                        request: serde_json::to_string(&media::MediaJob {
+                            catalog_revision: self.search.revision.clone(),
+                            request,
+                        })?,
+                        replace_message_id,
+                        is_prompt,
+                        created_at_ms: now,
+                    }
+                } else {
+                    CoreAction::SendMessage {
+                        action_id: id.clone(),
+                        event_id: event_id.clone(),
+                        chat_id: chat_id.clone(),
+                        related_message_id: message_id.clone(),
+                        text: body,
+                        image_url: None,
+                        attachment: None,
+                        replace_message_id,
+                        is_prompt,
+                        created_at_ms: now,
+                    }
                 };
                 tx.execute(
                     "INSERT INTO actions (id,event_id,chat,payload,due,created,status)
@@ -275,7 +320,7 @@ impl Runtime {
         }
         let event_count: i64 = tx.query_row("SELECT count(*) FROM events", [], |row| row.get(0))?;
         let action_count: i64 = tx.query_row(
-            "SELECT count(*) FROM actions WHERE status IN ('queued','claimed','sending','unknown')",
+            "SELECT count(*) FROM actions WHERE status IN ('queued','preparing','claimed','sending','unknown')",
             [],
             |row| row.get(0),
         )?;
@@ -305,6 +350,7 @@ impl Runtime {
                 let db = self.database.lock().map_err(|_| "DatabaseLock")?;
                 let next: Option<(String, String, i64)> = db.query_row(
                     "SELECT a.id,a.payload,a.due FROM actions a WHERE a.status='queued'
+                    AND json_extract(a.payload,'$.type')<>'prepareMedia'
                     AND NOT EXISTS (SELECT 1 FROM actions b WHERE b.chat=a.chat AND b.status IN ('claimed','sending'))
                     ORDER BY a.due,a.rowid LIMIT 1", [],
                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).optional()?;
@@ -396,6 +442,11 @@ impl Runtime {
             .optional()?
             .ok_or("InvalidActionState")?;
         let completed: CoreAction = serde_json::from_str(&payload)?;
+        let row_id: i64 = tx.query_row(
+            "SELECT rowid FROM actions WHERE id=?1",
+            [&result.action_id],
+            |row| row.get(0),
+        )?;
         tx.execute(
             "UPDATE actions SET status=?2,code=?3,completed=?4,
             payload=CASE WHEN ?2 IN ('sent','failed') THEN '' ELSE payload END WHERE id=?1",
@@ -454,13 +505,14 @@ impl Runtime {
         } else if matches!(result.status, DeliveryStatus::Failed) {
             tx.execute("DELETE FROM sessions WHERE action=?1", [&result.action_id])?;
         }
-        tx.execute(
-            "DELETE FROM actions WHERE id IN
-            (SELECT id FROM actions WHERE status IN ('sent','failed')
-            ORDER BY completed DESC,rowid DESC LIMIT -1 OFFSET ?1)",
-            [MAX_COMPLETED_ACTIONS],
-        )?;
+        trim_completed(&tx)?;
         tx.commit()?;
+        if matches!(result.status, DeliveryStatus::Sent | DeliveryStatus::Failed) {
+            let directory = self.media_root.join(format!("job-{row_id}"));
+            if directory.is_dir() {
+                let _ = std::fs::remove_dir_all(directory);
+            }
+        }
         self.wake.notify_waiters();
         Ok(())
     }
@@ -488,11 +540,13 @@ impl Runtime {
                 [now_ms()],
                 |row| row.get(0),
             )?,
+            preparing_media: count("preparing")?,
         })
     }
 
     pub fn shutdown(&self) {
         self.stopped.store(true, Ordering::Release);
+        self.cancel.cancel();
         self.wake.notify_waiters();
     }
 
@@ -513,7 +567,7 @@ impl Runtime {
             return Err("NotImageAction".into());
         };
         let url = image_url.as_deref().ok_or("NotImageAction")?;
-        match self.images.download(url).await {
+        match self.assets.download(reqwest::Url::parse(url)?).await {
             Ok(bytes) => Ok(Some(bytes)),
             Err(_) => {
                 // 取得失敗はLINEへ何も送っていない。元URLを示す通常返信へ切り替える。
@@ -528,6 +582,11 @@ impl Runtime {
             }
         }
     }
+}
+
+fn trim_completed(db: &Connection) -> Result<()> {
+    db.execute("DELETE FROM actions WHERE id IN (SELECT id FROM actions WHERE status IN ('sent','failed') ORDER BY completed DESC,rowid DESC LIMIT -1 OFFSET ?1)", [MAX_COMPLETED_ACTIONS])?;
+    Ok(())
 }
 
 fn enqueue_cleanup(
@@ -552,7 +611,7 @@ fn enqueue_cleanup(
     )?;
     if !exists {
         let retained: i64 = tx.query_row(
-            "SELECT count(*) FROM actions WHERE status IN ('queued','claimed','sending','unknown')",
+            "SELECT count(*) FROM actions WHERE status IN ('queued','preparing','claimed','sending','unknown')",
             [],
             |row| row.get(0),
         )?;

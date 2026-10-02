@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -17,6 +17,9 @@ pub struct CoreConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub search_data_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub ffmpeg_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, TS)]
@@ -71,6 +74,9 @@ pub enum CoreAction {
         image_url: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
+        attachment: Option<Attachment>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         replace_message_id: Option<String>,
         #[serde(default)]
         is_prompt: bool,
@@ -85,6 +91,30 @@ pub enum CoreAction {
         #[ts(type = "number")]
         created_at_ms: i64,
     },
+    PrepareMedia {
+        action_id: String,
+        event_id: String,
+        chat_id: String,
+        related_message_id: String,
+        request: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        replace_message_id: Option<String>,
+        is_prompt: bool,
+        #[ts(type = "number")]
+        created_at_ms: i64,
+    },
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct Attachment {
+    pub file_name: String,
+    pub content_type: String,
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub duration_ms: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, Serialize, TS)]
@@ -126,4 +156,5 @@ pub struct CoreStats {
     pub failed_actions: u32,
     pub completed_actions: u32,
     pub active_sessions: u32,
+    pub preparing_media: u32,
 }

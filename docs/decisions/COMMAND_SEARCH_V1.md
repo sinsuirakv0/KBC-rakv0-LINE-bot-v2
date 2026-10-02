@@ -1,13 +1,13 @@
-﻿# 最初の検索移植と番号リプライ
+﻿# Discord検索仕様とLINEの番号対話・Media Worker
 
-2026-10-02。状態: 採用・実装済み。実LINE確認は未完了。
+2026-10-03。状態: 採用・実装済み。実素材の生成確認済み、実LINE確認は未完了。
 
-Discordのtxtからの応答・案内登録、旧LINEのut/tut/stの検索条件とリンク・origin画像を引き継ぐ。LINEではプレーンテキストと候補への番号リプライを使う。8候補と次9・前0で番号を衝突させず、本人・トーク・最新promptへ限定する。旧LINEのページ番号だけを送る操作から、候補の詳細も選べる操作へ変更する。originの複数一致を勝手に先頭へ決めない。
+ut/tut/stの仕様・資料・形態画像・file・motionをDiscord v2から引き継ぐ。LINEでは8候補と次9/前0、本人・トーク・最新promptへの番号リプライを使う。通常1〜3件のURLは1返信へまとめ、コードブロック・Reaction・編集の代替を共通Sessionへ集約する。
 
-1〜3件のURLは一つの返信にまとめ、検索時の複数投稿を減らす。同梱snapshotの不変索引は約9千件で、最新データの再取り込み・配備が必要になる代わりに、検索時の外部通信と常時更新を避ける。データ変更で古い行番号を選ばないよう、snapshot指紋が変わったSessionを失効する。
+同梱snapshotから名称・IDを検索する。Discordと同じ正式データ・別称・分類range・共有形態を検証し、素材も同じassets commitへ固定する。検索時の外部通信と常時更新を避ける代わりに、名称・素材を更新するにはsnapshot再生成と再配備が必要。Discordの10分ごとの名前資料再検証は今回導入しない。snapshotが変わったSessionは失効する。
 
-検索はSQLite lockの外、受付・保存はNativeの有限blocking workerへ移す。PUSHと同じcursorの直列契約・commit後のcheckpointは維持する。4受付・実処理1件とし、既存取得側の最大3系統を収める。HTTPを伴わない検索は受付でAction化し、今回別の永続Command Queueは作らない。さらに重い移植や長い外部HTTPでは永続Inbox / Jobの導入を再検討する。
+CPU描画・外部素材取得は通常配送から分け、既存SQLite OutboxへPrepareMediaとして永続化する。生成1件・未解決Media8件・期限10分、共有HTTP2枠・有限cache。受付/checkpointは生成結果を待たず同時commitする。内部ジョブを配送側へ渡さず、完成時に同じAction IDを通常Outboxへ変換する。この構成で生成中の同じトークでも軽いCommandの返信が進む。進捗ごとのLINE投稿を省き、受付・完成に絞る。
 
-候補の状態をSQLiteへ保持し、実送信結果のmessage IDへ結び付ける。10分・128 Sessionの上限を持つ。利用者の指定どおり、編集の代替は新しい返信の成功後に古いBot候補を管理者APIで削除する。候補の10分後の削除にも既存Actionの期限管理を使い、入れ替えでは同じ削除を前倒しする。削除失敗で新しい番号受付を失わず、候補以外のメッセージは削除しない。画像は共通Rust Clientで取得し、LINEJSの送信・OBS uploadは共通API枠を通す。取得失敗なら元URLを示し、LINE通信開始後の不明結果は自動再送しない。
+候補の擬似編集は新しい返信成功後の管理者削除。10分後の清掃と操作時の前倒しを同じ削除Actionへまとめる。LINEJS 3.4.2のOCメディア送信はOBS reqseq uploadが直接投稿する経路を使う。SDKのHTTP status不足を共通transportで検査し、通信開始後の結果不明を自動再送しない。
 
-仕様・関数・上限・実測は [Command実装](../../crates/kbc-core/src/commands/docs/COMMANDS.md)。
+[Command仕様・関数](../../crates/kbc-core/src/commands/docs/COMMANDS.md)、[Worker](../../crates/kbc-core/docs/MEDIA.md)、[実素材実験](../../experiments/commands/docs/MEDIA_VERIFICATION.md)。

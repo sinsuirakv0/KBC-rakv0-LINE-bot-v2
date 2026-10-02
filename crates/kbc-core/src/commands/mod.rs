@@ -9,9 +9,9 @@ pub fn split_responses(
     responses: Vec<sessions::Response>,
 ) -> crate::Result<Vec<sessions::Response>> {
     let mut result = Vec::new();
-    for (body, due, image) in responses {
-        if image.is_some() {
-            result.push((body, due, image));
+    for (body, due, media) in responses {
+        if media.is_some() {
+            result.push((body, due, media));
             continue;
         }
         let mut remaining = body.as_str();
@@ -98,7 +98,17 @@ pub fn prepare(
                 now,
             )]);
         }
-        return CommandPlan::Search(search.search(name, &args));
+        return search
+            .search(name, &args)
+            .map(CommandPlan::Search)
+            .unwrap_or_else(|| {
+                CommandPlan::Text(vec![(
+                    content
+                        .command_help(name)
+                        .unwrap_or("引数を確認してください。".into()),
+                    now,
+                )])
+            });
     }
     if name == "test-notify" {
         return CommandPlan::Text(match args.first().and_then(|arg| arg.parse::<i64>().ok()) {

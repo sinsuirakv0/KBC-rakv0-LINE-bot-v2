@@ -15,6 +15,8 @@ export interface NativeCore {
   submitBatch(batch: ReceivedBatch): BatchReceipt;
   submitBatchAsync(batch: ReceivedBatch): Promise<BatchReceipt>;
   prepareImage(actionId: string): Promise<Buffer | null>;
+  runMediaJobs(): Promise<void>;
+  prepareAttachment(actionId: string): Promise<Buffer | null>;
   nextAction(): Promise<CoreAction | null>;
   markSending(actionId: string): void;
   retryAction(actionId: string, delayMs: number): void;
@@ -34,6 +36,8 @@ export function createCore(config: CoreConfig): NativeCore {
     submitBatch: batch => handle.submitBatch(JSON.stringify(batch)),
     submitBatchAsync: batch => handle.submitBatchAsync(JSON.stringify(batch)),
     prepareImage: actionId => handle.prepareImage(actionId),
+    runMediaJobs: () => handle.runMediaJobs(),
+    prepareAttachment: actionId => handle.prepareAttachment(actionId),
     nextAction: () => handle.nextAction(),
     markSending: actionId => handle.markSending(actionId),
     retryAction: (actionId, delayMs) => handle.retryAction(actionId, delayMs),
