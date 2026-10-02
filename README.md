@@ -42,10 +42,11 @@ npm run smoke
 - [文書の設計原則](docs/engineering/DOCUMENTATION.md): 仕様・実装・設計判断・関数の関係を記録し、コードと一緒に更新する運用。
 - [コマンド移植前のレビュー依頼](docs/engineering/FOUNDATION_REVIEW.md): 現在地、基盤コードの確認箇所、未実装、別のGPTへ渡す依頼文。
 - [GPTレビューと照合結果](docs/research/FOUNDATION_REVIEW_RESULT.md): Chromeで完了したレビュー、先に修正する4点、容量再現、未確認事項と移植順序。
+- [基盤の復旧契約と修正](docs/decisions/FOUNDATION_RECOVERY_V1.md): 送信開始境界、保存障害の停止、トーク別再試行、compact IDと容量の検証。
 - [受信・常時処理の調査と実験](docs/research/RECEIVER_AND_BACKGROUND_EXPERIMENTS.md): LINEJSの実装確認、実施したオフライン検証、次に必要な比較。
 - [PUSH受信で得られる情報](docs/research/PUSH_RECEPTION.md): 現在の定期取得との違い、参加・退出等のイベント一覧、全体通知とトーク別詳細、追加取得とAPI削減の条件。
 - [旧コンテナでの受信実験](experiments/linejs-receiver/docs/LIVE_CONTAINER_PROBE.md): 既存認証・直列取得・資源使用量を実測。連続入力では完全一致 `o.ping` 38件を取得し、全件照合・実返信は未評価。停止・切戻し済み。同時入力の手動試験は運用観測へ回す。
 
-[直近の着手順](docs/plans/LINE_CORE_V2.md#10-直近の着手順)のAは、最新SDK配布物での認証なし検証と既存コンテナでの短時間受信実測を実施。B/Cの最小経路として3 crate・型生成・Native・PUSH Adapter・ping・期限通知を実装し、同時ID・重複・保存rollback・再開・自律期限・SDK sign-onと継続PUSHをオフライン検証。ChromeのGPTレビューも完了し、送信状態・認証保存障害・トーク補完・保持容量に修正候補がある。先に修正と永続復元を行い、Dの少数OC実験へ進む。同時入力の手動試験は後続の運用観測へ回す。多OC・実API制限・実LINE返信の達成は未評価。
+[直近の着手順](docs/plans/LINE_CORE_V2.md#10-直近の着手順)のAは、最新SDK配布物での認証なし検証と既存コンテナでの短時間受信実測を実施。B/Cの最小経路として3 crate・型生成・Native・PUSH Adapter・ping・期限通知を実装し、同時ID・重複・保存rollback・再開・自律期限・SDK sign-onと継続PUSHをオフライン検証。ChromeのGPTレビューの主要4点も修正し、送信境界・保存障害・トーク別再試行・保持容量を検証済み。次は認証・Coreの永続復元とDの少数OC実験。同時入力の手動試験は後続の運用観測へ回す。多OC・実API制限・実LINE返信の達成は未評価。
 
 受信実験用には、試験OCへの有限な `pong` 返信と通知・トーク取得の比較経路を追加した。模擬検証と実コンテナの起動は確認済み。実LINEの試験入力との照合・返信確認は未完了。本BotのRust Command Runtimeとは区別する。

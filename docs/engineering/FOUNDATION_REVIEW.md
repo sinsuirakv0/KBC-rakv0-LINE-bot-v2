@@ -1,6 +1,6 @@
 ﻿# コマンド移植前の基盤レビュー
 
-作成日: 2026-10-02。状態: Chromeの通常GPTによるレビューとローカル照合が完了。指摘の修正は未実装。[結果と修正候補](../research/FOUNDATION_REVIEW_RESULT.md)を参照。
+作成日: 2026-10-02。状態: Chromeの通常GPTによるレビューとローカル照合が完了。主要4点の修正・オフライン検証済み。[レビュー対象版の結果](../research/FOUNDATION_REVIEW_RESULT.md)と[修正後の契約](../decisions/FOUNDATION_RECOVERY_V1.md)を参照。
 
 ## 依頼実行の記録
 

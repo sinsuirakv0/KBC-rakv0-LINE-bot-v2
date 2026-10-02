@@ -9,10 +9,13 @@ import { ApiScheduler, errorCode } from "./api.js";
 type AccountPage = Awaited<ReturnType<BaseClient["square"]["fetchMyEvents"]>>;
 type ChatPage = Awaited<ReturnType<BaseClient["square"]["fetchSquareChatEvents"]>>;
 type SquareEvent = AccountPage["events"][number];
-type Checkpoint = { syncToken?: string; continuationToken?: string; originMs: number; subscriptionId?: number; pendingChats?: string[] };
+type ChatRetry = { attempts: number; retryAtMs: number };
+type Checkpoint = { syncToken?: string; continuationToken?: string; originMs: number; subscriptionId?: number;
+  pendingChats?: string[]; chatRetries?: Record<string, ChatRetry> };
 
 export class Receiver {
-  readonly metrics = { sessions: 0, signOns: 0, pushHints: 0, leaseRenewals: 0, pages: 0, events: 0, accepted: 0, duplicates: 0, ignored: 0, maxLagMs: 0, types: {} as Record<string, number> };
+  readonly metrics = { sessions: 0, signOns: 0, pushHints: 0, leaseRenewals: 0, pages: 0, events: 0, accepted: 0, duplicates: 0, ignored: 0, maxLagMs: 0,
+    pendingChats: 0, chatFailures: 0, types: {} as Record<string, number> };
   status = "starting";
   private outgoingBytes = 0;
 
@@ -52,11 +55,20 @@ export class Receiver {
   }
 
   private readCheckpoint(stream: string, originMs: number): Checkpoint {
-    const stored = this.core.checkpoint(stream);
-    if (!stored) return { originMs };
-    const checkpoint = JSON.parse(stored) as Checkpoint;
-    if (!Number.isSafeInteger(checkpoint.originMs) || checkpoint.originMs <= 0) throw new Error("InvalidCheckpoint");
-    return checkpoint;
+    try {
+      const stored = this.core.checkpoint(stream);
+      if (!stored) return { originMs };
+      const checkpoint = JSON.parse(stored) as Checkpoint;
+      if (!Number.isSafeInteger(checkpoint.originMs) || checkpoint.originMs <= 0
+          || (checkpoint.subscriptionId !== undefined && (!Number.isSafeInteger(checkpoint.subscriptionId) || checkpoint.subscriptionId <= 0))
+          || (checkpoint.pendingChats && (!Array.isArray(checkpoint.pendingChats) || checkpoint.pendingChats.length > 256
+            || checkpoint.pendingChats.some(chat => typeof chat !== "string" || !chat || chat.length > 256)))
+          || (checkpoint.chatRetries && (Object.keys(checkpoint.chatRetries).length > 256
+            || Object.entries(checkpoint.chatRetries).some(([chat, retry]) => !checkpoint.pendingChats?.includes(chat) || !retry
+              || !Number.isSafeInteger(retry.attempts) || retry.attempts < 1 || retry.attempts > 10
+              || !Number.isSafeInteger(retry.retryAtMs) || retry.retryAtMs <= 0)))) throw new Error("InvalidCheckpoint");
+      return checkpoint;
+    } catch (error) { throw Object.assign(new Error(errorCode(error)), { name: "CoreStoreError" }); }
   }
 
   private accept(stream: string, checkpoint: Checkpoint, events: SquareEvent[]): void {
@@ -90,10 +102,10 @@ export class Receiver {
     this.metrics.pages++;
   }
 
-  private async drainChat(chat: string, originMs: number): Promise<void> {
+  private async drainChat(chat: string, originMs: number): Promise<boolean> {
     const stream = `chat:${chat}`;
     let checkpoint = this.readCheckpoint(stream, originMs);
-    for (let pages = 0; pages < 100; pages++) {
+    for (let pages = 0; pages < 4; pages++) {
       this.signal.throwIfAborted();
       // SDK公開wrapperで型に出ていないcontinuationTokenも生成済みThrift型を使って渡す。
       const response: ChatPage = await this.client.request.request(
@@ -102,26 +114,42 @@ export class Receiver {
           subscriptionId: checkpoint.subscriptionId, direction: "FORWARD", limit: 100, fetchType: "DEFAULT",
         } }), "fetchSquareChatEvents", this.client.square.protocolType, true, this.client.square.requestPath);
       if (typeof response.syncToken !== "string") throw new Error("InvalidChatCheckpoint");
+      const subscriptionId = Number(response.subscription.subscriptionId);
+      if (!Number.isSafeInteger(subscriptionId) || subscriptionId <= 0) throw new Error("InvalidSubscription");
       checkpoint = { originMs, syncToken: response.syncToken, continuationToken: response.continuationToken || undefined,
-        subscriptionId: Number(response.subscription.subscriptionId) };
+        subscriptionId };
       this.accept(stream, checkpoint, response.events);
-      if (!checkpoint.continuationToken) return;
+      if (!checkpoint.continuationToken) return true;
     }
-    throw new Error("ChatPageBudget");
+    // 大量の補完でも、保存したcontinuationを残して他トーク・新着取得へ譲る。
+    return false;
   }
 
   private async completePending(checkpoint: Checkpoint): Promise<Checkpoint> {
     const pending = [...(checkpoint.pendingChats ?? [])];
-    while (pending.length) {
-      const chats = pending.slice(0, 2);
-      // 失敗した組も全件終了まで待ち、再接続と旧取得を重ねない。
-      const results = await Promise.allSettled(chats.map(chat => this.drainChat(chat, checkpoint.originMs)));
-      const failed = results.find(result => result.status === "rejected");
-      if (failed?.status === "rejected") throw failed.reason;
-      pending.splice(0, chats.length);
-      checkpoint = { ...checkpoint, pendingChats: [...pending] };
-      this.accept("account", checkpoint, []);
+    const retries = { ...(checkpoint.chatRetries ?? {}) };
+    const chats = pending.filter(chat => (retries[chat]?.retryAtMs ?? 0) <= Date.now()).slice(0, 2);
+    if (!chats.length) return checkpoint;
+    // 一度に2トークだけ処理する。失敗したトークの位置は残し、他の受信を止めない。
+    const results = await Promise.allSettled(chats.map(chat => this.drainChat(chat, checkpoint.originMs)));
+    this.signal.throwIfAborted();
+    for (const [index, result] of results.entries()) {
+      const chat = chats[index];
+      if (result.status === "fulfilled") {
+        pending.splice(pending.indexOf(chat), 1);
+        delete retries[chat];
+        if (!result.value) pending.push(chat);
+      } else {
+        if ((result.reason as Error)?.name === "CoreStoreError") throw result.reason;
+        const attempts = Math.min(10, (retries[chat]?.attempts ?? 0) + 1);
+        retries[chat] = { attempts, retryAtMs: Date.now() + Math.min(900000, 1000 * 2 ** attempts) };
+        this.metrics.chatFailures++;
+        console.log(JSON.stringify({ kind: "chat-catch-up-error", code: errorCode(result.reason), attempts }));
+      }
     }
+    checkpoint = { ...checkpoint, pendingChats: pending, chatRetries: retries };
+    this.accept("account", checkpoint, []);
+    this.metrics.pendingChats = pending.length;
     return checkpoint;
   }
 
@@ -134,7 +162,7 @@ export class Receiver {
     let closed = false;
     let wake: (() => void) | undefined;
     let lastFrameAt = Date.now();
-    let noopPending = false;
+    let noopTask: Promise<void> | undefined;
     let initialResolve!: (page: AccountPage) => void;
     let initialReject!: (error: unknown) => void;
     const initial = new Promise<AccountPage>((resolve, reject) => { initialResolve = resolve; initialReject = reject; });
@@ -164,12 +192,11 @@ export class Receiver {
     };
     push.onPingCallback = id => {
       lastFrameAt = Date.now();
-      if (id % 3 !== 0 || noopPending || this.signal.aborted) return;
-      noopPending = true;
-      void this.client.talk.noop().then(() => {
+      if (id % 3 !== 0 || noopTask || closed || this.signal.aborted) return;
+      noopTask = this.client.talk.noop().then(() => {
         if (push.authToken !== this.client.authToken) void push.conns[0]?.close();
       }).catch(error => console.log(JSON.stringify({ kind: "keepalive-error", code: errorCode(error) })))
-        .finally(() => { noopPending = false; });
+        .finally(() => { noopTask = undefined; });
     };
     await this.gate.pace();
     this.outgoingBytes = 0;
@@ -217,8 +244,11 @@ export class Receiver {
         const chats = [...new Set(page.events.filter(event => event.payload?.notificationMessage?.requiredToFetchChatEvents)
           .map(event => event.payload.notificationMessage.squareChatMid))];
         if (chats.length > 100 || chats.some(chat => typeof chat !== "string" || !chat)) throw new Error("InvalidChatHint");
-        checkpoint = { originMs: checkpoint.originMs, syncToken: page.syncToken,
-          continuationToken: page.continuationToken || undefined, pendingChats: chats };
+        const pendingChats = [...new Set([...(checkpoint.pendingChats ?? []), ...chats])];
+        if (pendingChats.length > 256) throw Object.assign(new Error("PendingChatCapacity"), { name: "CoreStoreError" });
+        checkpoint = { ...checkpoint, syncToken: page.syncToken,
+          continuationToken: page.continuationToken || undefined, pendingChats };
+        this.metrics.pendingChats = pendingChats.length;
         this.accept("account", checkpoint, page.events);
         this.client.poll.sync.square = checkpoint.syncToken;
         push.subscriptionId = Number(page.subscription.subscriptionId);
@@ -232,13 +262,16 @@ export class Receiver {
         } else {
           pages = 0;
           this.status = "receiving";
-          if (!dirty && !closed) {
+          while (!dirty && !closed && !this.signal.aborted && Date.now() < renewAt) {
+            checkpoint = await this.completePending(checkpoint);
+            if (dirty || closed || this.signal.aborted) break;
+            const retryAt = Math.min(renewAt, ...(checkpoint.pendingChats ?? []).map(chat => checkpoint.chatRetries?.[chat]?.retryAtMs ?? Date.now()));
             let timer: NodeJS.Timeout | undefined;
             try {
-              await new Promise<void>(resolve => { wake = resolve; timer = setTimeout(resolve, Math.max(0, renewAt - Date.now())); });
+              await new Promise<void>(resolve => { wake = resolve; timer = setTimeout(resolve, Math.max(0, retryAt - Date.now())); });
             } finally { if (timer) clearTimeout(timer); }
-            if (Date.now() >= renewAt) this.metrics.leaseRenewals++;
           }
+          if (Date.now() >= renewAt) this.metrics.leaseRenewals++;
           wake = undefined;
         }
         if (closed || this.signal.aborted) break;
@@ -252,6 +285,7 @@ export class Receiver {
       this.signal.removeEventListener("abort", close);
       close();
       await read?.catch(() => {});
+      await noopTask;
       await conn.resStream?.cancel().catch(() => {});
       push.conns = [];
     }

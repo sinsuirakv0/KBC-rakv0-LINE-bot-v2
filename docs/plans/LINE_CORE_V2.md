@@ -243,4 +243,4 @@ prefixは利用者の指定で `o.` に変更し、資料とProbe入力へ反映
 
 Chromeの通常GPTによるGitHubプラグイン付きレビューが完了。[レビューとローカル照合](../research/FOUNDATION_REVIEW_RESULT.md)で、送信前のActionまで結果不明になる経路、認証・reqseq保存失敗の伝達、1トークの補完失敗による全体停止、48時間保持と件数上限の4点を整理した。待機0件・送信済みAction 2,048件でも新規受付が容量超過になることを、通信なしの合成fixtureで再現した。
 
-構成は維持し、指摘の最小修正 → 認証・Core復元と少数OC確認 → 軽量Command移植を次の順序とする。指摘の修正は未実装。`help`等の旧仕様調査と静的表示の準備は先に進められる。SDKのPUSH subscription IDや同時refreshの影響は仮説・実LINE確認事項であり、静的レビューを実運用の達成へ読み替えない。
+構成は維持し、指摘の最小修正 → 認証・Core復元と少数OC確認 → 軽量Command移植を次の順序とする。主要4点は[修正・オフライン検証済み](../decisions/FOUNDATION_RECOVERY_V1.md)。`help`等の旧仕様調査と静的表示の準備は先に進められる。SDKのPUSH subscription IDや同時refreshの影響は仮説・実LINE確認事項であり、静的レビューを実運用の達成へ読み替えない。

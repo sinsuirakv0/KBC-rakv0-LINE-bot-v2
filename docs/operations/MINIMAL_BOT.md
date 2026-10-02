@@ -26,6 +26,10 @@ npm start
 
 `storage/auth.json`と`storage/core.sqlite`は同じ運用単位で保管し、公開Gitへ置かない。旧認証のreqseq・refresh情報を保持する。Coreファイルを別アカウントへ使うとOwnerMismatchで停止する。結果不明はSQLiteのactionsに残し、勝手に再投稿しない。
 
+Protocol v2のNativeとAdapterを同時に更新する。重複IDの保持上限は`CORE_MAX_RETAINED_EVENTS=131072`が既定で、8,192〜524,288へ設定できる。SQLiteの64MiB page上限は別に効く。毎分metricsのretainedEvents / maxRetainedEvents、queued / claimed / sending / unknown / completedActionsと、receiverのpendingChats / chatFailuresを観測する。
+
+保存障害は`AuthStorageError`で全体停止する。ディスク容量・書込先・権限を修復してから同じ保存ファイルで再起動し、未知の認証状態のまま継続させない。容量不足では新規Batchがrollbackされる。結果不明を削除して空きを作らず、実送信結果を照合できたものだけ、ローカルCoreの`resolveAction({ actionId, status: "sent" または "failed", code })`で明示的に解決する。公開healthにはID一覧を出さない。この操作用のチャットCommand / CLIはまだ実装していない。
+
 現在のNorthflankサービスは永続Volumeなし。SQLiteは同じファイルが残るプロセス再起動では復元できるが、コンテナ交換・再配備で失われる。予定通知・受付記録の永続性を本運用で主張する前に、永続ディスクまたは整合した退避・復元方式を確定する。旧Botの暗号化GitHubバックアップからの自動復元・新しいCoreの退避は今回未実装。Dockerfileだけで現行コンテナへ切り替えると認証ファイルを引き継げない。
 
 退避先は旧Botと同じ非公開GitHubストレージを使う方針。長期OCログは旧履歴を読み込まず、OC MID / トークMIDの階層で新規開始する。長期ログの新規開始を理由に認証・reqseq・RuntimeのcheckpointやActionを削除しない。現時点では長期ログの保存・同期も未実装。[新しいOCログの保存方針](../decisions/OC_LOG_STORAGE_V2.md)に切り替えと実装順を記録する。
@@ -37,4 +41,4 @@ npm start
 3. 通常の`o.ping`返信と、次の入力なしの`o.test-notify 5`を確認する。
 4. 多OCとコマンド量は段階的に増やす。重なった入力の返信抜けを再現する手動試験は利用者の指定どおり運用観測へ回す。
 
-オフラインSmokeは一つのファイルで、異なるID、重複、Batch rollback、保存からの再開、結果不明、自律期限、アカウント所有者、API枠内のtoken更新、実SDKのThrift sign-on、継続中のPUSH集約、chatのページ補完を確認した。実LINEの全件配送・API制限回避・PUSH再接続の成功証明としては扱わない。
+オフラインSmokeは一つのファイルで、異なるID、重複、Batch rollback、claimed / sendingからの再開、結果不明、自律期限、アカウント所有者、API枠内のtoken更新、実SDKのreqseq保存障害と送信境界、完了・未解決容量、Thrift sign-on、継続中のPUSH集約、chat補完の部分障害と期限再試行を確認した。[修正の判断と容量Probe](../decisions/FOUNDATION_RECOVERY_V1.md)を参照。実LINEの全件配送・API制限回避・PUSH再接続の成功証明としては扱わない。

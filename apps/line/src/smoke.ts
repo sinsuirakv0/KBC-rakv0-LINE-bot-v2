@@ -153,20 +153,25 @@ try {
 
 // 実SDKのThrift初期応答を使い、継続中のPUSH通知・必要なチャット補完を再生する。
 type AccountPage = Awaited<ReturnType<BaseClient["square"]["fetchMyEvents"]>>;
-const replayCore = createCore({ databasePath: join(directory, "receiver.sqlite"), ownerId: "test-account" });
+const replayConfig = { databasePath: join(directory, "receiver.sqlite"), ownerId: "test-account" };
+let replayCore = createCore(replayConfig);
 const replayController = new AbortController();
 const client = new BaseClient({ device: "DESKTOPWIN" });
 const push = client.push;
 let finishRead!: () => void;
-const reading = new Promise<void>(resolve => { finishRead = resolve; });
+let reading: Promise<void>;
 const connection = {
   resStream: new ReadableStream(), cacheData: new Uint8Array(), notFinPayloads: {},
   onDataReceived: () => {}, writeByte: async () => {}, close: async () => { finishRead(); },
 } as unknown as Awaited<ReturnType<typeof push.initializeConn>>;
-push.initializeConn = async () => { push.signOnRequests[1] = [3]; return connection; };
+push.initializeConn = async () => {
+  reading = new Promise<void>(resolve => { finishRead = resolve; });
+  push.signOnRequests[1] = [3]; return connection;
+};
 push.InitAndRead = async () => {
   const data = client.thrift.writeThrift([[12, 0, LINEStruct.FetchMyEventsResponse({
-    subscription: { subscriptionId: 1, ttlMillis: 300000 }, events: [], syncToken: "baseline",
+    subscription: { subscriptionId: 1, ttlMillis: 300000 }, events: [],
+    syncToken: JSON.parse(replayCore.checkpoint("account") ?? "{}").syncToken ?? "baseline",
   })]], "fetchMyEvents", TCompactProtocol);
   push.onSignOnResponse(1, true, data);
   return reading;
@@ -186,13 +191,24 @@ client.square.fetchMyEvents = async options => {
     await delay(10);
     const first = message("a");
     Object.assign(first.payload.notificationMessage, { requiredToFetchChatEvents: true });
-    return page([first, message("b")], "c1", "next-page");
+    return page([first, message("b"), { type: "NOTIFICATION_MESSAGE", payload: { notificationMessage: {
+      squareChatMid: "broken", requiredToFetchChatEvents: true,
+    } } }], "c1", "next-page");
   }
   if (accountCalls === 2) { assert.equal(options.continuationToken, "next-page"); return page([message("c")], "c2"); }
   return page([], "c3");
 };
 let chatCalls = 0;
-(client.request as unknown as { request: () => Promise<AccountPage> }).request = async () => {
+let brokenCalls = 0;
+let brokenRecovered = false;
+(client.request as unknown as { request: (...args: unknown[]) => Promise<AccountPage> }).request = async (...args) => {
+  if (JSON.stringify(args[0]).includes('"broken"')) {
+    brokenCalls++;
+    if (!brokenRecovered) throw new Error("ChatUnavailable");
+    const recovered = message("e");
+    recovered.payload.notificationMessage.squareMessage.message.to = "broken";
+    return page([recovered], "broken-c1");
+  }
   chatCalls++;
   return page([message(chatCalls === 1 ? "a" : "d")], `chat-${chatCalls}`, chatCalls === 1 ? "chat-next" : "");
 };
@@ -206,5 +222,24 @@ try {
   assert.equal(replayCore.stats().queuedActions, 4);
   assert.equal(receiver.metrics.duplicates, 1);
   assert.equal(chatCalls, 2);
+  assert.equal(brokenCalls, 1);
+  assert.deepEqual(JSON.parse(replayCore.checkpoint("account")!).pendingChats, ["broken"]);
 } finally { replayController.abort(); await receiving; replayCore.shutdown(); }
-console.log(JSON.stringify({ smoke: "passed", network: false, cases: ["two-distinct-ids","dedup","batch-rollback","claimed-restart","sending-restart","explicit-unknown-resolution","autonomous-notification","owner-check","bounded-api-refresh","completed-capacity","unresolved-capacity-rollback","pre-send-storage-failure","post-send-unknown","push-sign-on","continuation-dirty-hint","chat-catch-up"] }));
+
+// 未完了トークと待機期限を再起動で引き継ぎ、入力なしの期限再試行で復旧する。
+replayCore = createCore(replayConfig);
+const resumedController = new AbortController();
+const resumed = new Receiver(client, replayCore, new ApiScheduler(resumedController.signal, 2, 1), resumedController.signal);
+const resuming = resumed.run();
+try {
+  const deadline = Date.now() + 4000;
+  while (resumed.status !== "receiving") { assert(Date.now() < deadline); await delay(5); }
+  assert.equal(brokenCalls, 1);
+  const beforeRetry = accountCalls;
+  brokenRecovered = true;
+  while (replayCore.stats().queuedActions < 5) { assert(Date.now() < deadline); await delay(5); }
+  assert.equal(brokenCalls, 2);
+  assert.equal(accountCalls, beforeRetry);
+  assert.deepEqual(JSON.parse(replayCore.checkpoint("account")!).pendingChats, []);
+} finally { resumedController.abort(); await resuming; replayCore.shutdown(); }
+console.log(JSON.stringify({ smoke: "passed", network: false, cases: ["two-distinct-ids", "dedup", "batch-rollback", "claimed-restart", "sending-restart", "explicit-unknown-resolution", "autonomous-notification", "owner-check", "bounded-api-refresh", "completed-capacity", "unresolved-capacity-rollback", "pre-send-storage-failure", "post-send-unknown", "push-sign-on", "continuation-dirty-hint", "chat-failure-isolation", "durable-chat-retry"] }));
