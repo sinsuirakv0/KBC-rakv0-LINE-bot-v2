@@ -1,0 +1,152 @@
+use reqwest::{Client, Url, redirect::Policy};
+use std::{
+    collections::HashMap,
+    fmt,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
+use tokio::sync::Semaphore;
+
+pub const MAX_ASSET_BYTES: usize = 4 * 1024 * 1024;
+
+#[derive(Clone)]
+pub struct AssetService {
+    base: String,
+    client: Client,
+    permits: Arc<Semaphore>,
+    existence: Arc<Mutex<HashMap<String, (bool, Instant)>>>,
+}
+
+#[derive(Debug)]
+pub struct AssetError(String);
+impl AssetError {
+    pub fn new(label: &str, detail: impl fmt::Display) -> Self {
+        Self(format!("{label}: {detail}"))
+    }
+}
+impl fmt::Display for AssetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+impl std::error::Error for AssetError {}
+
+impl AssetService {
+    pub fn new(commit: &str) -> crate::Result<Self> {
+        if commit.len() != 40 || !commit.bytes().all(|c| c.is_ascii_hexdigit()) {
+            return Err("InvalidAssetCommit".into());
+        }
+        Ok(Self {
+            base: format!(
+                "https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-assets/{commit}/jp/sitedata"
+            ),
+            client: Client::builder()
+                .timeout(Duration::from_secs(15))
+                .redirect(Policy::none())
+                .build()?,
+            permits: Arc::new(Semaphore::new(2)),
+            existence: Arc::new(Mutex::new(HashMap::new())),
+        })
+    }
+    fn url(&self, path: &str) -> Result<Url, AssetError> {
+        if path.starts_with('/')
+            || path.contains(['\\', '?', '#', '%'])
+            || path.split('/').any(|part| {
+                part.is_empty()
+                    || matches!(part, "." | "..")
+                    || !part
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+            })
+        {
+            return Err(AssetError::new("asset", "invalid path"));
+        }
+        Url::parse(&format!("{}/{path}", self.base)).map_err(|e| AssetError::new("asset", e))
+    }
+    pub async fn exists(&self, path: &str) -> Result<bool, AssetError> {
+        let url = self.url(path)?;
+        if let Some((exists, at)) = self
+            .existence
+            .lock()
+            .map_err(|_| AssetError::new("cache", "poisoned"))?
+            .get(path)
+            .copied()
+            && at.elapsed() < Duration::from_secs(600)
+        {
+            return Ok(exists);
+        }
+        let _permit = self
+            .permits
+            .acquire()
+            .await
+            .map_err(|e| AssetError::new("permit", e))?;
+        let response = self
+            .client
+            .head(url)
+            .send()
+            .await
+            .map_err(|e| AssetError::new("HEAD", e))?;
+        let exists = response.status() != reqwest::StatusCode::NOT_FOUND;
+        if exists {
+            response
+                .error_for_status()
+                .map_err(|e| AssetError::new("HEAD", e))?;
+        }
+        let mut cache = self
+            .existence
+            .lock()
+            .map_err(|_| AssetError::new("cache", "poisoned"))?;
+        if cache.len() >= 512
+            && !cache.contains_key(path)
+            && let Some(old) = cache
+                .iter()
+                .min_by_key(|(_, (_, at))| *at)
+                .map(|(key, _)| key.clone())
+        {
+            cache.remove(&old);
+        }
+        cache.insert(path.into(), (exists, Instant::now()));
+        Ok(exists)
+    }
+    pub async fn bytes(&self, path: &str) -> Result<Vec<u8>, AssetError> {
+        self.download(self.url(path)?).await
+    }
+    pub async fn download(&self, url: Url) -> Result<Vec<u8>, AssetError> {
+        if url.scheme() != "https"
+            || url.host_str() != Some("raw.githubusercontent.com")
+            || !url.as_str().starts_with(&format!("{}/", self.base))
+        {
+            return Err(AssetError::new("asset", "invalid host/path"));
+        }
+        let _permit = self
+            .permits
+            .acquire()
+            .await
+            .map_err(|e| AssetError::new("permit", e))?;
+        let mut response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .and_then(reqwest::Response::error_for_status)
+            .map_err(|e| AssetError::new("GET", e))?;
+        if response
+            .content_length()
+            .is_some_and(|n| n > MAX_ASSET_BYTES as u64)
+        {
+            return Err(AssetError::new("asset", "too large"));
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|e| AssetError::new("body", e))?
+        {
+            if bytes.len() + chunk.len() > MAX_ASSET_BYTES {
+                return Err(AssetError::new("asset", "too large"));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(bytes)
+    }
+}
