@@ -1,13 +1,16 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CoreConfig {
     pub database_path: String,
     pub owner_id: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub max_retained_events: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, Serialize, TS)]
@@ -84,8 +87,11 @@ pub struct BatchReceipt {
 #[serde(rename_all = "camelCase")]
 pub struct CoreStats {
     pub retained_events: u32,
+    pub max_retained_events: u32,
     pub queued_actions: u32,
+    pub claimed_actions: u32,
     pub sending_actions: u32,
     pub unknown_actions: u32,
     pub failed_actions: u32,
+    pub completed_actions: u32,
 }

@@ -45,6 +45,24 @@ impl NativeCore {
     }
 
     #[napi]
+    pub fn mark_sending(&self, action_id: String) -> Result<()> {
+        convert(self.runtime.mark_sending(&action_id))
+    }
+
+    #[napi]
+    pub fn retry_action(&self, action_id: String, delay_ms: u32) -> Result<()> {
+        convert(self.runtime.retry_action(&action_id, delay_ms))
+    }
+
+    #[napi]
+    pub fn resolve_action(&self, result: String) -> Result<()> {
+        convert(
+            self.runtime
+                .resolve_action(convert(serde_json::from_str(&result))?),
+        )
+    }
+
+    #[napi]
     pub fn stats(&self) -> Result<Value> {
         convert(serde_json::to_value(convert(self.runtime.stats())?))
     }

@@ -14,7 +14,10 @@ export interface NativeCore {
   checkpoint(stream: string): string | null;
   submitBatch(batch: ReceivedBatch): BatchReceipt;
   nextAction(): Promise<CoreAction | null>;
+  markSending(actionId: string): void;
+  retryAction(actionId: string, delayMs: number): void;
   completeAction(result: ActionResult): void;
+  resolveAction(result: ActionResult): void;
   stats(): CoreStats;
   shutdown(): void;
 }
@@ -28,7 +31,10 @@ export function createCore(config: CoreConfig): NativeCore {
     checkpoint: stream => handle.checkpoint(stream),
     submitBatch: batch => handle.submitBatch(JSON.stringify(batch)),
     nextAction: () => handle.nextAction(),
+    markSending: actionId => handle.markSending(actionId),
+    retryAction: (actionId, delayMs) => handle.retryAction(actionId, delayMs),
     completeAction: result => handle.completeAction(JSON.stringify(result)),
+    resolveAction: result => handle.resolveAction(JSON.stringify(result)),
     stats: () => handle.stats(),
     shutdown: () => handle.shutdown(),
   };

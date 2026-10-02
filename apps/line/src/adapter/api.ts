@@ -10,6 +10,7 @@ export function errorCode(error: unknown): string {
 }
 
 type Job = { execute: () => Promise<unknown>; resolve: (value: unknown) => void; reject: (error: unknown) => void };
+export type SendAttempt = { started: boolean; beforeSend: () => void };
 
 export class ApiScheduler {
   private queue: Job[] = [];
@@ -17,6 +18,8 @@ export class ApiScheduler {
   private nextStart = 0;
   private cooldownUntil = 0;
   private scope = new AsyncLocalStorage<boolean>();
+  private methodScope = new AsyncLocalStorage<string>();
+  private sendScope = new AsyncLocalStorage<SendAttempt>();
   readonly metrics = { requests: 0, errors: 0, rateLimits: 0, maxActive: 0, totalWaitMs: 0, totalApiMs: 0, methods: {} as Record<string, number> };
 
   constructor(private signal: AbortSignal, private concurrency = 2, private intervalMs = 250) {
@@ -37,7 +40,7 @@ export class ApiScheduler {
       if (key in this.metrics.methods || Object.keys(this.metrics.methods).length < 32) {
         this.metrics.methods[key] = (this.metrics.methods[key] ?? 0) + 1;
       }
-      try { return await operation(); }
+      try { return await this.methodScope.run(method, operation); }
       catch (error) {
         this.metrics.errors++;
         this.cooldownFor(error);
@@ -51,6 +54,17 @@ export class ApiScheduler {
       this.queue.push({ execute, resolve: value => resolve(value as T), reject });
       this.pump();
     });
+  }
+
+  withSendAttempt<T>(attempt: SendAttempt, operation: () => Promise<T>): Promise<T> {
+    return this.sendScope.run(attempt, operation);
+  }
+
+  beforeFetch(): void {
+    const attempt = this.sendScope.getStore();
+    if (this.methodScope.getStore() !== "sendMessage" || !attempt || attempt.started) return;
+    attempt.beforeSend();
+    attempt.started = true;
   }
 
   async pace(): Promise<void> {
@@ -107,6 +121,10 @@ export function installApiScheduler(client: BaseClient, gate: ApiScheduler, sign
   const transport = client as unknown as { fetch: typeof client.fetch; fetchPush: typeof client.fetchPush };
   transport.fetch = async (input, init) => {
     const request = new Request(input, init);
+    signal.throwIfAborted();
+    request.signal.throwIfAborted();
+    // reqseq保存・API待機・Thrift/LEGYの準備が終わった実transportの直前。
+    gate.beforeFetch();
     const response = await nativeFetch(new Request(request, { signal: AbortSignal.any([request.signal, signal]) }));
     return checkRateLimit(response, gate);
   };

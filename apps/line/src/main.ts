@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { AuthStorage } from "./adapter/storage.js";
 import { ApiScheduler, errorCode, installApiScheduler } from "./adapter/api.js";
 import { Receiver } from "./adapter/receiver.js";
+import { deliverAction } from "./adapter/delivery.js";
 import { createCore, type NativeCore } from "./protocol/native.js";
 
 function integerSetting(name: string, fallback: number, min: number, max: number): number {
@@ -16,27 +17,25 @@ async function main(): Promise<void> {
   if (process.env.LINE_OLD_BOT_STOPPED !== "1") throw new Error("StopOldBotBeforeStarting");
   const device = process.env.LINE_DEVICE ?? "DESKTOPWIN";
   if (!["DESKTOPWIN", "DESKTOPMAC", "ANDROID", "ANDROIDSECONDARY", "IOS", "IOSIPAD", "WATCHOS", "WEAROS"].includes(device)) throw new Error("InvalidDevice");
-  const storage = new AuthStorage(resolve(process.env.LINE_STORAGE_FILE ?? "storage/auth.json"));
+  const controller = new AbortController();
+  const storage = new AuthStorage(resolve(process.env.LINE_STORAGE_FILE ?? "storage/auth.json"), error => controller.abort(error));
   await storage.load();
   const token = await storage.get(".auth") ?? process.env.LINE_AUTH_TOKEN;
   if (typeof token !== "string" || !token) throw new Error("MissingStoredAuthToken");
-  const controller = new AbortController();
   const gate = new ApiScheduler(controller.signal, integerSetting("LINE_API_CONCURRENCY", 2, 1, 4),
     integerSetting("LINE_API_INTERVAL_MS", 250, 100, 5000));
   const client = new BaseClient({ device: device as Device, storage });
   client.config.timeout = 15000;
   installApiScheduler(client, gate, controller.signal);
-  let authTask = Promise.resolve();
   client.on("update:authtoken", token => {
     client.authToken = token;
-    authTask = authTask.then(() => storage.set(".auth", token));
-    void authTask.catch(() => controller.abort());
+    void storage.set(".auth", token).catch(() => {});
   });
   let core: NativeCore | undefined;
   let receiver: Receiver | undefined;
   let started = false;
   let shutdownTimer: NodeJS.Timeout | undefined;
-  const deliveries = { sent: 0, unknown: 0, failed: 0, maxQueueWaitMs: 0 };
+  const deliveries = { sent: 0, unknown: 0, queued: 0, maxQueueWaitMs: 0 };
   const stop = () => controller.abort();
   controller.signal.addEventListener("abort", () => {
     core?.shutdown();
@@ -66,23 +65,19 @@ async function main(): Promise<void> {
   const tasks: Promise<void>[] = [];
   try {
     await client.loginProcess.login({ authToken: token });
-    await authTask;
+    await storage.flush();
     if (!client.profile?.mid) throw new Error("MissingAccountOwner");
-    core = createCore({ databasePath: resolve(process.env.CORE_DATABASE_PATH ?? "storage/core.sqlite"), ownerId: client.profile.mid });
+    core = createCore({ databasePath: resolve(process.env.CORE_DATABASE_PATH ?? "storage/core.sqlite"), ownerId: client.profile.mid,
+      maxRetainedEvents: integerSetting("CORE_MAX_RETAINED_EVENTS", 131072, 8192, 524288) });
     receiver = new Receiver(client, core, gate, controller.signal);
     const activeCore = core;
     const deliver = async () => {
       while (!controller.signal.aborted) {
         const action = await activeCore.nextAction();
         if (!action) return;
-        let status: "sent" | "unknown" = "sent";
-        let code = "OK";
         const queuedMs = Date.now() - action.createdAtMs;
         deliveries.maxQueueWaitMs = Math.max(deliveries.maxQueueWaitMs, queuedMs);
-        try {
-          await client.square.sendMessage({ squareChatMid: action.chatId, relatedMessageId: action.relatedMessageId, text: action.text });
-        } catch (error) { status = "unknown"; code = errorCode(error); }
-        activeCore.completeAction({ actionId: action.actionId, status, code });
+        const { status, code } = await deliverAction(client, activeCore, gate, action);
         deliveries[status]++;
         console.log(JSON.stringify({ kind: "delivery", status, code, queueWaitMs: queuedMs }));
       }
@@ -94,13 +89,15 @@ async function main(): Promise<void> {
     stop();
     core?.shutdown();
     await Promise.allSettled(tasks);
-    await authTask;
-    clearInterval(metricsTimer);
-    server.closeAllConnections();
-    await new Promise<void>(resolve => server.close(() => resolve()));
-    if (shutdownTimer) clearTimeout(shutdownTimer);
-    process.removeListener("SIGINT", stop);
-    process.removeListener("SIGTERM", stop);
+    try { await storage.flush(); }
+    finally {
+      clearInterval(metricsTimer);
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+      if (shutdownTimer) clearTimeout(shutdownTimer);
+      process.removeListener("SIGINT", stop);
+      process.removeListener("SIGTERM", stop);
+    }
   }
 }
 
