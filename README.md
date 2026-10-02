@@ -40,6 +40,7 @@ npm run smoke
 - [PUSHと有限並列の決定](docs/decisions/PUSH_AND_BOUNDED_CONCURRENCY_V1.md): PUSHを基本に、同じcursorの取得は直列、独立したトークの取得・処理・配送は有限並列にする方針。
 - [旧版の調査・運用知見](docs/research/LEGACY_FINDINGS.md): 過去の対策、今回の障害報告、確認した実装と未確定の原因。
 - [文書の設計原則](docs/engineering/DOCUMENTATION.md): 仕様・実装・設計判断・関数の関係を記録し、コードと一緒に更新する運用。
+- [コマンド移植前のレビュー依頼](docs/engineering/FOUNDATION_REVIEW.md): 現在地、基盤コードの確認箇所、未実装、別のGPTへ渡す依頼文。
 - [受信・常時処理の調査と実験](docs/research/RECEIVER_AND_BACKGROUND_EXPERIMENTS.md): LINEJSの実装確認、実施したオフライン検証、次に必要な比較。
 - [PUSH受信で得られる情報](docs/research/PUSH_RECEPTION.md): 現在の定期取得との違い、参加・退出等のイベント一覧、全体通知とトーク別詳細、追加取得とAPI削減の条件。
 - [旧コンテナでの受信実験](experiments/linejs-receiver/docs/LIVE_CONTAINER_PROBE.md): 既存認証・直列取得・資源使用量を実測。連続入力では完全一致 `o.ping` 38件を取得し、全件照合・実返信は未評価。停止・切戻し済み。同時入力の手動試験は運用観測へ回す。
