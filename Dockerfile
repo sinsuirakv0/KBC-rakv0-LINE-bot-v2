@@ -18,6 +18,8 @@ WORKDIR /app
 COPY --from=adapter /build/node_modules ./node_modules
 COPY --from=adapter /build/dist ./dist
 COPY package.json ./
+COPY content ./content
+COPY data/search ./data/search
 COPY --from=core /build/target/release/libkbc_node.so ./native/kbc_node.node
 RUN mkdir storage && chown -R node:node /app
 USER node

@@ -56,12 +56,12 @@ try {
   core.markSending(reclaimed.actionId);
   core.completeAction({ actionId: reclaimed.actionId, status: "sent", code: "OK" });
   const acknowledgment = await core.nextAction();
-  assert(acknowledgment && acknowledgment.text.includes("1秒後"));
+  assert(acknowledgment?.type === "sendMessage" && acknowledgment.text.includes("1秒後"));
   core.markSending(acknowledgment.actionId);
   core.completeAction({ actionId: acknowledgment.actionId, status: "sent", code: "OK" });
   // 以後一切入力しない。Coreの期限だけで通知が進む。
   const notification = await Promise.race([core.nextAction(), delay(3000).then(() => { throw new Error("NotificationStalled"); })]);
-  assert(notification && notification.text.includes("次の入力"));
+  assert(notification?.type === "sendMessage" && notification.text.includes("次の入力"));
   core.markSending(notification.actionId);
   core.completeAction({ actionId: notification.actionId, status: "sent", code: "OK" });
   core.resolveAction({ actionId: second.actionId, status: "failed", code: "OperatorConfirmed" });
@@ -218,7 +218,8 @@ try {
   const deadline = Date.now() + 3000;
   while (receiver.status !== "receiving") { assert(Date.now() < deadline); await delay(5); }
   hint();
-  while (accountCalls < 3 || replayCore.stats().queuedActions < 4) { assert(Date.now() < deadline); await delay(5); }
+  while (accountCalls < 3 || replayCore.stats().queuedActions < 4
+      || JSON.parse(replayCore.checkpoint("account")!).pendingChats?.join(",") !== "broken") { assert(Date.now() < deadline); await delay(5); }
   assert.equal(replayCore.stats().queuedActions, 4);
   assert.equal(receiver.metrics.duplicates, 1);
   assert.equal(chatCalls, 2);
@@ -237,7 +238,8 @@ try {
   assert.equal(brokenCalls, 1);
   const beforeRetry = accountCalls;
   brokenRecovered = true;
-  while (replayCore.stats().queuedActions < 5) { assert(Date.now() < deadline); await delay(5); }
+  while (replayCore.stats().queuedActions < 5
+      || JSON.parse(replayCore.checkpoint("account")!).pendingChats?.length !== 0) { assert(Date.now() < deadline); await delay(5); }
   assert.equal(brokenCalls, 2);
   assert.equal(accountCalls, beforeRetry);
   assert.deepEqual(JSON.parse(replayCore.checkpoint("account")!).pendingChats, []);

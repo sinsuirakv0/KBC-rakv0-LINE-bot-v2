@@ -71,7 +71,7 @@ export class Receiver {
     } catch (error) { throw Object.assign(new Error(errorCode(error)), { name: "CoreStoreError" }); }
   }
 
-  private accept(stream: string, checkpoint: Checkpoint, events: SquareEvent[]): void {
+  private async accept(stream: string, checkpoint: Checkpoint, events: SquareEvent[]): Promise<void> {
     if (!Array.isArray(events) || events.length > 100) throw new Error("InvalidPage");
     const normalized: CoreEvent[] = [];
     for (const event of events) {
@@ -85,12 +85,15 @@ export class Receiver {
           || !Number.isSafeInteger(created) || created <= 0) { this.metrics.ignored++; continue; }
       this.metrics.maxLagMs = Math.max(this.metrics.maxLagMs, Date.now() - created);
       normalized.push({ type: "messageReceived", eventId: `${message.to}:${message.id}`, chatId: message.to,
-        messageId: message.id, text: message.text, createdAtMs: created });
+        messageId: message.id, text: message.text, createdAtMs: created,
+        senderId: typeof message.from === "string" && message.from ? message.from : undefined,
+        replyToMessageId: ["REPLY", "3"].includes(String(message.messageRelationType)) && typeof message.relatedMessageId === "string" && message.relatedMessageId
+          ? message.relatedMessageId : undefined });
     }
     const batch: ReceivedBatch = { protocolVersion: PROTOCOL_VERSION, streamKey: stream,
       checkpoint: JSON.stringify(checkpoint), baselineBeforeMs: checkpoint.originMs, events: normalized };
     try {
-      const receipt = this.core.submitBatch(batch);
+      const receipt = await this.core.submitBatchAsync(batch);
       this.metrics.accepted += receipt.accepted;
       this.metrics.duplicates += receipt.duplicates;
       if (receipt.actionsCreated) console.log(JSON.stringify({ kind: "accepted", source: stream === "account" ? "notification" : "chat",
@@ -118,7 +121,7 @@ export class Receiver {
       if (!Number.isSafeInteger(subscriptionId) || subscriptionId <= 0) throw new Error("InvalidSubscription");
       checkpoint = { originMs, syncToken: response.syncToken, continuationToken: response.continuationToken || undefined,
         subscriptionId };
-      this.accept(stream, checkpoint, response.events);
+      await this.accept(stream, checkpoint, response.events);
       if (!checkpoint.continuationToken) return true;
     }
     // 大量の補完でも、保存したcontinuationを残して他トーク・新着取得へ譲る。
@@ -148,7 +151,7 @@ export class Receiver {
       }
     }
     checkpoint = { ...checkpoint, pendingChats: pending, chatRetries: retries };
-    this.accept("account", checkpoint, []);
+    await this.accept("account", checkpoint, []);
     this.metrics.pendingChats = pending.length;
     return checkpoint;
   }
@@ -249,7 +252,7 @@ export class Receiver {
         checkpoint = { ...checkpoint, syncToken: page.syncToken,
           continuationToken: page.continuationToken || undefined, pendingChats };
         this.metrics.pendingChats = pendingChats.length;
-        this.accept("account", checkpoint, page.events);
+        await this.accept("account", checkpoint, page.events);
         this.client.poll.sync.square = checkpoint.syncToken;
         push.subscriptionId = Number(page.subscription.subscriptionId);
         if (!Number.isSafeInteger(push.subscriptionId) || push.subscriptionId <= 0) throw new Error("InvalidSubscription");

@@ -11,6 +11,9 @@ use kbc_protocol::*;
 use rusqlite::{Connection, OptionalExtension, params};
 use tokio::sync::Notify;
 
+mod commands;
+mod images;
+
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 const DEFAULT_MAX_EVENTS: u32 = 131072;
@@ -24,6 +27,9 @@ pub struct Runtime {
     stopped: AtomicBool,
     next_cleanup_ms: AtomicI64,
     max_retained_events: u32,
+    content: commands::content::ContentCatalog,
+    search: commands::search::SearchCatalog,
+    images: images::ImageService,
 }
 
 fn now_ms() -> i64 {
@@ -42,6 +48,15 @@ impl Runtime {
         if !(8192..=524288).contains(&max_retained_events) {
             return Err("InvalidEventCapacity".into());
         }
+        let content = commands::content::ContentCatalog::load(Path::new(
+            config.content_directory.as_deref().unwrap_or("content"),
+        ))?;
+        let search = commands::search::SearchCatalog::load(Path::new(
+            config
+                .search_data_path
+                .as_deref()
+                .unwrap_or("data/search/catalog.json"),
+        ))?;
         if let Some(parent) = Path::new(&config.database_path).parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -60,7 +75,13 @@ impl Runtime {
             CREATE INDEX IF NOT EXISTS action_due ON actions(status, due);
             CREATE INDEX IF NOT EXISTS action_event ON actions(event_id,status);
             CREATE INDEX IF NOT EXISTS action_completed ON actions(completed)
-                WHERE status IN ('sent','failed');")?;
+                WHERE status IN ('sent','failed');
+            CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,chat TEXT NOT NULL,owner TEXT NOT NULL,
+                action TEXT NOT NULL UNIQUE,prompt TEXT,payload TEXT NOT NULL,
+                expires INTEGER NOT NULL,revision TEXT NOT NULL,UNIQUE(chat,owner));
+            CREATE INDEX IF NOT EXISTS session_expiry ON sessions(expires);
+            CREATE INDEX IF NOT EXISTS session_prompt ON sessions(chat,owner,prompt);")?;
         let owner: Option<String> = db
             .query_row("SELECT value FROM metadata WHERE key='owner'", [], |row| {
                 row.get(0)
@@ -82,11 +103,15 @@ impl Runtime {
             [],
         )?;
         db.execute("UPDATE actions SET status='unknown', code='RestartDuringSend', completed=?1 WHERE status='sending'", [now_ms()])?;
-        // この最小Runtimeでは全Commandを受付transaction内で処理済み。本文は長期ログではない。
+        // Commandは受付でActionへ変換済み。本文は長期ログではない。
         db.execute("UPDATE events SET payload='' WHERE payload<>''", [])?;
         db.execute(
             "UPDATE actions SET payload='' WHERE status IN ('sent','failed')",
             [],
+        )?;
+        db.execute(
+            "DELETE FROM sessions WHERE expires<=?1 OR revision<>?2",
+            params![now_ms(), search.revision],
         )?;
         Ok(Self {
             database: Mutex::new(db),
@@ -94,6 +119,9 @@ impl Runtime {
             stopped: AtomicBool::new(false),
             next_cleanup_ms: AtomicI64::new(0),
             max_retained_events,
+            content,
+            search,
+            images: images::ImageService::new()?,
         })
     }
 
@@ -124,9 +152,50 @@ impl Runtime {
             return Err("BatchLimit".into());
         }
         let now = now_ms();
+        let mut bytes = 0;
+        let mut plans = Vec::with_capacity(batch.events.len());
+        // 検索は不変snapshotから作り、SQLiteのlockを持って走査しない。
+        for event in &batch.events {
+            bytes += serde_json::to_string(event)?.len();
+            if bytes > 256 * 1024 {
+                return Err("BatchByteLimit".into());
+            }
+            let CoreEvent::MessageReceived {
+                event_id,
+                chat_id,
+                message_id,
+                text,
+                sender_id,
+                reply_to_message_id,
+                created_at_ms,
+            } = event;
+            if [event_id, chat_id, message_id]
+                .iter()
+                .any(|id| id.is_empty() || id.len() > 256)
+                || sender_id
+                    .iter()
+                    .chain(reply_to_message_id.iter())
+                    .any(|id| id.is_empty() || id.len() > 256)
+                || text.len() > 32 * 1024
+                || *created_at_ms < 0
+            {
+                return Err("InvalidEvent".into());
+            }
+            plans.push(
+                if batch
+                    .baseline_before_ms
+                    .is_some_and(|before| *created_at_ms < before)
+                {
+                    commands::CommandPlan::Ignore
+                } else {
+                    commands::prepare(&self.content, &self.search, text, now)
+                },
+            );
+        }
         let mut db = self.database.lock().map_err(|_| "DatabaseLock")?;
         let tx = db.transaction()?;
         let cleanup_due = now >= self.next_cleanup_ms.load(Ordering::Relaxed);
+        tx.execute("DELETE FROM sessions WHERE expires<=?1", [now])?;
         if cleanup_due {
             // 未解決操作のIDは残す。頻繁な空checkpoint保存で全行を掃除しない。
             tx.execute("DELETE FROM events WHERE received < ?1 AND NOT EXISTS
@@ -141,28 +210,14 @@ impl Runtime {
             duplicates: 0,
             actions_created: 0,
         };
-        let mut bytes = 0;
-        for event in batch.events {
-            let payload = serde_json::to_string(&event)?;
-            bytes += payload.len();
-            if bytes > 256 * 1024 {
-                return Err("BatchByteLimit".into());
-            }
+        for (event, plan) in batch.events.into_iter().zip(plans) {
             let CoreEvent::MessageReceived {
                 event_id,
                 chat_id,
                 message_id,
-                text,
                 created_at_ms,
+                ..
             } = &event;
-            if [event_id, chat_id, message_id]
-                .iter()
-                .any(|id| id.is_empty() || id.len() > 256)
-                || text.len() > 32 * 1024
-                || *created_at_ms < 0
-            {
-                return Err("InvalidEvent".into());
-            }
             if tx.execute(
                 "INSERT OR IGNORE INTO events VALUES (?1,'',?2)",
                 params![event_id, now],
@@ -178,16 +233,29 @@ impl Runtime {
             {
                 continue;
             }
-            // この段階は小さな疎通Commandのみ。HTTP等をtransaction内で待たない。
-            let responses = command_responses(text, now);
-            for (index, (body, due)) in responses.into_iter().enumerate() {
+            let (responses, replacement) =
+                commands::sessions::apply(&tx, &event, plan, &self.search, now)?;
+            let responses = commands::split_responses(responses)?;
+            for (index, (body, due, image_url)) in responses.into_iter().enumerate() {
                 let id = format!("{event_id}:{index}");
+                let is_prompt: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sessions WHERE action=?1)",
+                    [&id],
+                    |row| row.get(0),
+                )?;
                 let action = CoreAction::SendMessage {
                     action_id: id.clone(),
                     event_id: event_id.clone(),
                     chat_id: chat_id.clone(),
                     related_message_id: message_id.clone(),
                     text: body,
+                    image_url,
+                    replace_message_id: if index == 0 {
+                        replacement.clone()
+                    } else {
+                        None
+                    },
+                    is_prompt,
                     created_at_ms: now,
                 };
                 tx.execute(
@@ -310,15 +378,81 @@ impl Runtime {
         if result.code.len() > 80 {
             return Err("InvalidResult".into());
         }
+        if result
+            .message_id
+            .as_ref()
+            .is_some_and(|id| id.is_empty() || id.len() > 256)
+        {
+            return Err("InvalidMessageId".into());
+        }
         let mut db = self.database.lock().map_err(|_| "DatabaseLock")?;
         let tx = db.transaction()?;
-        let count = tx.execute(
-            "UPDATE actions SET status=?2, code=?3, completed=?4,
-                payload=CASE WHEN ?2 IN ('sent','failed') THEN '' ELSE payload END WHERE id=?1 AND status=?5",
-            params![result.action_id, status, result.code, now_ms(), previous],
+        let payload: String = tx
+            .query_row(
+                "SELECT payload FROM actions WHERE id=?1 AND status=?2",
+                params![result.action_id, previous],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or("InvalidActionState")?;
+        let completed: CoreAction = serde_json::from_str(&payload)?;
+        tx.execute(
+            "UPDATE actions SET status=?2,code=?3,completed=?4,
+            payload=CASE WHEN ?2 IN ('sent','failed') THEN '' ELSE payload END WHERE id=?1",
+            params![result.action_id, status, result.code, now_ms()],
         )?;
-        if count != 1 {
-            return Err("InvalidActionState".into());
+        if matches!(result.status, DeliveryStatus::Sent) {
+            let waiting: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM sessions WHERE action=?1 AND expires>?2)",
+                params![result.action_id, now_ms()],
+                |row| row.get(0),
+            )?;
+            if waiting && result.message_id.is_none() {
+                return Err("MissingPromptMessageId".into());
+            }
+            tx.execute(
+                "UPDATE sessions SET prompt=?2,expires=?3 WHERE action=?1 AND expires>?4",
+                params![
+                    result.action_id,
+                    result.message_id,
+                    now_ms() + commands::search::SESSION_TTL_MS,
+                    now_ms()
+                ],
+            )?;
+            if let CoreAction::SendMessage {
+                event_id,
+                chat_id,
+                replace_message_id,
+                is_prompt,
+                ..
+            } = &completed
+            {
+                if let Some(old) = replace_message_id {
+                    enqueue_cleanup(&tx, event_id, chat_id, old, now_ms())?;
+                }
+                if *is_prompt && let Some(message_id) = &result.message_id {
+                    enqueue_cleanup(
+                        &tx,
+                        event_id,
+                        chat_id,
+                        message_id,
+                        now_ms() + commands::search::SESSION_TTL_MS,
+                    )?;
+                }
+            }
+            if let CoreAction::DeleteMessage {
+                chat_id,
+                message_id,
+                ..
+            } = &completed
+            {
+                tx.execute(
+                    "DELETE FROM sessions WHERE chat=?1 AND prompt=?2",
+                    params![chat_id, message_id],
+                )?;
+            }
+        } else if matches!(result.status, DeliveryStatus::Failed) {
+            tx.execute("DELETE FROM sessions WHERE action=?1", [&result.action_id])?;
         }
         tx.execute(
             "DELETE FROM actions WHERE id IN
@@ -349,6 +483,11 @@ impl Runtime {
             unknown_actions: count("unknown")?,
             failed_actions: count("failed")?,
             completed_actions: count("sent")? + count("failed")?,
+            active_sessions: db.query_row(
+                "SELECT count(*) FROM sessions WHERE expires>?1",
+                [now_ms()],
+                |row| row.get(0),
+            )?,
         })
     }
 
@@ -356,29 +495,73 @@ impl Runtime {
         self.stopped.store(true, Ordering::Release);
         self.wake.notify_waiters();
     }
-}
 
-fn command_responses(text: &str, now: i64) -> Vec<(String, i64)> {
-    match text {
-        "o.ping" => vec![("pong!".into(), now)],
-        "o.ping help" => vec![(
-            "o.ping\nbotが反応できる状態か確認します。pong! と返れば正常です。".into(),
-            now,
-        )],
-        _ => {
-            let Some(argument) = text.strip_prefix("o.test-notify ") else {
-                return Vec::new();
-            };
-            match argument.parse::<i64>() {
-                Ok(seconds @ 1..=60) => vec![
-                    (format!("{seconds}秒後に通知を送ります。"), now),
-                    (
-                        "通知の確認です。次の入力がなくても送信されます。".into(),
-                        now + seconds * 1000,
-                    ),
-                ],
-                _ => vec![("確認用: o.test-notify 1〜60（秒）".into(), now)],
+    pub async fn prepare_image(&self, action_id: &str) -> Result<Option<Vec<u8>>> {
+        let mut action: CoreAction = {
+            let db = self.database.lock().map_err(|_| "DatabaseLock")?;
+            let payload: String = db.query_row(
+                "SELECT payload FROM actions WHERE id=?1 AND status='claimed'",
+                [action_id],
+                |row| row.get(0),
+            )?;
+            serde_json::from_str(&payload)?
+        };
+        let CoreAction::SendMessage {
+            image_url, text, ..
+        } = &mut action
+        else {
+            return Err("NotImageAction".into());
+        };
+        let url = image_url.as_deref().ok_or("NotImageAction")?;
+        match self.images.download(url).await {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(_) => {
+                // 取得失敗はLINEへ何も送っていない。元URLを示す通常返信へ切り替える。
+                *text = format!("画像を取得できませんでした。こちらから確認してください。\n{url}");
+                *image_url = None;
+                let count = self.database.lock().map_err(|_| "DatabaseLock")?.execute("UPDATE actions SET payload=?2,status='queued',code='ImageUnavailable' WHERE id=?1 AND status='claimed'", params![action_id, serde_json::to_string(&action)?])?;
+                if count != 1 {
+                    return Err("ActionNotClaimed".into());
+                }
+                self.wake.notify_waiters();
+                Ok(None)
             }
         }
     }
+}
+
+fn enqueue_cleanup(
+    tx: &rusqlite::Transaction<'_>,
+    event_id: &str,
+    chat_id: &str,
+    message_id: &str,
+    due: i64,
+) -> Result<()> {
+    let id = format!("cleanup:{}", serde_json::to_string(&(chat_id, message_id))?);
+    let action = CoreAction::DeleteMessage {
+        action_id: id.clone(),
+        event_id: event_id.into(),
+        chat_id: chat_id.into(),
+        message_id: message_id.into(),
+        created_at_ms: now_ms(),
+    };
+    let exists: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM actions WHERE id=?1)",
+        [&id],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        let retained: i64 = tx.query_row(
+            "SELECT count(*) FROM actions WHERE status IN ('queued','claimed','sending','unknown')",
+            [],
+            |row| row.get(0),
+        )?;
+        if retained >= MAX_ACTIONS {
+            return Ok(());
+        }
+    }
+    // 同じpromptの期限清掃を前倒しする。重複した取消しAPIを増やさない。
+    tx.execute("INSERT INTO actions (id,event_id,chat,payload,due,created,status) VALUES (?1,?2,?3,?4,?5,?6,'queued')
+        ON CONFLICT(id) DO UPDATE SET due=MIN(actions.due,excluded.due) WHERE actions.status='queued'", params![id, event_id, chat_id, serde_json::to_string(&action)?, due, now_ms()])?;
+    Ok(())
 }

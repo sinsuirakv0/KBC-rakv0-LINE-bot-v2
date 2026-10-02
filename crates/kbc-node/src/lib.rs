@@ -1,7 +1,10 @@
-use kbc_core::Runtime;
+﻿use kbc_core::Runtime;
+use napi::bindgen_prelude::Buffer;
 use napi::{Error, Result};
 use napi_derive::napi;
 use serde_json::Value;
+use std::sync::Arc;
+use tokio::sync::Semaphore;
 
 fn convert<T>(result: std::result::Result<T, impl std::fmt::Display>) -> Result<T> {
     result.map_err(|error| Error::from_reason(error.to_string()))
@@ -9,7 +12,9 @@ fn convert<T>(result: std::result::Result<T, impl std::fmt::Display>) -> Result<
 
 #[napi]
 pub struct NativeCore {
-    runtime: Runtime,
+    runtime: Arc<Runtime>,
+    admission: Arc<Semaphore>,
+    worker: Arc<Semaphore>,
 }
 
 #[napi]
@@ -26,6 +31,27 @@ impl NativeCore {
                 .submit_batch(convert(serde_json::from_str(&batch))?),
         )?;
         convert(serde_json::to_value(receipt))
+    }
+
+    #[napi]
+    pub async fn submit_batch_async(&self, batch: String) -> Result<Value> {
+        // 最大4受付・実処理1件。検索・fsyncでNodeのPUSH処理を塞がない。
+        let admission = convert(Arc::clone(&self.admission).try_acquire_owned())?;
+        let worker = convert(Arc::clone(&self.worker).acquire_owned().await)?;
+        let runtime = Arc::clone(&self.runtime);
+        let receipt = convert(convert(
+            tokio::task::spawn_blocking(move || {
+                let _permits = (admission, worker);
+                runtime.submit_batch(serde_json::from_str(&batch)?)
+            })
+            .await,
+        )?)?;
+        convert(serde_json::to_value(receipt))
+    }
+
+    #[napi]
+    pub async fn prepare_image(&self, action_id: String) -> Result<Option<Buffer>> {
+        Ok(convert(self.runtime.prepare_image(&action_id).await)?.map(Buffer::from))
     }
 
     #[napi]
@@ -76,7 +102,11 @@ impl NativeCore {
 #[napi]
 pub fn create_core(config: String) -> Result<NativeCore> {
     Ok(NativeCore {
-        runtime: convert(Runtime::open(convert(serde_json::from_str(&config))?))?,
+        runtime: Arc::new(convert(Runtime::open(convert(serde_json::from_str(
+            &config,
+        ))?))?),
+        admission: Arc::new(Semaphore::new(4)),
+        worker: Arc::new(Semaphore::new(1)),
     })
 }
 

@@ -10,6 +10,7 @@
     "build": "npm run generate:protocol && npm run build:native && tsc",
     "check": "tsc --noEmit",
     "smoke": "node dist/smoke.js",
+    "smoke:commands": "node dist/smoke-commands.js",
     "start": "node --env-file-if-exists=.env dist/main.js"
   },
   "dependencies": {

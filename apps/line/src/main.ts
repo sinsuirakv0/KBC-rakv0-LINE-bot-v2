@@ -68,7 +68,9 @@ async function main(): Promise<void> {
     await storage.flush();
     if (!client.profile?.mid) throw new Error("MissingAccountOwner");
     core = createCore({ databasePath: resolve(process.env.CORE_DATABASE_PATH ?? "storage/core.sqlite"), ownerId: client.profile.mid,
-      maxRetainedEvents: integerSetting("CORE_MAX_RETAINED_EVENTS", 131072, 8192, 524288) });
+      maxRetainedEvents: integerSetting("CORE_MAX_RETAINED_EVENTS", 131072, 8192, 524288),
+      contentDirectory: resolve(process.env.CONTENT_DIRECTORY ?? "content"),
+      searchDataPath: resolve(process.env.SEARCH_DATA_PATH ?? "data/search/catalog.json") });
     receiver = new Receiver(client, core, gate, controller.signal);
     const activeCore = core;
     const deliver = async () => {
@@ -76,10 +78,10 @@ async function main(): Promise<void> {
         const action = await activeCore.nextAction();
         if (!action) return;
         const queuedMs = Date.now() - action.createdAtMs;
-        deliveries.maxQueueWaitMs = Math.max(deliveries.maxQueueWaitMs, queuedMs);
+        if (action.type === "sendMessage") deliveries.maxQueueWaitMs = Math.max(deliveries.maxQueueWaitMs, queuedMs);
         const { status, code } = await deliverAction(client, activeCore, gate, action);
         deliveries[status]++;
-        console.log(JSON.stringify({ kind: "delivery", status, code, queueWaitMs: queuedMs }));
+        console.log(JSON.stringify({ kind: "delivery", operation: action.type, status, code, queueWaitMs: queuedMs }));
       }
     };
     started = true;

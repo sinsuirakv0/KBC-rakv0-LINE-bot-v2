@@ -10,7 +10,7 @@ export function errorCode(error: unknown): string {
 }
 
 type Job = { execute: () => Promise<unknown>; resolve: (value: unknown) => void; reject: (error: unknown) => void };
-export type SendAttempt = { started: boolean; beforeSend: () => void };
+export type SendAttempt = { started: boolean; method?: "sendMessage" | "destroyMessage"; beforeSend: () => void };
 
 export class ApiScheduler {
   private queue: Job[] = [];
@@ -62,9 +62,17 @@ export class ApiScheduler {
 
   beforeFetch(): void {
     const attempt = this.sendScope.getStore();
-    if (this.methodScope.getStore() !== "sendMessage" || !attempt || attempt.started) return;
+    if (!attempt || this.methodScope.getStore() !== (attempt.method ?? "sendMessage") || attempt.started) return;
     attempt.beforeSend();
     attempt.started = true;
+  }
+
+  async checkUploadResponse(response: Response): Promise<void> {
+    // SDKのOBS uploadはHTTP statusを検査しないので、共通transportで補う。
+    if (this.methodScope.getStore() === "uploadImage" && !response.ok) {
+      await response.body?.cancel();
+      throw Object.assign(new Error(`Http${response.status}`), { code: String(response.status) });
+    }
   }
 
   async pace(): Promise<void> {
@@ -125,8 +133,11 @@ export function installApiScheduler(client: BaseClient, gate: ApiScheduler, sign
     request.signal.throwIfAborted();
     // reqseq保存・API待機・Thrift/LEGYの準備が終わった実transportの直前。
     gate.beforeFetch();
-    const response = await nativeFetch(new Request(request, { signal: AbortSignal.any([request.signal, signal]) }));
-    return checkRateLimit(response, gate);
+    const response = await checkRateLimit(await nativeFetch(new Request(request, {
+      signal: AbortSignal.any([request.signal, signal, AbortSignal.timeout(15000)]),
+    })), gate);
+    await gate.checkUploadResponse(response);
+    return response;
   };
   // Node標準のHTTP/2 transportは保持し、PUSH接続をRPC枠へ混ぜない。
   const nativePush = client.fetchPush;

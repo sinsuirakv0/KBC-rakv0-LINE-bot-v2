@@ -12,7 +12,7 @@
 | `installApiScheduler` | 3.4.2の`requestCore`を包み、通常・LEGY・SDK token更新を共通枠へ接続。RPC本文の処理完了まで枠を持つ |
 | `ApiScheduler.run / pace / pump` | 最大2実行・32待機のFIFOと開始間隔250ms。enqueue・完了・cooldown終了で自律的に起きる。初期値はLINEの許容制限値ではない |
 | `Receiver.session` | OCのservice 3だけをHTTP/2で購読。初期応答をSDK Thriftで読み、SDK既定Stream・先行cursor更新を使わない |
-| `accept` | SDK Eventをplain DTOへ変換。Coreのcommit後だけSDKの再接続用syncを進める |
+| `accept` | SDK Eventをplain DTOへ変換。sender・REPLYの返信先もDTOへ正規化し、非同期Nativeのcommit後だけSDKの再接続用syncを進める |
 | `completePending / drainChat` | 必要と示されたchatだけ最大2系統、1回4ページずつ補完。同じchatは直列。失敗をトーク別の期限付き再試行へ変え、位置を残す |
 | `deliverAction` / 配送loop | `nextAction`で`claimed`を取り出す。API枠・reqseq保存・通信準備後、`client.fetch`直前の`beforeFetch`で`markSending`する。通信前失敗は再待機、通信後の例外は`unknown`。次の受信入力を必要としない |
 
@@ -34,8 +34,12 @@ HTTP/2の初期接続とsign-on待ちは各15秒。PUSH入力の組立Bufferは1
 
 ## 今回の対応範囲と観測
 
-コマンドは通常OCメッセージの`o.ping`、`o.ping help`、確認用`o.test-notify 1〜60`。`ping`は旧Handlerの完全一致と`pong!`を引き継ぐ。個人・グループ、LINE thread固有メッセージ、権限・停止設定、旧通知機能、機能データ移植は未対応。
+コマンドはtxtの応答・help、ut/tut/stの検索・番号リプライ・origin画像、確認用test-notify。[Command実装](../../../crates/kbc-core/src/commands/docs/COMMANDS.md)を参照。ping本文は旧LINEのpong!、登録と引数解析はDiscordのcatalog方式。個人・グループ、LINE thread固有メッセージ、権限・停止設定、旧通知機能は未対応。
 
 未知・非テキストイベントは種別と件数を最大64種で観測する。ログには本文・トークID・message ID・認証値・SDKの生の例外を出さない。受信後の詳細はローカルSQLiteに残る。ログはstdoutの集計と配送結果のみ。毎分CPU（1core比）、RSS・heap、API・受信・配送・容量を出す。`/health`は受信ready時200、それ以外503。PUSH heartbeatだけで全メッセージの受信成功を保証しない。
 
 LINEJSの最新公開版は2026-10-02も3.4.2。npm配布物revision 11をlock。そこでreqseq初回並列の直列化を確認した。SDKが依存するThrift 0.20はnpm auditでhighが出たため、0.25.0へoverride。実SDKのCompact Protocol初期応答を模擬検証し、audit 0件を確認。通信先の実互換性は少数OCの実験で確認する。
+
+## Commandの追加境界
+
+Protocol v3。通常返信の実送信message IDをCoreへ渡し、候補の受付先へ結び付ける。DeleteMessageは管理者権限のsquare.destroyMessageへ渡し、共通transportの直前にsendingを記録する。Coreが返信成功を確定してから削除を配送するため、削除失敗で新promptを巻き戻さない。画像はCoreで取得し、SDKのIMAGE送信とOBS uploadを共通API枠へ通す。SDK uploadがHTTP statusを検査しないため共通transportで補う。通常fetchは15秒の取消上限を持つ。LINE通信後のupload例外もunknownで、画像placeholderを自動再投稿しない。
