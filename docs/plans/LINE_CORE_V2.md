@@ -1,7 +1,7 @@
 ﻿# KBC LINE Bot Rust Core V2 計画
 
 作成日: 2026-10-01、更新日: 2026-10-02（JST）
-状態: 最小PUSH Botの実装・オフライン検証済み。第一段階全体は未完了。詳細仕様・原因・性能基準は観測で確定する。
+状態: PUSH基盤とtxt / ut / tut / stの実装・オフライン検証済み。第一段階全体は未完了。詳細仕様・原因・性能基準は観測で確定する。
 
 ## 1. 第一段階の目的
 
@@ -244,3 +244,11 @@ prefixは利用者の指定で `o.` に変更し、資料とProbe入力へ反映
 Chromeの通常GPTによるGitHubプラグイン付きレビューが完了。[レビューとローカル照合](../research/FOUNDATION_REVIEW_RESULT.md)で、送信前のActionまで結果不明になる経路、認証・reqseq保存失敗の伝達、1トークの補完失敗による全体停止、48時間保持と件数上限の4点を整理した。待機0件・送信済みAction 2,048件でも新規受付が容量超過になることを、通信なしの合成fixtureで再現した。
 
 構成は維持し、指摘の最小修正 → 認証・Core復元と少数OC確認 → 軽量Command移植を次の順序とする。主要4点は[修正・オフライン検証済み](../decisions/FOUNDATION_RECOVERY_V1.md)。`help`等の旧仕様調査と静的表示の準備は先に進められる。SDKのPUSH subscription IDや同時refreshの影響は仮説・実LINE確認事項であり、静的レビューを実運用の達成へ読み替えない。
+
+## 13. 最初のコマンド移植
+
+利用者の指定により、Discordのtxt catalogとhelp、旧LINEのut / tut / stを先に移植した。Rustに同梱データ検索と有限な番号リプライSession、共有画像取得を置く。通常会話の数字を捕まえず、本人・トーク・最新promptへの返信で操作する。静的応答の追加はtxt追加と再起動だけで反映できる。
+
+Protocol v3、非同期Native受付、実送信ID、IMAGE / OBS結果の扱いを追加。利用者の追加指定に従い、編集の代替は新しい返信の成功後に管理者APIで古いBot候補を削除する。10分の期限清掃と操作時の前倒しを共通Actionへまとめ、削除失敗で新候補の受付を巻き戻さない。既存基盤Smokeと4経路のCommand Smoke、build・型・整形・Clippyをオフラインで確認した。[仕様・関数・上限・測定](../../crates/kbc-core/src/commands/docs/COMMANDS.md)と[判断](../decisions/COMMAND_SEARCH_V1.md)を参照。
+
+同梱データは旧データのsnapshotで、自動更新は未実装。実LINEへの配備、認証・Coreのコンテナ消失時の復元、実際の表示・番号リプライ・画像送信とAPI制限の観測は残る。同時入力の手動試験は指定どおり運用観測へ回す。

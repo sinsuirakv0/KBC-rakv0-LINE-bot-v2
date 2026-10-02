@@ -4,7 +4,7 @@
 
 Rust CoreとTypeScriptのLINEJS Adapterを使うLINE Bot。
 
-現在は最小Botの実装・オフライン検証まで完了。新Botの実LINE配備・PUSH返信は未確認。構成と設計原則はDiscord Bot v2、コマンドの仕様と運用知見は旧LINE Botを参照する。
+現在はPUSH基盤と最初のコマンド移植の実装・オフライン検証まで完了。新Botの実LINE配備・PUSH返信は未確認。構成と設計原則はDiscord Bot v2、コマンドの仕様と運用知見は旧LINE Botを参照する。
 
 LINEJSは最新公開版を採用する。2026-10-02に再確認して `3.4.2` の配布物をlock。受信・通信の改善と残る検証は[SDK調査](docs/research/RECEIVER_AND_BACKGROUND_EXPERIMENTS.md#8-最新公開版の改善と採用方針)に記録する。
 
@@ -14,7 +14,7 @@ LINEJSは最新公開版を採用する。2026-10-02に再確認して `3.4.2` �
 
 第一段階はOpenChat専用。参加OCの各トークは原則すべて利用可能とし、個人・グループは後の段階でOC内から許可設定できる形にする。
 
-コマンドprefixは `o.` 。現在実装済みは `o.ping` 、 `o.ping help` と確認用 `o.test-notify 5` 。旧版の `!` から変更する。
+コマンドprefixは `o.` 。`o.ping`・`o.help`はtxtから読み込み、`o.ut`・`o.tut`・`o.st`はID・名前検索、候補への番号リプライ、ut/tutのorigin画像に対応する。確認用 `o.test-notify 5` も使える。旧版の `!` から変更する。
 
 ## 最小Bot
 
@@ -24,6 +24,7 @@ OC PUSH → 取得ページの保存・ID重複排除 → RustのCommand → 共
 npm ci --ignore-scripts
 npm run build
 npm run smoke
+npm run smoke:commands
 ```
 
 認証の引継ぎ・起動・保存の制約は[最小Botの運用手順](docs/operations/MINIMAL_BOT.md)。現Northflankは永続Volumeなしのため、コンテナ交換時のCoreデータ保管と旧認証の受渡しを実験前に確定する。
@@ -35,6 +36,10 @@ npm run smoke
 - [移植計画](docs/plans/LINE_CORE_V2.md): 第一段階の設計・検証、機能移植の順序、完了条件。
 - [最小Rust Runtime](crates/kbc-core/docs/RUNTIME.md): SQLite、Command、期限起床、結果不明、関数と上限。
 - [最小LINE Adapter](apps/line/docs/ADAPTER.md): PUSH、継続ページ、補完、API共通枠、認証と停止。
+- [移植したCommand](crates/kbc-core/src/commands/docs/COMMANDS.md): ut/tut/st、番号リプライ、画像、関数・上限と検証。
+- [txtによる応答とhelp](content/docs/CONTENT.md): ファイル追加で登録する方法と表示の規約。
+- [検索データの更新](data/search/docs/SNAPSHOT.md): 同梱snapshotの出所・再取り込み・反映方法。
+- [検索移植の判断](docs/decisions/COMMAND_SEARCH_V1.md): プレーンテキスト、有限Session、非同期受付、データ更新のトレードオフ。
 - [新しいOCログの保存方針](docs/decisions/OC_LOG_STORAGE_V2.md): 旧ログの引き継ぎ中止、OC / トークの階層、ファイル集約と検索、同期・切り替えの実装順。
 - [構成と責務の案](docs/architecture/CORE_AND_ADAPTER.md): Rust / TypeScript境界、受信受付、API制御、状態の所有者。
 - [PUSHと有限並列の決定](docs/decisions/PUSH_AND_BOUNDED_CONCURRENCY_V1.md): PUSHを基本に、同じcursorの取得は直列、独立したトークの取得・処理・配送は有限並列にする方針。

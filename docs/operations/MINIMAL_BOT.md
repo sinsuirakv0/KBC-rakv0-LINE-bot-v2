@@ -10,6 +10,7 @@ Node 24以降、Rust 1.98、SQLite Cコードをコンパイルできる環境�
 npm ci --ignore-scripts
 npm run build
 npm run smoke
+npm run smoke:commands
 ```
 
 `npm run build`はProtocol型生成、Native release build、TypeScript buildの順。`scripts/native.cjs`はWindowsのNode dynamic symbol対応と必要なlibunwindのコピーも行う。DockerfileはLinuxで同じNativeとTSをbuildし、実行時はnodeユーザーを使う。Dockerイメージ自体は今回のローカル環境で未検証。
@@ -22,11 +23,13 @@ npm start
 
 コマンドは`o.ping`→`pong!`、`o.test-notify 5`→受付案内と5秒後の確認通知。確認通知が来るまで次のコマンドを送らず、自律的な起床を観測する。テスト通知は1〜60秒に限定した確認用機能で、旧`push`通知の移植ではない。
 
+`o.help`と`o.ut / o.tut / o.st`も実装済み。[Command仕様](../../crates/kbc-core/src/commands/docs/COMMANDS.md)を参照。Dockerには`content/`と`data/search/`を同梱する。txtと検索データの変更は再起動・再配備で反映する。
+
 ## 保存とコンテナの扱い
 
 `storage/auth.json`と`storage/core.sqlite`は同じ運用単位で保管し、公開Gitへ置かない。旧認証のreqseq・refresh情報を保持する。Coreファイルを別アカウントへ使うとOwnerMismatchで停止する。結果不明はSQLiteのactionsに残し、勝手に再投稿しない。
 
-Protocol v2のNativeとAdapterを同時に更新する。重複IDの保持上限は`CORE_MAX_RETAINED_EVENTS=131072`が既定で、8,192〜524,288へ設定できる。SQLiteの64MiB page上限は別に効く。毎分metricsのretainedEvents / maxRetainedEvents、queued / claimed / sending / unknown / completedActionsと、receiverのpendingChats / chatFailuresを観測する。
+Protocol v3のNativeとAdapterを同時に更新する。重複IDの保持上限は`CORE_MAX_RETAINED_EVENTS=131072`が既定で、8,192〜524,288へ設定できる。SQLiteの64MiB page上限は別に効く。毎分metricsのretainedEvents / maxRetainedEvents、queued / claimed / sending / unknown / completedActions / activeSessionsと、receiverのpendingChats / chatFailuresを観測する。
 
 保存障害は`AuthStorageError`で全体停止する。ディスク容量・書込先・権限を修復してから同じ保存ファイルで再起動し、未知の認証状態のまま継続させない。容量不足では新規Batchがrollbackされる。結果不明を削除して空きを作らず、実送信結果を照合できたものだけ、ローカルCoreの`resolveAction({ actionId, status: "sent" または "failed", code })`で明示的に解決する。公開healthにはID一覧を出さない。この操作用のチャットCommand / CLIはまだ実装していない。
 

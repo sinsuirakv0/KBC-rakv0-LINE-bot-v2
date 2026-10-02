@@ -10,6 +10,7 @@
 - 受信・並列制御の変更時は `docs/decisions/PUSH_AND_BOUNDED_CONCURRENCY_V1.md`
 - Runtime変更時は `crates/kbc-core/docs/RUNTIME.md`
 - Adapter変更時は `apps/line/docs/ADAPTER.md`
+- Command変更時は `crates/kbc-core/src/commands/docs/COMMANDS.md` と `content/docs/CONTENT.md`
 - 起動・配備の変更時は `docs/operations/MINIMAL_BOT.md`
 - ログ保存・同期の変更時は `docs/decisions/OC_LOG_STORAGE_V2.md`
 

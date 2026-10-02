@@ -1,7 +1,7 @@
 ﻿# Rust CoreとLINEJS Adapterの構成案
 
 作成日: 2026-10-01、更新日: 2026-10-02（JST）
-状態: 全体構成は移植計画。3 crate・型生成・Native・最小PUSH Adapterと疎通Commandを実装済み。受信基本方針のOC PUSH・cursor単位の直列化・独立処理の有限並列は採用。第一段階はOpenChat専用。現行実装は[Runtime](../../crates/kbc-core/docs/RUNTIME.md)と[Adapter](../../apps/line/docs/ADAPTER.md)を参照。
+状態: 全体構成は移植計画。3 crate・型生成・Native・PUSH Adapterとtxt / ut / tut / stを実装済み。受信基本方針のOC PUSH・cursor単位の直列化・独立処理の有限並列は採用。第一段階はOpenChat専用。現行実装は[Runtime](../../crates/kbc-core/docs/RUNTIME.md)と[Adapter](../../apps/line/docs/ADAPTER.md)を参照。
 
 ## 1. 処理経路
 
