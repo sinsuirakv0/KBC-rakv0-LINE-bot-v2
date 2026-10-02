@@ -4,7 +4,7 @@
 
 Rust CoreとTypeScriptのLINEJS Adapterを使うLINE Bot。
 
-現在はPUSH基盤と最初のコマンド移植の実装・オフライン検証まで完了。新Botの実LINE配備・PUSH返信は未確認。構成と設計原則はDiscord Bot v2、コマンドの仕様と運用知見は旧LINE Botを参照する。
+現在はPUSH基盤と最初のコマンド移植の実装・オフライン検証まで完了。新Botの実LINE配備・PUSH返信は未確認。構成・設計原則とut / tut / stはDiscord Bot v2、その他のコマンドと運用知見は旧LINE Botを参照する。
 
 LINEJSは最新公開版を採用する。2026-10-02に再確認して `3.4.2` の配布物をlock。受信・通信の改善と残る検証は[SDK調査](docs/research/RECEIVER_AND_BACKGROUND_EXPERIMENTS.md#8-最新公開版の改善と採用方針)に記録する。
 
@@ -14,7 +14,7 @@ LINEJSは最新公開版を採用する。2026-10-02に再確認して `3.4.2` �
 
 第一段階はOpenChat専用。参加OCの各トークは原則すべて利用可能とし、個人・グループは後の段階でOC内から許可設定できる形にする。
 
-コマンドprefixは `o.` 。`o.ping`・`o.help`はtxtから読み込み、`o.ut`・`o.tut`・`o.st`はID・名前検索、候補への番号リプライ、ut/tutのorigin画像に対応する。確認用 `o.test-notify 5` も使える。旧版の `!` から変更する。
+コマンドprefixは `o.` 。`o.ping`・`o.help`はtxtから読み込み、`o.ut`・`o.tut`・`o.st`はID・名前検索、候補への番号リプライ、ut/tutのorigin・関連file・PNG/MP4/GIFのmotionに対応する。確認用 `o.test-notify 5` も使える。旧版の `!` から変更する。
 
 ## 最小Bot
 
@@ -55,3 +55,5 @@ npm run smoke:commands
 [直近の着手順](docs/plans/LINE_CORE_V2.md#10-直近の着手順)のAは、最新SDK配布物での認証なし検証と既存コンテナでの短時間受信実測を実施。B/Cの最小経路として3 crate・型生成・Native・PUSH Adapter・ping・期限通知を実装し、同時ID・重複・保存rollback・再開・自律期限・SDK sign-onと継続PUSHをオフライン検証。ChromeのGPTレビューの主要4点も修正し、送信境界・保存障害・トーク別再試行・保持容量を検証済み。次は認証・Coreの永続復元とDの少数OC実験。同時入力の手動試験は後続の運用観測へ回す。多OC・実API制限・実LINE返信の達成は未評価。
 
 受信実験用には、試験OCへの有限な `pong` 返信と通知・トーク取得の比較経路を追加した。模擬検証と実コンテナの起動は確認済み。実LINEの試験入力との照合・返信確認は未完了。本BotのRust Command Runtimeとは区別する。
+
+動画生成はFFMPEG_PATH（Linuxコンテナは/usr/bin/ffmpeg）を使う。名称・素材は同じ公開commitへ固定した同梱snapshotで、npm run snapshot:searchから更新する。[共通Media Worker](crates/kbc-core/docs/MEDIA.md) と [公開素材の生成確認](experiments/commands/docs/MEDIA_VERIFICATION.md) に関数・上限・再実行手順を記録した。

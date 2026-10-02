@@ -42,4 +42,4 @@ LINEJSの最新公開版は2026-10-02も3.4.2。npm配布物revision 11をlock�
 
 ## Commandの追加境界
 
-Protocol v3。通常返信の実送信message IDをCoreへ渡し、候補の受付先へ結び付ける。DeleteMessageは管理者権限のsquare.destroyMessageへ渡し、共通transportの直前にsendingを記録する。Coreが返信成功を確定してから削除を配送するため、削除失敗で新promptを巻き戻さない。画像はCoreで取得し、SDKのIMAGE送信とOBS uploadを共通API枠へ通す。SDK uploadがHTTP statusを検査しないため共通transportで補う。通常fetchは15秒の取消上限を持つ。LINE通信後のupload例外もunknownで、画像placeholderを自動再投稿しない。
+Protocol v4。通常返信の実送信IDをCoreへ渡し、候補promptへ結び付ける。管理者削除はsquare.destroyMessageへ渡し、新しい返信成功後に実行する。OCのメディアはoid省略のOBS reqseq upload自身が投稿し、空のIMAGE/VIDEOを先に送らない。画像・動画・GIF・ファイルの素材準備はRust共通Worker、BlobとLINEJS入出力はAdapterが扱う。uploadMediaも共通API枠・実fetch直前のsending記録を通し、HTTP statusを共通transportで検査する。動画durationはCoreの実Frame数から渡す。メディア自体はrelatedMessageId付き返信にならない。通信後の不明結果はunknownで自動再投稿しない。[Media Worker](../../../crates/kbc-core/docs/MEDIA.md) と [実素材実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) を参照。

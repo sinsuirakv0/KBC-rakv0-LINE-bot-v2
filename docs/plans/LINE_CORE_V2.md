@@ -22,7 +22,7 @@
 | --- | --- |
 | 構成・設計原則 | Discord Bot v2のCore / Protocol / N-API / Adapter分離を参照 |
 | 文書・開発運用 | Discordと同様、仕様・現行実装・設計判断・実験・運用・進捗を分けて記録し、実装と同時に更新 |
-| コマンド・表示・権限・保存データ | 旧LINE Botの現行実装と対応するdocsを参照 |
+| コマンド・表示・権限・保存データ | ut/tut/stはDiscord v2、その他は旧LINE Botの現行実装と対応docsを参照 |
 | OCログ | 既存の非公開GitHubストレージで新規開始。旧履歴は引き継がず、OC MID（s）配下にトークMID（m）を配置 |
 | コマンドprefix | 利用者の指定により `!` から `o.` へ変更。例: `o.ping` 、 `o.help` |
 | LINEJS | 最新公開版を採用。2026-10-01時点は `3.4.2` 。実装開始・依存更新時に再確認してlock |
@@ -247,8 +247,10 @@ Chromeの通常GPTによるGitHubプラグイン付きレビューが完了。[�
 
 ## 13. 最初のコマンド移植
 
-利用者の指定により、Discordのtxt catalogとhelp、旧LINEのut / tut / stを先に移植した。Rustに同梱データ検索と有限な番号リプライSession、共有画像取得を置く。通常会話の数字を捕まえず、本人・トーク・最新promptへの返信で操作する。静的応答の追加はtxt追加と再起動だけで反映できる。
+利用者の指定により、Discordのtxt catalogとhelp、Discord版のut / tut / st（origin・file・motionを含む）を移植した。Rustに同梱データ検索と有限な番号リプライSession、共有画像取得を置く。通常会話の数字を捕まえず、本人・トーク・最新promptへの返信で操作する。静的応答の追加はtxt追加と再起動だけで反映できる。
 
-Protocol v3、非同期Native受付、実送信ID、IMAGE / OBS結果の扱いを追加。利用者の追加指定に従い、編集の代替は新しい返信の成功後に管理者APIで古いBot候補を削除する。10分の期限清掃と操作時の前倒しを共通Actionへまとめ、削除失敗で新候補の受付を巻き戻さない。既存基盤Smokeと4経路のCommand Smoke、build・型・整形・Clippyをオフラインで確認した。[仕様・関数・上限・測定](../../crates/kbc-core/src/commands/docs/COMMANDS.md)と[判断](../decisions/COMMAND_SEARCH_V1.md)を参照。
+Protocol v4、非同期Native受付、実送信ID、媒体の永続準備WorkerとOBS結果の扱いを追加。利用者の追加指定に従い、編集の代替は新しい返信の成功後に管理者APIで古いBot候補を削除する。10分の期限清掃と操作時の前倒しを共通Actionへまとめ、削除失敗で新候補の受付を巻き戻さない。既存基盤Smokeと4経路のCommand Smoke、build・型・整形・Clippyをオフラインで確認した。[仕様・関数・上限・測定](../../crates/kbc-core/src/commands/docs/COMMANDS.md)と[判断](../decisions/COMMAND_SEARCH_V1.md)を参照。
 
-同梱データは旧データのsnapshotで、自動更新は未実装。実LINEへの配備、認証・Coreのコンテナ消失時の復元、実際の表示・番号リプライ・画像送信とAPI制限の観測は残る。同時入力の手動試験は指定どおり運用観測へ回す。
+同梱データはDiscordと同じ公開資料をcommit固定で検証したsnapshot。自動更新は未実装。実LINEへの配備、認証・Coreのコンテナ消失時の復元、実際の表示・番号リプライ・画像送信とAPI制限の観測は残る。同時入力の手動試験は指定どおり運用観測へ回す。
+
+2026-10-03にDiscord版の正式名称・別称・stage range・共有形態へ更新し、file・PNG/MP4/GIFのmotionも追加した。共通Media Workerは生成1件・未解決8件で通常配送から分離。公開素材の生成とFrame/duration・同じトークのpingを [結合実験](../../experiments/commands/docs/MEDIA_VERIFICATION.md) で確認した。実LINE送信、Docker build、Northflankのquota下での性能確認は残る。

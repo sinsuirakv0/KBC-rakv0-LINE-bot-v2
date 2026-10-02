@@ -8,7 +8,7 @@
 - `docs/engineering/DOCUMENTATION.md`
 - 受信・常時処理の変更時は `docs/research/RECEIVER_AND_BACKGROUND_EXPERIMENTS.md`
 - 受信・並列制御の変更時は `docs/decisions/PUSH_AND_BOUNDED_CONCURRENCY_V1.md`
-- Runtime変更時は `crates/kbc-core/docs/RUNTIME.md`
+- Runtime変更時は `crates/kbc-core/docs/RUNTIME.md`、素材・Taskは `crates/kbc-core/docs/MEDIA.md`、描画は `crates/kbc-core/src/motion/docs/MOTION.md`
 - Adapter変更時は `apps/line/docs/ADAPTER.md`
 - Command変更時は `crates/kbc-core/src/commands/docs/COMMANDS.md` と `content/docs/CONTENT.md`
 - 起動・配備の変更時は `docs/operations/MINIMAL_BOT.md`
@@ -16,7 +16,7 @@
 
 ## 基本方針
 
-- 構成と設計原則はDiscord Bot v2、コマンドの仕様は旧LINE Botを参照する。
+- 構成と設計原則はDiscord Bot v2、ut / tut / stとtxt・helpはDiscord Bot v2、その他のコマンドと運用知見は旧LINE Botを参照する。
 - 第一段階はOpenChat専用。参加OCは原則利用可能とし、個人・グループの許可設定は後続段階で扱う。
 - 新Botのコマンドprefixは `o.` 。例: `o.ping` 。旧版の `!` を新Botの既定値へ持ち込まない。
 - 第一段階は、多OCでの受信取りこぼし防止、通知の自律配送、全APIの負荷制御を最優先にする。
