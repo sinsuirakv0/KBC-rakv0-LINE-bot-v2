@@ -2,7 +2,7 @@
 
 2026-10-03。利用者の運用報告を調査。Node RSSだけでFFmpegの子process分を把握したとは扱わない。
 
-本環境の生成ログと機密のトークログから `!ut 710 motion mp4 f w i a k` を確認。345Frame・488×420、生成9.03秒、出力約1.4MB。累積入力RGBA 262,641,600byteはpipeへ逐次書いた合計であり、常駐メモリの測定値ではない。
+本環境の生成ログと機密のトークログから `!ut 710 motion mp4 f w i a k` を確認。345Frame・488×390、生成9.03秒、出力約1.4MB。累積入力RGBA 262,641,600byteはpipeへ逐次書いた合計であり、常駐メモリの測定値ではない。
 
 同コマンドのWindows / Node24.15 / FFmpeg9.0.2 / Protocol v6実行では、parent peak55.5MiB、子FFmpeg peak31MiB、合計peak86.5MiB。Windowsのprocess working setを約100msごとに外部から取得した。LinuxのOOM回避を証明する値ではない。
 
@@ -16,4 +16,6 @@ run.mjsは共通WorkerへCommandを投入し、成果・生成時間・Node maxR
 
 追加の420MiB常駐近似では、OOMを起こさずMediaMemoryBudgetExceededで生成を中止できることを確認する。これは正常生成の成功とは別の検証で、expectedExitCode=1を記録する。
 
-[対策後の実験37128169462](https://github.com/sinsuirakv0/KBC-rakv0-LINE-bot-v2/actions/runs/37128169462) で通常3形式は成功。MP4 cgroup peak154.0MiB、GIF 193.1MiB、PNG 142.5MiB。420MiB常駐近似では0.88秒で予算超過を検知して生成を拒否し、cgroup peak462.3MiB / OOMKilled=false。最初の390MiB条件は予算未満の433.9MiBで正常生成できたため、期待した拒否条件を超える420MiBへ修正した。単一素材・短時間・Bot常駐近似であり、長期運用の保証や本番症状の原因確定とは扱わない。後続実験では中止後のping処理も確認する。
+[対策後の実験37128169462](https://github.com/sinsuirakv0/KBC-rakv0-LINE-bot-v2/actions/runs/37128169462) で通常3形式は成功。MP4 cgroup peak154.0MiB、GIF 193.1MiB、PNG 142.5MiB。420MiB常駐近似では0.88秒で予算超過を検知して生成を拒否し、cgroup peak462.3MiB / OOMKilled=false。最初の390MiB条件は予算未満の433.9MiBで正常生成できたため、期待した拒否条件を超える420MiBへ修正した。単一素材・短時間・Bot常駐近似であり、長期運用の保証や本番症状の原因確定とは扱わない。中止後の応答確認は次の実験で追加した。
+
+[最終実験37128623296](https://github.com/sinsuirakv0/KBC-rakv0-LINE-bot-v2/actions/runs/37128623296) で通常3形式と圧迫条件を確認。MP4 peak153.4MiB / 5.89秒、GIF283.2MiB / 7.91秒、PNG142.1MiB。圧迫条件は0.87秒で生成中止、peak462.4MiB / OOMKilled=false、中止理由を利用者向け本文へ返し、同じCoreのping成功responsiveAfterFailure=trueを確認した。GIF peakは繰返しで変動するため、単一回の値を固定上限としない。

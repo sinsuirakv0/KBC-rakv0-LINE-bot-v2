@@ -20,7 +20,7 @@
 
 LINEJS 3.4.2のOCメディア送信は `obs.uploadObjTalk(chat,type,blob,undefined,filename,duration)`。oid省略のreqseq方式でOBS自身が投稿する。空のIMAGE/VIDEOを先に予約しない。共通ApiSchedulerのuploadMedia枠・実fetch直前でsendingを記録し、SDKが検査しないHTTP statusを補う。テキストはsendMessage、管理者削除はdestroyMessage。メディア自体はrelatedMessageId付きリプライにならず、先行する案内を元Commandへの返信として出す。動画のdurationは描画したFrame数/30fpsから渡す。
 
-FFmpegの実行pathはCoreConfig.ffmpegPath（FFMPEG_PATH）。Linuxコンテナは/usr/bin/ffmpeg、Windowsは絶対pathを指定する。DockerにFFmpegを追加したがDocker build・0.2core/512MiB環境・実LINEアップロードは未確認。ローカルで [公開素材のPNG/MP4/GIF・file実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) と、通信なしのジョブ復旧・OBS例外・削除失敗を確認した。
+FFmpegの実行pathはCoreConfig.ffmpegPath（FFMPEG_PATH）。Linuxコンテナは/usr/bin/ffmpeg、Windowsは絶対pathを指定する。Docker buildと0.2CPU/512MiBでの公開素材生成は [メモリ実験](../../../experiments/motion-memory/docs/MEMORY.md) で確認。実LINEアップロードの全形式・全素材の互換性は未確認。ローカルで [公開素材のPNG/MP4/GIF・file実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) と、通信なしのジョブ復旧・OBS例外・削除失敗を確認した。
 
 未実行ジョブにもsnapshotのrevisionを保存し、更新後の索引・共有素材へ以前の解決結果を適用しない。revision不一致は未通信の再実行案内に変える。配送直前に成果が消失していても、通常返信へ変えて他の配送を維持する。fileの選択案内には固定commitのダウンロードURLも添える。
 
