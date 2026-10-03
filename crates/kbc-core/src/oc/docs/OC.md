@@ -30,9 +30,9 @@
 | !oc mute @対象 170 / 0:17 / 8/7-0:17 / inf | 数字は分、時刻・日付はJST、infは無期限。offで解除 |
 | !oc mute list [ページ] | 20人ずつ表示 |
 | !oc kick @対象 理由 | 直接BANNEDへ更新。メンションまたはpで始まるMID、1回8人まで |
-| !oc history / kick history | OCごとの直近15件の受付・結果。旧hisも可 |
+| !oc history / kick history | historyは直近15件、kick historyは処分だけ直近10件。名前・MID・実行者・理由・結果を表示。旧hisも可 |
 
-joinmes / joinmsg / joinmessage、leavemes / leftmes / exitmes系、link / linkurl / adlink、mediadel / mediaburst、kicktestはalias。`!oc url`へのURL直書きは行わず、addで範囲を明示する。期限は単一引数の `YYYY/M/D-H:MM` にも対応する。
+joinmes / joinmsg / joinmessage、leavemes / leftmes / exitmes系、link / linkurl / adlink、mediadel / mediaburstはalias。kicktestは処分APIを呼ばず、kickの使い方案内だけを返す。`!oc url`へのURL直書きは行わず、addで範囲を明示する。期限は単一引数の `YYYY/M/D-H:MM` にも対応する。
 
 setupは1 URL、2 media、3副官部屋、4 early、5 danger、6 cohort、7基本項目一括ON（通報を除く）、8自動処理OFF、9状態、10通報、11本OC選択。OFF指定の7も一括解除する。副官部屋からjoin / leaveを設定すると送信先を8件ずつ番号選択する。取得できなかったトークでは、そのトークから直接設定できる。
 
@@ -47,18 +47,18 @@ URLはNFKCで抽出し、同じorigin（scheme・host・port）のHTTPSだけを
 参加・退出はSquare Eventのcreate/update member、create/join/leave/update chat memberをplain DTOへ正規化する。OC全体とトーク内の所属を分け、同状態・古い状態を重複通知しない。OC全体の通知先は明示した本OCトーク。参加時刻とmember作成時刻が2分以内で、今回の状態保存に過去参加がない場合だけ初参加とみなす。長期ログと短期の処分判定状態は分け、作成時刻不明の参加者を初参加と推定しない。
 
 - 初参加2分以内の「チート」「代行」はNFKCで検知し、投稿削除とKICK_OUT。reportがONの場合だけSCAM通報を先に要求する。失敗・不明の通報は自動再送しない。
-- earlyは、OC全体LEFTまたは設定した本OCトークのLEFTを契機に現在のOC全体LEFTを照会する。初参加5分以内だけBANNED、5〜30分は審議。サブトーク退出をOC全体退会とみなさない。再参加者の即抜けは審議のみ。
+- earlyは、OC全体LEFTまたは設定した本OCトークのLEFTを契機に現在のOC全体LEFTを照会する。初参加5分以内だけBANNED、5〜30分は審議。サブトーク退出をOC全体退会とみなさない。再参加者の即抜けは副官ログだけで、自動処分・審議を作らない。
 - 初参加3人以上が2分以内に参加すると30分監視。危険語・URL・招待らしい投稿を副官部屋へ通知し、一斉参加だけで自動処分しない。
 
 副官部屋のURL審議は1 exact / 2 path / 3 prefix / 4 domain / 5却下。処分審議は再参加禁止 / 無視 / 解除。解除は依頼を記録するだけで、BANNED解除APIは実装していない。審議権限と現在の対象所属を再確認する。kick対象のBot・管理者・副官・BOT管理権限・未知roleは保護する。
 
-常時の参加者一覧巡回、旧polling heartbeat、thread/VOOMのノートURL削除は今回持ち込まない。ノート削除は旧実装でも暫定的で権限免除を確認できないため後続調査とする。probe / identityは利用者指定で後回し。PUSHが必ず全参加・退出を通知する保証はなく、実OCでイベント種別と処分の見逃しを観測する。
+参加者一覧の常時巡回、旧polling heartbeat、thread/VOOMのノートURL削除は持ち込まない。投稿から独立したトークイベントの補助取得は [Adapter](../../../../../apps/line/docs/ADAPTER.md) で扱う。ノート削除は旧実装でも暫定的で権限免除を確認できないため後続調査とする。probe / identityは利用者指定で後回し。PUSHが必ず全参加・退出を通知する保証はなく、実OCでイベント種別と処分の見逃しを観測する。
 
 ## 関数と永続化
 
 | 関数 | 働きと相互関係 |
 | --- | --- |
-| oc::ingest | mute、管理入力・Session・審議、候補判定の順に既存受付transactionで処理 |
+| oc::ingest | 本文なしID参照を保存してから、mute、管理入力・Session・審議、候補判定の順に既存受付transactionで処理 |
 | commands::parse / execute / session_reply / case_reply | 引数・旧権限・設定・本人返信を解決し、requestまたは通常返信を登録 |
 | request / complete | OcRequestとJobを既存Outboxへ保存。結果登録と後続Action・設定を同一transactionで確定 |
 | commands::target / mutation | 現在の対象MID・OC・役割・revisionを照合し、処分結果を履歴へ記録。複数対象は直列 |
@@ -71,8 +71,16 @@ URLはNFKCで抽出し、同じorigin（scheme・host・port）のHTTPSだけを
 
 queryingは再起動時queuedへ戻し、読み取りは再実行できる。削除・membership更新・通報のsendingはunknownへ戻し、自動再実行しない。SDK通信後のエラーもunknown。通信前の期限切れはfailed。操作受付から権限照会まで60秒、処分Action作成から通信開始まで30秒の上限を置く。照会の継続は元イベント時刻を優先し、別の管理操作に追い越されにくくする。通常返信は独立して進む。
 
-SQLiteのoc_settings / oc_notifications / oc_sessions / oc_members / oc_presence / oc_media / oc_notices / oc_cases / oc_historyが対応する状態を所有する。既存Core DBのバックアップ・復元単位に含める。GitHub同期は未実装。設定2048OC・通知2048トーク、ルール100・mute100/OC、設定payload192KiB、Session128/10分、候補64、審議256/7日、参加・トーク状態各8192、連投4096/30秒、通知抑制1024、操作履歴2048。既存DBの64MiB・未解決Action2048上限も共有する。状態の上限で古い参加記録を落とした場合は過去参加の網羅を主張しない。
+SQLiteのoc_settings / oc_notifications / oc_sessions / oc_members / oc_presence / oc_media / oc_notices / oc_cases / oc_historyが対応する状態を所有する。既存Core DBのバックアップ・復元単位に含める。毎分の暗号化snapshotとして既存GitHubストレージへ退避・復元する。設定2048OC・通知2048トーク、ルール100・mute100/OC、設定payload192KiB、Session128/10分、候補64、審議256/7日、参加・トーク状態各8192、連投4096/30秒、通知抑制1024、操作履歴2048。既存DBの64MiB・未解決Action2048上限も共有する。状態の上限で古い参加記録を落とした場合は過去参加の網羅を主張しない。
 
 `npm run smoke:oc` は実LINEへ接続せず、旧権限区分・本人Session・照会中ping・再起動・unknown非再送、mute/URL/画像、PUSH正規化・通知・OC全体退会・危険語・一斉参加・URL審議を検証する。既存smokeとsmoke:commandsも実施する。実APIの成功を意味しない。[設計判断](../../../../../docs/decisions/OC_MANAGEMENT_V1.md)、[共通Runtime](../../../docs/RUNTIME.md)を参照。
 
 `LEGACY_OC_SETTINGS_PATH` の旧管理設定は、Runtime::open → oc::import_legacyで初回だけ取り込む。settings・joinMessages・leaveMessagesを変換し、新版設定を上書きしない。期限切れmuteは取り込まず、未知のURLルール・過大な設定は黙って捨てず起動を止める。旧setupSessionは再利用しない。
+
+## 2026-10-03の旧仕様照合
+
+通常応答は入力へのreplyを付けない。入力側の番号リプライは継続する。原因投稿を残す一斉参加の副官通知だけは同じOCのサブトークをまたぐreplyに結び付ける。削除した原因投稿へreplyしない。通知本文はmention→短縮ID→本文の順。KICK_OUT / BANNEDは通常のLEFT通知へ変換せず、別種のログを残す。
+
+手動kickは直接BANNED、結果に名前・MID・理由、副官ログに実行者・実行トークを含める。通信後の不明結果は成功と書かない。muteは期限・残り時間を表示し、警告はmention付き、60秒抑制、実送信ID確定後15秒で共通DeleteActionにより管理者削除する。左記の警告削除は独立したTimerを増やさない。oc_historyへ名前・実行者名・理由の列を追加し、旧DBは起動時に不足列だけ追加する。
+
+leftmessageと処分審議の旧aliasを復元した。BANNED解除は引き続き依頼記録だけ。[旧コード・GPT調査との照合](../../../../../docs/research/OC_LEGACY_COMPATIBILITY_2026_10_03.md)、[!idの関数・範囲](ID.md)。smoke:ocでkicktest非処分、通常送信、同OCのサブトーク参照・名前検索、mute警告清掃、BANNED非退出通知、再参加者非処分を既存シナリオへ追加して検証する。

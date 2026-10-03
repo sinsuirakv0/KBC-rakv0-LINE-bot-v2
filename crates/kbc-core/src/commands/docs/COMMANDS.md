@@ -58,3 +58,5 @@ Bridgeの非同期受付は最大4受付・実処理1件。外部素材の取得
 ## OC管理との接続
 
 !ocの公開helpはContentCatalogを使う。管理入力・本人リプライ・審議・自動処理は [OC管理](../../oc/docs/OC.md) へ渡し、共通のsplit_responses・Outbox・prompt清掃を使う。OC照会は通常返信の配送枠を使わず、権限免除された投稿のCommandPlanは既存Runtime::apply_commandへ戻す。!コマンドの先頭語はURLとして誤検出しない。
+
+通常応答・一覧・生成受付は入力へ自動replyせず普通に送信する。番号を入力する側は最新promptへのリプライを使う。!idのhelpは同じContentCatalog、取得・検索・同OCサブトークの返信情報は既存OC照会経路を使う。[ID仕様と関数](../../oc/docs/ID.md)。

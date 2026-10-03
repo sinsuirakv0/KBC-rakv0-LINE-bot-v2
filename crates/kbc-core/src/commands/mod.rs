@@ -60,8 +60,10 @@ pub fn prepare(
     let name = parts.next().unwrap_or_default().to_ascii_lowercase();
     let name = canonical_name(&name);
     let args: Vec<&str> = parts.collect();
-    let known = matches!(name, "oc" | "help" | "ut" | "tut" | "st" | "test-notify")
-        || content.responses.contains_key(name);
+    let known = matches!(
+        name,
+        "oc" | "id" | "help" | "ut" | "tut" | "st" | "test-notify"
+    ) || content.responses.contains_key(name);
     if !known {
         return CommandPlan::Ignore;
     }
@@ -81,6 +83,9 @@ pub fn prepare(
                 .unwrap_or("そのコマンドの案内はありません。!help で一覧を確認できます。".into()),
             now,
         )]);
+    }
+    if name == "id" {
+        return CommandPlan::Ignore;
     }
     if name == "oc" {
         return CommandPlan::Text(vec![(content.command_help("oc").unwrap_or_default(), now)]);

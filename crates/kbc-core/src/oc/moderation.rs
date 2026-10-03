@@ -53,10 +53,19 @@ pub fn mute(_runtime: &Runtime, tx: &Transaction<'_>, event: &CoreEvent, now: i6
             "mute-notice",
             chat,
             format!(
-                "{} はミュート中のため、新しい投稿の削除を要求しました。",
-                mute.name
+                "@{}\n現在ミュートされています。期限まで待つか、手動解除をお待ちください。\n残り時間: {}",
+                mute.name,
+                mute.until
+                    .map_or("無期限".into(), |until| policy::duration(until - now))
             ),
-            TextDelivery::default(),
+            TextDelivery {
+                mention: Some(MessageMention {
+                    member_id: sender.into(),
+                    start: 0,
+                    end: format!("@{}", mute.name).encode_utf16().count() as u32,
+                }),
+                ..Default::default()
+            },
             now,
         )?;
     }
@@ -334,9 +343,16 @@ pub fn case(
         job.step,
         tx.query_row("SELECT count(*) FROM oc_cases", [], |r| r.get::<_, i64>(0))?
     );
+    let target_name = job
+        .target_member
+        .as_ref()
+        .filter(|member| Some(member.member_id.as_str()) == target)
+        .or_else(|| (Some(context.actor.member_id.as_str()) == target).then_some(&context.actor))
+        .map_or("メンバー", |member| member.name.as_str());
     let text = format!(
-        "OC管理ログ\n{reason}\n対象: {}\n{}\n投稿・参加時刻: {}",
-        target.unwrap_or("URL"),
+        "OC管理ログ\n{reason}\n対象: {}\n実行トーク: {}\n{}\n投稿・参加時刻: {}",
+        target.map_or("URL".into(), |target| format!("{target_name} ({target})")),
+        identity(&job.event).1,
         url.unwrap_or(""),
         identity(&job.event).4
     );
@@ -346,7 +362,15 @@ pub fn case(
         &suffix,
         &room,
         text,
-        TextDelivery::default(),
+        TextDelivery {
+            reply_to_source: job.input.name == "moderate"
+                && job
+                    .input
+                    .args
+                    .first()
+                    .is_some_and(|reason| reason == "cohort"),
+            ..Default::default()
+        },
         now,
     )?;
     tx.execute(
@@ -430,10 +454,10 @@ pub fn member_event(
     };
     if let Some(destination) = destination {
         let notify = notifications(tx, destination)?;
-        let template = if state == "JOINED" {
-            notify.join
-        } else {
-            notify.leave
+        let template = match state.as_str() {
+            "JOINED" => notify.join,
+            "LEFT" => notify.leave,
+            _ => None,
         };
         if let Some(template) = template
             && notice(
@@ -465,7 +489,14 @@ pub fn member_event(
                     .take(6)
                     .collect::<String>()
                     .to_ascii_lowercase();
-                text = format!("{text}\nID: {id}");
+                if template.mention {
+                    text = format!(
+                        "@{name}\nID: {id}\n{}",
+                        template.text.replace("<name>", &name)
+                    );
+                } else {
+                    text = format!("ID: {id}\n{text}");
+                }
             }
             text_action(
                 tx,
@@ -608,6 +639,8 @@ fn signal_job(
         operation: operation.into(),
         case_id: None,
         deferred: None,
+        id_lookup: None,
+        target_member: None,
     }
 }
 pub fn confirm_left(
@@ -643,8 +676,8 @@ pub fn confirm_left(
         params![member.square_id, member.member_id, identity(&job.event).4],
     )?;
     let reason = format!(
-        "OC全体の退会を確認。参加{}秒 / 発言{}件\n最後の発言: {}",
-        elapsed / 1000,
+        "OC全体の退会を確認。\n参加時間: {} / 発言数: {}件\n最後の発言: {}",
+        policy::duration(elapsed),
         messages,
         last_text
     );
@@ -663,13 +696,31 @@ pub fn confirm_left(
             Phase::Mutation,
             now,
         )
+    } else if !first || visits != 1 {
+        if let Some(room) = value.mod_room {
+            text_action(
+                tx,
+                &job.event,
+                "returning-leave-log",
+                &room,
+                format!(
+                    "【監視ログ】再参加者の本OC短時間退室\n対象: {} ({})\n{reason}\n処分: 未実行\n初参加ではないため、自動再参加禁止や審議は行いません。",
+                    member.name, member.member_id
+                ),
+                TextDelivery::default(),
+                now,
+            )?;
+        }
+        Ok(())
     } else {
         case(
             tx,
             job,
             Some(&member.member_id),
             None,
-            &format!("{reason}\n自動処分なし。再参加禁止 / 無視 / 解除で審議。"),
+            &format!(
+                "【確認待ち】参加後30分以内の退会\n{reason}\n処分: 未実行\n再参加禁止 / 無視 / 解除で審議できます。"
+            ),
             now,
         )
     }

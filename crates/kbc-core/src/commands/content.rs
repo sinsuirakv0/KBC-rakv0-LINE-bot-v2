@@ -23,6 +23,7 @@ impl ContentCatalog {
             matches!(
                 key.as_str(),
                 "oc" | "oc-admin"
+                    | "id"
                     | "help"
                     | "ut"
                     | "tut"
@@ -36,7 +37,16 @@ impl ContentCatalog {
             return Err("ReservedContentName".into());
         }
         let help = read_folder(&root.join("help"))?;
-        for key in ["index", "oc", "oc-admin", "ut", "tut", "st", "test-notify"] {
+        for key in [
+            "index",
+            "oc",
+            "oc-admin",
+            "id",
+            "ut",
+            "tut",
+            "st",
+            "test-notify",
+        ] {
             if !help.contains_key(key) {
                 return Err(format!("MissingHelp:{key}").into());
             }
@@ -53,7 +63,7 @@ impl ContentCatalog {
             return None;
         }
         if name == "help" {
-            let mut names = vec!["help", "oc", "ut", "tut", "st", "test-notify"];
+            let mut names = vec!["help", "oc", "id", "ut", "tut", "st", "test-notify"];
             names.extend(self.responses.keys().map(String::as_str));
             names.sort_unstable();
             return Some(format!(

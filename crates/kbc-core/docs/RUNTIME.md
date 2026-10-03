@@ -33,7 +33,7 @@ txtと同梱検索を受付でAction化する。検索の走査は不変snapshot
 
 ## Bridge
 
-`kbc-protocol`のRust型から`apps/line/src/protocol/generated/`を生成する。本人・返信先・送信ID・画像URLを追加したLINE専用Protocol v6。NativeとAdapterを同時に更新し、旧Adapterと混在させない。`kbc-node`は変換とRuntime呼出だけを行う。
+`kbc-protocol`のRust型から`apps/line/src/protocol/generated/`を生成する。本人・返信先・送信ID・画像URLを追加したLINE専用Protocol v7。NativeとAdapterを同時に更新し、旧Adapterと混在させない。`kbc-node`は変換とRuntime呼出だけを行う。
 
 JSからNativeへの設定・Batch・結果は型付きDTOをJSON文字列化して渡す。N-APIのserde Value変換では整数の時刻がf64として入ってi64の復元に失敗したため、この小さな境界では整数表現を保つ。出力はplain DTO。大きな画像・SDKオブジェクトをこの経路へ渡さない。
 
@@ -43,7 +43,7 @@ JSからNativeへの設定・Batch・結果は型付きDTOをJSON文字列化し
 
 ## OC管理の追加
 
-Protocol v6はMemberChanged、メッセージのOC・媒体・メンション情報、OcRequest / Resultを追加した。submit_batchの安価な候補判定からoc::ingestへ入り、照会結果と後続Actionをcomplete_actionのtransactionで確定する。[OC実装](../src/oc/docs/OC.md)を参照。
+初期OC対応ではMemberChanged、メッセージのOC・媒体・メンション情報、OcRequest / Resultを追加した。submit_batchの安価な候補判定からoc::ingestへ入り、照会結果と後続Actionをcomplete_actionのtransactionで確定する。[OC実装](../src/oc/docs/OC.md)を参照。
 
 next_query_actionはcontext / member / chatsの読み取りだけをqueryingへ変える。1照会Workerが処理し、同じ宛先の通常claimed / sendingを塞がない。queryingは起動時queuedに戻す。membership / reportは通常配送のsending契約を使い、再起動・通信後失敗ではunknownとして保持する。通信前の確定失敗はclaimedからfailedにできる。OCの権限照会中でもpingを配送することをオフライン検証した。
 
@@ -54,3 +54,5 @@ eventsは本文を持たないが、未完了OC照会のcontinuationには元入
 persistence_revisionはDB変更数、snapshot_databaseはlock下のVACUUM INTOで整合した一時DBを作る。遠隔復元時は期限済みの副作用Actionをunknownにし、二重送信を避けて運用照合を要求する。未来の通知と読み取りは維持する。[保存の契約と限界](../../../docs/operations/GITHUB_RECOVERY.md)。
 
 Protocol v6は受信metadata・senderNameとログDTOを追加した。長期ログのpendingを共通transaction・Core snapshotに含める。`events`は引き続き重複ID用で本文を残さない。[ログの関数と上限](LOGS.md)。
+
+Protocol v7はID照会用Members / JoinedChatsと参加退出のsource・取得時刻を追加する。照会は既存next_query_action、通常送信は非replyを既定とする。priority_chatsは設定DBから補助取得対象だけを返す。message_refsとoc_historyの追加列も共通DBのsnapshotに含める。[IDの関数と上限](../src/oc/docs/ID.md)、[独立取得と共通枠](../../../apps/line/docs/ADAPTER.md)。

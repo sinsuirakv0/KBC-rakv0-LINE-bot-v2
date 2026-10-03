@@ -194,6 +194,11 @@ impl Runtime {
         logs::pending(&*self.database.lock().map_err(|_| "DatabaseLock")?)
     }
 
+    pub fn priority_chats(&self) -> Result<Vec<String>> {
+        let db = self.database.lock().map_err(|_| "DatabaseLock")?;
+        oc::priority_chats(&db)
+    }
+
     pub fn acknowledge_logs(&self, sequences: Vec<u32>) -> Result<()> {
         logs::acknowledge(
             &mut *self.database.lock().map_err(|_| "DatabaseLock")?,
@@ -363,10 +368,7 @@ impl Runtime {
         now: i64,
     ) -> Result<()> {
         let CoreEvent::MessageReceived {
-            event_id,
-            chat_id,
-            message_id,
-            ..
+            event_id, chat_id, ..
         } = event
         else {
             return Ok(());
@@ -402,7 +404,7 @@ impl Runtime {
                     action_id: id.clone(),
                     event_id: event_id.clone(),
                     chat_id: chat_id.clone(),
-                    related_message_id: message_id.clone(),
+                    related_message_id: String::new(),
                     request: serde_json::to_string(&media::MediaJob {
                         catalog_revision: self.search.revision.clone(),
                         request,
@@ -416,7 +418,7 @@ impl Runtime {
                     action_id: id.clone(),
                     event_id: event_id.clone(),
                     chat_id: chat_id.clone(),
-                    related_message_id: message_id.clone(),
+                    related_message_id: String::new(),
                     text: body,
                     image_url: None,
                     attachment: None,
@@ -464,7 +466,7 @@ impl Runtime {
                     "SELECT a.id,a.payload,a.due FROM actions a WHERE a.status='queued'
                     AND json_extract(a.payload,'$.type')<>'prepareMedia'
                     AND ?1=COALESCE(json_extract(a.payload,'$.type')='ocApi'
-                        AND json_extract(a.payload,'$.request.type') IN ('context','member','chats'),0)
+                        AND json_extract(a.payload,'$.request.type') IN ('context','member','chats','members','joinedChats'),0)
                     AND (?1=1 OR NOT EXISTS (SELECT 1 FROM actions b WHERE b.chat=a.chat AND b.status IN ('claimed','sending')))
                     ORDER BY a.due,a.rowid LIMIT 1", [query],
                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).optional()?;

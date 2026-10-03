@@ -13,6 +13,7 @@ export type { CoreConfig, ReceivedBatch, BatchReceipt, CoreAction, ActionResult,
 
 export interface NativeCore {
   checkpoint(stream: string): string | null;
+  priorityChats(): string[];
   submitBatch(batch: ReceivedBatch): BatchReceipt;
   submitBatchAsync(batch: ReceivedBatch): Promise<BatchReceipt>;
   prepareImage(actionId: string): Promise<Buffer | null>;
@@ -39,6 +40,7 @@ export function createCore(config: CoreConfig): NativeCore {
   const handle = native.createCore(JSON.stringify(config));
   return {
     checkpoint: stream => handle.checkpoint(stream),
+    priorityChats: () => handle.priorityChats(),
     submitBatch: batch => handle.submitBatch(JSON.stringify(batch)),
     submitBatchAsync: batch => handle.submitBatchAsync(JSON.stringify(batch)),
     prepareImage: actionId => handle.prepareImage(actionId),

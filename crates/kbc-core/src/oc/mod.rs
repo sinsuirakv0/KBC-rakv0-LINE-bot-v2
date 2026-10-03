@@ -1,4 +1,5 @@
 ﻿mod commands;
+mod id;
 mod legacy;
 mod moderation;
 mod policy;
@@ -56,6 +57,7 @@ enum Phase {
     Mutation,
     Report,
     Chats,
+    Id,
 }
 #[derive(Serialize, Deserialize)]
 struct Job {
@@ -69,6 +71,10 @@ struct Job {
     operation: String,
     case_id: Option<String>,
     deferred: Option<String>,
+    #[serde(default)]
+    id_lookup: Option<id::Lookup>,
+    #[serde(default)]
+    target_member: Option<OcMember>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 enum Session {
@@ -81,6 +87,7 @@ enum Session {
     },
 }
 pub fn initialize(db: &Connection) -> Result<()> {
+    id::initialize(db)?;
     db.execute_batch("CREATE TABLE IF NOT EXISTS oc_settings(square TEXT PRIMARY KEY,payload TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS oc_notifications(chat TEXT PRIMARY KEY,square TEXT NOT NULL,payload TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS oc_notifications_square ON oc_notifications(square);
@@ -95,6 +102,17 @@ pub fn initialize(db: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS oc_cases(id TEXT PRIMARY KEY,square TEXT NOT NULL,chat TEXT NOT NULL,prompt TEXT,action TEXT NOT NULL,target TEXT NOT NULL,url TEXT,reason TEXT NOT NULL,state TEXT NOT NULL,expires INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS oc_history(id INTEGER PRIMARY KEY,square TEXT NOT NULL,target TEXT NOT NULL,actor TEXT NOT NULL,operation TEXT NOT NULL,status TEXT NOT NULL,detail TEXT NOT NULL,at INTEGER NOT NULL,action TEXT NOT NULL DEFAULT '');
         CREATE UNIQUE INDEX IF NOT EXISTS oc_history_action ON oc_history(action) WHERE action<>'';")?;
+    let columns = db
+        .prepare("PRAGMA table_info(oc_history)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    for name in ["target_name", "actor_name", "reason"] {
+        if !columns.iter().any(|column| column == name) {
+            db.execute_batch(&format!(
+                "ALTER TABLE oc_history ADD COLUMN {name} TEXT NOT NULL DEFAULT ''"
+            ))?;
+        }
+    }
     Ok(())
 }
 fn settings(db: &Connection, square: &str) -> Result<Settings> {
@@ -132,6 +150,21 @@ fn notifications(db: &Connection, chat: &str) -> Result<Notifications> {
     .map_or(Ok(Notifications::default()), |text| {
         Ok(serde_json::from_str(&text)?)
     })
+}
+pub fn priority_chats(db: &Connection) -> Result<Vec<String>> {
+    // 通知設定済みトークと監視対象の本OCだけを高頻度取得の候補にする。
+    let mut statement = db.prepare("SELECT chat FROM oc_notifications WHERE json_extract(payload,'$.join') IS NOT NULL OR json_extract(payload,'$.leave') IS NOT NULL
+        UNION SELECT json_extract(payload,'$.main') FROM oc_settings WHERE json_extract(payload,'$.left')=1 OR json_extract(payload,'$.danger')=1 OR json_extract(payload,'$.cohort')=1 LIMIT 2049")?;
+    let chats = statement
+        .query_map([], |row| row.get::<_, Option<String>>(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    if chats.len() > 2048 {
+        return Err("PriorityChatCapacity".into());
+    }
+    Ok(chats)
 }
 pub(super) fn identity(event: &CoreEvent) -> (&str, &str, &str, &str, i64) {
     match event {
@@ -182,6 +215,7 @@ struct TextDelivery {
     mention: Option<MessageMention>,
     replace: Option<String>,
     prompt: bool,
+    reply_to_source: bool,
 }
 fn text_action(
     tx: &Transaction<'_>,
@@ -196,6 +230,7 @@ fn text_action(
         mention,
         replace,
         prompt,
+        reply_to_source,
     } = delivery;
     let (root, _, message, _, _) = identity(event);
     let responses = crate::commands::split_responses(vec![(text, now, None)])?;
@@ -209,7 +244,11 @@ fn text_action(
             action_id: id.clone(),
             event_id: root.into(),
             chat_id: chat.into(),
-            related_message_id: message.into(),
+            related_message_id: if reply_to_source {
+                message.into()
+            } else {
+                String::new()
+            },
             text,
             image_url: None,
             attachment: None,
@@ -313,7 +352,28 @@ fn history(
     now: i64,
 ) -> Result<()> {
     let context = job.context.as_ref().ok_or("MissingOcContext")?;
-    tx.execute("INSERT INTO oc_history(square,target,actor,operation,status,detail,at) VALUES(?1,?2,?3,?4,?5,?6,?7)",params![context.square_id,target,identity(&job.event).3,job.operation,status,detail.chars().take(300).collect::<String>(),now])?;
+    let target_name = job
+        .target_member
+        .as_ref()
+        .filter(|member| member.member_id == target)
+        .or_else(|| (context.actor.member_id == target).then_some(&context.actor))
+        .map_or("", |member| member.name.as_str());
+    let automatic = job.input.name == "moderate" || job.input.name == "signal";
+    let actor_name = if automatic {
+        "bot"
+    } else {
+        context.actor.name.as_str()
+    };
+    let actor_id = if automatic {
+        if context.bot_member_id.is_empty() {
+            "system"
+        } else {
+            &context.bot_member_id
+        }
+    } else {
+        identity(&job.event).3
+    };
+    tx.execute("INSERT INTO oc_history(square,target,actor,operation,status,detail,at,target_name,actor_name,reason) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",params![context.square_id,target,actor_id,job.operation,status,detail.chars().take(300).collect::<String>(),now,target_name,actor_name,commands::reason(job)])?;
     tx.execute("DELETE FROM oc_history WHERE id IN (SELECT id FROM oc_history ORDER BY id DESC LIMIT -1 OFFSET 2048)",[])?;
     Ok(())
 }
@@ -342,13 +402,14 @@ pub fn ingest(
     let Some(actor) = sender_id else {
         return Ok(false);
     };
+    id::remember(tx, event)?;
     if bot_member_id.as_ref() == Some(actor) {
         return Ok(true);
     }
     if moderation::mute(runtime, tx, event, now)? {
         return Ok(true);
     }
-    let input = if let Some(input) = commands::parse(text) {
+    let input = if let Some(input) = commands::parse(text).or_else(|| id::parse(text)) {
         Some(input)
     } else if let Some(prompt) = reply_to_message_id {
         let session:Option<String>=tx.query_row("SELECT id FROM oc_sessions WHERE chat=?1 AND owner=?2 AND prompt=?3 AND expires>?4",params![identity(event).1,actor,prompt,now],|r|r.get(0)).optional()?;
@@ -384,6 +445,8 @@ pub fn ingest(
             operation: "command".into(),
             case_id: None,
             deferred: None,
+            id_lookup: None,
+            target_member: None,
         };
         let authority = job.input.name == "authority";
         request(
@@ -414,6 +477,8 @@ pub fn ingest(
             operation: "moderate".into(),
             case_id: None,
             deferred: Some(serde_json::to_string(plan)?),
+            id_lookup: None,
+            target_member: None,
         };
         request(
             tx,
@@ -505,7 +570,9 @@ pub fn complete(
                     now,
                 );
             }
-            if job.input.name == "moderate" {
+            if job.input.name == "id" {
+                id::execute(runtime, tx, &mut job, now)
+            } else if job.input.name == "moderate" {
                 moderation::execute(runtime, tx, &mut job, now)
             } else {
                 commands::execute(runtime, tx, &mut job, now)
@@ -525,6 +592,7 @@ pub fn complete(
         Phase::Mutation => commands::mutation(tx, &mut job, result, now),
         Phase::Chats => commands::chats(tx, &mut job, result, now),
         Phase::Report => moderation::after_report(tx, &mut job, result, now),
+        Phase::Id => id::complete(tx, &mut job, result, now),
     }
 }
 fn sent_prompt(
@@ -548,9 +616,32 @@ fn sent_prompt(
         )?;
     }
     match action {
-        CoreAction::SendMessage { action_id, .. }
-            if matches!(result.status, DeliveryStatus::Sent) =>
-        {
+        CoreAction::SendMessage {
+            action_id,
+            event_id,
+            chat_id,
+            ..
+        } if matches!(result.status, DeliveryStatus::Sent) => {
+            if action_id.ends_with(":oc:mute-notice:0")
+                && let Some(message_id) = &result.message_id
+            {
+                let id = format!("{action_id}:cleanup");
+                insert_action(
+                    tx,
+                    &CoreAction::DeleteMessage {
+                        action_id: id.clone(),
+                        event_id: event_id.clone(),
+                        chat_id: chat_id.clone(),
+                        message_id: message_id.clone(),
+                        created_at_ms: now,
+                    },
+                    now,
+                )?;
+                tx.execute(
+                    "UPDATE actions SET due=?2 WHERE id=?1",
+                    params![id, now + 15000],
+                )?;
+            }
             let waiting: bool = tx.query_row(
                 "SELECT EXISTS(SELECT 1 FROM oc_sessions WHERE action=?1 AND expires>?2)",
                 params![action_id, now],

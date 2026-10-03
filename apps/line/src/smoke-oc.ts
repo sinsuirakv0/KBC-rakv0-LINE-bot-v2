@@ -11,7 +11,7 @@ import { normalizeEvent } from "./adapter/events.js";
 import { createCore, PROTOCOL_VERSION, type CoreAction } from "./protocol/native.js";
 import type { CoreEvent } from "./protocol/generated/CoreEvent.js";
 
-// LINEへ接続せず、永続ActionとSDK境界を三つの運用シナリオで検証する。
+// LINEへ接続せず、永続ActionとSDK境界の主要な運用経路を検証する。
 const directory = await mkdtemp(join(tmpdir(), "kbc-oc-smoke-"));
 const mid = (prefix: string, digit: string) => prefix + digit.repeat(32);
 const square = mid("s", "1"), chat = mid("m", "1"), sub = mid("m", "2");
@@ -30,6 +30,7 @@ let failMutation = false;
 client.square.getSquareChat = async ({ squareChatMid }) => ({ squareChat: { squareChatMid, squareMid: square, name: "検証", type: "SQUARE_DEFAULT" },
   squareChatMember: { squareMemberMid: bot } }) as Awaited<ReturnType<typeof client.square.getSquareChat>>;
 client.square.getSquareMember = async ({ squareMemberMid }) => ({ squareMember: member(squareMemberMid) }) as Awaited<ReturnType<typeof client.square.getSquareMember>>;
+client.square.searchSquareMembers = async () => ({ members: [member(user)] }) as Awaited<ReturnType<typeof client.square.searchSquareMembers>>;
 client.square.updateSquareMember = async options => gate.run("updateSquareMember", async () => {
   const updated = options?.request?.squareMember; assert(updated?.squareMemberMid);
   gate.beforeFetch(); assert.equal(core.stats().sendingActions, 1);
@@ -63,7 +64,7 @@ async function drain() {
     const next = db.prepare("SELECT payload FROM actions WHERE status='queued' AND due<=? ORDER BY due,rowid LIMIT 1").get(Date.now() + 100) as { payload: string } | undefined;
     if (!next) return actions.slice(start);
     const data = JSON.parse(next.payload) as CoreAction;
-    const action = await (data.type === "ocApi" && ["context", "member", "chats"].includes(data.request.type) ? core.nextQueryAction() : core.nextAction());
+    const action = await (data.type === "ocApi" && ["context", "member", "chats", "members", "joinedChats"].includes(data.request.type) ? core.nextQueryAction() : core.nextAction());
     assert(action); actions.push(action);
     await deliverAction(client, core, gate, action, service);
   }
@@ -76,6 +77,17 @@ async function signal(id: string, state: string, scope = "square", targetChat = 
     displayName: "参加者🙂", state, scope, memberCreatedAtMs: at, createdAtMs: at });
 }
 try {
+  // 旧kicktestは案内だけ。通常応答は返信先を付けず、サブトークの受信済みIDを参照する。
+  await message(`!oc kicktest ${user}`, mod); const kickTest = await drain();
+  assert(!kickTest.some(action => action.type === "ocApi" && action.request.type === "membership"));
+  assert(texts(kickTest).includes("confirmは不要"));
+  await message("!id", user); const selfId = await drain(); assert(texts(selfId).includes(user));
+  assert(selfId.filter(action => action.type === "sendMessage").every(action => action.relatedMessageId === ""));
+  const sourceId = await message("別トークの発言", user, undefined, sub, { senderName: "参加者🙂" }); await drain();
+  await message("!id reply", user, sourceId); const reference = await drain();
+  assert(texts(reference).includes(`relatedMessageId: ${sourceId}`) && texts(reference).includes(`元トークMID: ${sub}`));
+  await message(`!id message ${sourceId} --chat ${sub}`, user); assert(texts(await drain()).includes("参加者🙂"));
+  await message("!id 参加者", user); assert(texts(await drain()).includes(user));
   // 旧権限区分、本人への番号返信、照会待ちの通常配送と再起動。
   await message(`o.oc kick ${user}`, admin); assert(texts(await drain()).includes("実行権限"));
   await message("o.oc setup", mod); assert(texts(await drain()).includes("実行権限"));
@@ -91,10 +103,15 @@ try {
   await message(`o.oc kick ${user}`, mod); failMutation = true; const unknown = await drain(); failMutation = false;
   assert(unknown.some(a => a.type === "ocApi" && a.request.type === "membership")); assert.equal(core.stats().unknownActions, 1);
   core.shutdown(); core = createCore(config); assert.equal(core.stats().unknownActions, 1);
+  await message("!oc kick history", mod); const kickHistory = texts(await drain());
+  assert(kickHistory.includes("強制退会・再参加禁止履歴") && kickHistory.includes("結果不明"));
+  assert(kickHistory.includes("参加者🙂") && kickHistory.includes(mod));
 
   // 明示muteは権限免除より優先。URL免除と連投の7件目を確認。
   await message(`o.oc mute ${user} inf`, mod); await drain();
-  roles.set(user, "ADMIN"); const muted = await message("o.ping", user); await drain(); assert(deleted.includes(muted));
+  roles.set(user, "ADMIN"); const muted = await message("o.ping", user); const warning = await drain(); assert(deleted.includes(muted));
+  assert(warning.some(action => action.type === "sendMessage" && action.mention && action.text.includes("無期限")));
+  assert(db.prepare("SELECT 1 FROM actions WHERE id LIKE '%:oc:mute-notice:0:cleanup' AND due>?").get(Date.now()));
   roles.set(user, "MEMBER"); await message(`o.oc mute ${user} off`, mod); await drain();
   await message("o.oc url add https://example.com/docs prefix"); await drain(); await message("o.oc url on"); await drain();
   const prefixed = await message("o.ping", user); assert(texts(await drain()).includes("pong!")); assert(!deleted.includes(prefixed));
@@ -121,6 +138,14 @@ try {
   const newcomer = mid("p", "7"); await signal(newcomer, "JOINED"); await drain();
   await message("ﾁｰﾄの代行", newcomer); await drain(); assert.equal(states.get(newcomer), "KICK_OUT");
   await message("o.oc modroom set"); await drain();
+  await message("!oc leftmessage set <name>さん退出"); await drain();
+  const returning = mid("p", "b"); const returnAt = Date.now();
+  await signal(returning, "JOINED", "square", chat, returnAt); await drain();
+  await signal(returning, "BANNED", "square", chat, returnAt + 1); assert.equal((await drain()).length, 0);
+  await signal(returning, "JOINED", "square", chat, returnAt + 2); await drain(); states.set(returning, "LEFT");
+  await signal(returning, "LEFT", "square", chat, returnAt + 3); const returningLeft = await drain();
+  assert(texts(returningLeft).includes("再参加者"));
+  assert(!returningLeft.some(action => action.type === "ocApi" && action.request.type === "membership"));
   for (const digit of ["8", "9", "a"]) { await signal(mid("p", digit), "JOINED"); await drain(); }
   const cohortMember = mid("p", "a"); await message("招待はこちら https://example.com/docs/", cohortMember); const watched = await drain();
   assert(texts(watched).includes("自動処分なし")); assert.equal(states.get(cohortMember), undefined);

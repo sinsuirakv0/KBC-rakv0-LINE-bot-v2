@@ -110,6 +110,18 @@ pub fn role_rank(role: &str) -> u8 {
 }
 
 // 数字は分、時刻だけは次の同時刻、日付は日本時間。旧版の引数も保持する。
+pub fn duration(milliseconds: i64) -> String {
+    let seconds = milliseconds.max(0) / 1000;
+    if seconds >= 86400 {
+        format!("{}日{}時間", seconds / 86400, seconds % 86400 / 3600)
+    } else if seconds >= 3600 {
+        format!("{}時間{}分", seconds / 3600, seconds % 3600 / 60)
+    } else if seconds >= 60 {
+        format!("{}分{}秒", seconds / 60, seconds % 60)
+    } else {
+        format!("{seconds}秒")
+    }
+}
 pub fn mute_until(raw: &str, now: i64) -> Option<Option<i64>> {
     use chrono::{Datelike, FixedOffset, NaiveDate, TimeZone};
     let value = raw.nfkc().collect::<String>().to_ascii_lowercase();

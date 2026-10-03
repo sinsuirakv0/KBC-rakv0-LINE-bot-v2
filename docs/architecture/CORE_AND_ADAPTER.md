@@ -118,3 +118,5 @@ LINEにDiscordと同じnonce保証があるとは仮定しない。送信結果�
 ## OC管理の実装境界（2026-10-03）
 
 Protocol v5のOcRequest / Resultを既存Outboxへ接続し、OC設定・権限判断・対話・自動処分をRustへ配置した。TSはPUSHイベント正規化・有限OC対応cache・SDK入出力だけを担当する。読み取りは1照会loop、変更と返信は既存2配送loop、全APIの上限は共有する。[OC設計判断](../decisions/OC_MANAGEMENT_V1.md) と [実装・関数](../../crates/kbc-core/src/oc/docs/OC.md) を参照。
+
+現行Protocolはv7。IDの照会も既存OC Outbox・照会Workerを共有し、独立したCommand専用Queueを作らない。PUSHと補助chat取得は同一cursorのPromiseを共有する。機能状態はRust DBが所有し、暗号化snapshot・ログgzipとGitHub入出力はAdapterが担当する。[現行Adapter](../../apps/line/docs/ADAPTER.md)。

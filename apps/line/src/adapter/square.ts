@@ -31,7 +31,7 @@ export class SquareDirectory {
     this.pending.set(chatId, request); return request;
   }
   async execute(chatId: string, request: OcRequest): Promise<OcResult> {
-    const result: OcResult = { chats: [] };
+    const result: OcResult = { chats: [], members: [] };
     if (request.type === "context") {
       const chat = await this.chat(chatId);
       const actor = await this.client.square.getSquareMember({ squareMemberMid: request.memberId });
@@ -52,7 +52,7 @@ export class SquareDirectory {
       const chats = new Map<string, OcChat>();
       const add = (chat: ChatInfo["squareChat"]) => {
         if (chat.squareMid === request.squareId && chats.size < 64) chats.set(chat.squareChatMid, { chatId: chat.squareChatMid,
-          name: displayName(chat.name ?? chat.squareChatMid), isMain: ["4", "SQUARE_DEFAULT"].includes(String(chat.type)) });
+          name: displayName(chat.name ?? chat.squareChatMid), squareId: chat.squareMid, isMain: ["4", "SQUARE_DEFAULT"].includes(String(chat.type)) });
       };
       add((await this.chat(chatId)).squareChat);
       let continuationToken: string | undefined;
@@ -70,6 +70,26 @@ export class SquareDirectory {
         if (response.defaultChatMid) add((await this.chat(response.defaultChatMid)).squareChat);
       } catch { /* 本OCの手動選択を保持する。 */ }
       result.chats = [...chats.values()].sort((a, b) => Number(b.isMain) - Number(a.isMain) || a.name.localeCompare(b.name));
+    } else if (request.type === "joinedChats") {
+      const response = await this.client.square.getJoinedSquareChats({ request: { limit: 30, continuationToken: request.continuationToken ?? undefined } });
+      if (!Array.isArray(response.chats) || response.chats.length > 30) throw new Error("InvalidJoinedChatPage");
+      result.chats = response.chats.map(chat => {
+        if (!chat.squareChatMid || !chat.squareMid) throw new Error("InvalidJoinedChat");
+        return { chatId: chat.squareChatMid, squareId: chat.squareMid, name: displayName(chat.name ?? ""),
+          isMain: ["4", "SQUARE_DEFAULT"].includes(String(chat.type)) };
+      });
+      result.continuationToken = response.continuationToken || undefined;
+    } else if (request.type === "members") {
+      if (!["JOINED", "LEFT", "KICK_OUT", "BANNED"].includes(request.state)) throw new Error("InvalidMemberSearchState");
+      const response = await this.client.square.searchSquareMembers({ request: { squareMid: request.squareId,
+        searchOption: { membershipState: request.state as "JOINED" | "LEFT" | "KICK_OUT" | "BANNED", displayName: request.query,
+          memberRoles: [], ableToReceiveMessage: "NONE", ableToReceiveFriendRequest: "NONE", chatMidToExcludeMembers: "",
+          includingMe: true, excludeBlockedMembers: false, includingMeOnlyMatch: false },
+        limit: 20, continuationToken: request.continuationToken ?? undefined } });
+      if (!Array.isArray(response.members) || response.members.length > 20) throw new Error("InvalidMemberSearchPage");
+      result.members = response.members.map(memberDto);
+      if (result.members.some(member => member.squareId !== request.squareId)) throw new Error("MemberSearchScopeMismatch");
+      result.continuationToken = response.continuationToken || undefined;
     } else if (request.type === "membership") {
       if (!["BANNED", "KICK_OUT"].includes(request.state)) throw new Error("InvalidMembershipState");
       const response = await this.client.square.updateSquareMember({ request: { updatedAttrs: [5], updatedPreferenceAttrs: [],

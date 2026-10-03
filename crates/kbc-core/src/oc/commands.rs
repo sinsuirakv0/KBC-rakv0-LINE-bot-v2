@@ -11,11 +11,10 @@ pub fn parse(text: &str) -> Option<Input> {
         "" | "help" => return None,
         "secret" | "managehelp" => "adminhelp",
         "joinmes" | "joinmsg" | "joinmessage" => "join",
-        "leavemes" | "leavemsg" | "leavemessage" | "leftmes" | "leftmsg" | "exitmes"
-        | "exitmsg" => "leave",
+        "leavemes" | "leavemsg" | "leavemessage" | "leftmes" | "leftmsg" | "leftmessage"
+        | "exitmes" | "exitmsg" => "leave",
         "link" | "linkurl" | "adlink" => "url",
         "mediadel" | "mediaburst" => "media",
-        "kicktest" => "kick",
         _ => name,
     }
     .to_ascii_lowercase();
@@ -60,6 +59,14 @@ fn setup_menu(settings: &Settings) -> String {
 pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
     let context = job.context.as_ref().ok_or("MissingOcContext")?.clone();
     let name = job.input.name.as_str();
+    if name == "kicktest" {
+        return reply(
+            tx,
+            job,
+            "!oc kick を使用してください。confirmは不要です。",
+            now,
+        );
+    }
     if name == "status" {
         return reply(tx, job, status(&settings(tx, &context.square_id)?), now);
     }
@@ -503,6 +510,29 @@ fn member_id(text: &str) -> bool {
         && text.starts_with('p')
         && text[1..].bytes().all(|c| c.is_ascii_hexdigit())
 }
+pub(super) fn reason(job: &Job) -> String {
+    match job.operation.as_str() {
+        "danger-kick" => return "初参加から2分以内の危険語".into(),
+        "left-ban" => return "初参加から5分以内のOC全体退出".into(),
+        "case-ban" => return "副官審議による再参加禁止".into(),
+        _ => {}
+    }
+    job.input
+        .args
+        .iter()
+        .filter(|arg| {
+            let value = arg.split_once(':').map_or(arg.as_str(), |(_, value)| value);
+            !member_id(value)
+                && !arg.starts_with('@')
+                && !matches!(arg.to_ascii_lowercase().as_str(), "userid" | "mid")
+        })
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(300)
+        .collect()
+}
 pub fn next_target(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
     if let Some(id) = job.targets.first().cloned() {
         request(
@@ -513,7 +543,19 @@ pub fn next_target(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> 
             now,
         )
     } else {
-        let text = job.results.join("\n");
+        let text = if job.operation == "manual-ban" {
+            format!(
+                "強制退会・再参加禁止結果\n{}\n理由: {}",
+                job.results.join("\n"),
+                if reason(job).is_empty() {
+                    "未指定".into()
+                } else {
+                    reason(job)
+                }
+            )
+        } else {
+            job.results.join("\n")
+        };
         if let Some(context) = &job.context
             && let Some(room) = settings(tx, &context.square_id)?.mod_room
             && room != identity(&job.event).1
@@ -523,7 +565,17 @@ pub fn next_target(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> 
                 &job.event,
                 &format!("result-log-{}", job.step),
                 &room,
-                text.clone(),
+                format!(
+                    "{}\n実行トーク: {}\n実行者: {} ({})\n{text}",
+                    if job.operation == "manual-ban" {
+                        "【手動処分】OC再参加禁止"
+                    } else {
+                        "【OC管理結果】"
+                    },
+                    identity(&job.event).1,
+                    context.actor.name,
+                    context.actor.member_id
+                ),
                 TextDelivery::default(),
                 now,
             )?;
@@ -547,6 +599,7 @@ pub fn target(
     if member.square_id != context.square_id || job.targets.first() != Some(&member.member_id) {
         return reply(tx, job, "対象メンバーのOCが一致しません。", now);
     }
+    job.target_member = Some(member.clone());
     if job.operation == "mute" {
         let duration = job
             .input
@@ -586,12 +639,43 @@ pub fn target(
         }
         save_settings(tx, &context.square_id, &value)?;
         history(tx, job, &member.member_id, "saved", duration, now)?;
-        return reply(
-            tx,
-            job,
-            format!("{} のミュート設定を保存しました。", member.name),
-            now,
+        let period = value.mutes.get(&member.member_id).map(|mute| {
+            mute.until.map_or("無期限".into(), |until| {
+                format!(
+                    "{} JSTまで（残り{}）",
+                    jst(until),
+                    policy::duration(until - now)
+                )
+            })
+        });
+        let text = period.as_ref().map_or(
+            format!("{} のミュートを解除しました。", member.name),
+            |period| {
+                format!(
+                    "{} をミュートしました。\n期間: {period}\n対象の新規発言は削除されます。",
+                    member.name
+                )
+            },
         );
+        if let Some(room) = value.mod_room.filter(|room| room != identity(&job.event).1) {
+            text_action(
+                tx,
+                &job.event,
+                "mute-log",
+                &room,
+                format!(
+                    "【OCミュート】\n実行トーク: {}\n実行者: {} ({})\n対象: {} ({})\n{text}",
+                    identity(&job.event).1,
+                    context.actor.name,
+                    context.actor.member_id,
+                    member.name,
+                    member.member_id
+                ),
+                TextDelivery::default(),
+                now,
+            )?;
+        }
+        return reply(tx, job, text, now);
     }
     if member.member_id == context.bot_member_id
         || policy::role_rank(&member.role) != 1
@@ -606,8 +690,8 @@ pub fn target(
             > 0
     {
         job.results.push(format!(
-            "{}: 権限未確認または保護対象のため未処分",
-            member.member_id
+            "{} ({}): 権限未確認または保護対象のため未処分",
+            member.name, member.member_id
         ));
         job.targets.remove(0);
         return next_target(tx, job, now);
@@ -656,7 +740,25 @@ pub fn mutation(
         &format!("{} / {}", result.code, job.input.body),
         now,
     )?;
-    job.results.push(format!("{target}: {label}"));
+    let name = job
+        .target_member
+        .as_ref()
+        .filter(|member| member.member_id == target)
+        .or_else(|| {
+            job.context
+                .as_ref()
+                .map(|context| &context.actor)
+                .filter(|member| member.member_id == target)
+        })
+        .map_or("メンバー", |member| member.name.as_str());
+    job.results.push(format!(
+        "{label}: {name} ({target}){}",
+        if result.code == "OK" {
+            String::new()
+        } else {
+            format!(" / {}", result.code)
+        }
+    ));
     if let Some(case) = &job.case_id {
         tx.execute(
             "UPDATE oc_cases SET state=?2 WHERE id=?1",
@@ -672,19 +774,41 @@ pub fn mutation(
     }
     job.targets.remove(0);
     if job.operation == "danger-kick" {
+        let context = job.context.as_ref().ok_or("MissingOcContext")?;
+        let joined: Option<i64> = tx
+            .query_row(
+                "SELECT joined FROM oc_members WHERE square=?1 AND member=?2",
+                params![context.square_id, target],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let (word, body) = if let CoreEvent::MessageReceived { text, .. } = &job.event {
+            (
+                policy::danger_word(text).unwrap_or("未取得"),
+                text.chars().take(300).collect::<String>(),
+            )
+        } else {
+            ("未取得", String::new())
+        };
+        let elapsed = joined.map_or("未取得".into(), |joined| {
+            policy::duration(identity(&job.event).4 - joined)
+        });
         moderation::case(
             tx,
             job,
             Some(&target),
             None,
-            "初参加から2分以内の危険語で自動退会。誤検知の可能性があります。再参加禁止 / 無視 / 解除で審議できます。",
+            &format!(
+                "【自動処分】初参加直後の危険語\n参加から: {elapsed}\n検出語: {word}\n本文: {body}\n処分: メッセージ削除 + 強制退会（再参加禁止は未実行）\n結果: {label}\n{}\n誤検知の可能性があります。再参加禁止 / 無視 / 解除で審議できます。",
+                job.results.join("\n")
+            ),
             now,
         )?;
         return reply(
             tx,
             job,
             format!(
-                "スパムフィルターの自動退会: {label}\n参加直後の「チート」「代行」を検知しました。誤検知の可能性があります。"
+                "スパムフィルターによる強制退会: {label}\n参加直後に「チート」「代行」を含む投稿を検知しました。宣伝・不正行為勧誘の可能性があると判定しました。誤検知の可能性もあるため、副官がログを確認してください。"
             ),
             now,
         );
@@ -695,26 +819,61 @@ pub fn mutation(
             job,
             Some(&target),
             None,
-            "初参加から5分以内のOC全体退会による自動再参加禁止。",
+            &format!(
+                "【自動処分】参加後5分以内の退会\n処分: 再参加禁止\n結果: {label}\n{}",
+                job.results.join("\n")
+            ),
             now,
         )?;
+        let context = job.context.as_ref().ok_or("MissingOcContext")?;
+        if matches!(result.status, DeliveryStatus::Sent)
+            && let Some(main) = settings(tx, &context.square_id)?.main
+        {
+            text_action(
+                tx,
+                &job.event,
+                "left-main-notice",
+                &main,
+                format!(
+                    "自動再参加禁止: {label}\n判断理由: 初参加から5分以内の即抜け\n{}",
+                    job.results.join("\n")
+                ),
+                TextDelivery::default(),
+                now,
+            )?;
+        }
+        return Ok(());
     }
     next_target(tx, job, now)
 }
 fn show_history(tx: &Transaction<'_>, job: &Job, now: i64) -> Result<()> {
     let square = &job.context.as_ref().ok_or("MissingOcContext")?.square_id;
-    let mut query=tx.prepare("SELECT target,operation,status,detail,at FROM oc_history WHERE square=?1 ORDER BY id DESC LIMIT 15")?;
+    let kick_only = job.input.name == "kick";
+    let mut query=tx.prepare("SELECT target,operation,status,detail,at,target_name,actor_name,reason,actor FROM oc_history WHERE square=?1 AND (?2=0 OR operation IN ('manual-ban','danger-kick','left-ban','case-ban')) ORDER BY id DESC LIMIT ?3")?;
     let rows = query
-        .query_map([square], |r| {
-            Ok(format!(
-                "{} {}\n{} {}\n{}",
-                jst(r.get(4)?),
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?
-            ))
-        })?
+        .query_map(
+            params![square, kick_only, if kick_only { 10 } else { 15 }],
+            |r| {
+                Ok(format!(
+                    "{} {}\n処分: {}\n対象: {} ({})\n実行者: {} ({})\n理由: {}\n詳細: {}",
+                    jst(r.get(4)?),
+                    r.get::<_, String>(2)?,
+                    match r.get::<_, String>(1)?.as_str() {
+                        "danger-kick" => "強制退会",
+                        "manual-ban" => "強制退会 + 再参加禁止",
+                        "left-ban" | "case-ban" => "再参加禁止",
+                        operation => operation,
+                    }
+                    .to_owned(),
+                    r.get::<_, String>(5)?,
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(6)?,
+                    r.get::<_, String>(8)?,
+                    r.get::<_, String>(7)?,
+                    r.get::<_, String>(3)?
+                ))
+            },
+        )?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     reply(
         tx,
@@ -722,7 +881,15 @@ fn show_history(tx: &Transaction<'_>, job: &Job, now: i64) -> Result<()> {
         if rows.is_empty() {
             "処分・操作履歴はありません。".into()
         } else {
-            rows.join("\n\n")
+            format!(
+                "{}\n\n{}",
+                if kick_only {
+                    "強制退会・再参加禁止履歴"
+                } else {
+                    "OC操作履歴"
+                },
+                rows.join("\n\n")
+            )
         },
         now,
     )
@@ -996,12 +1163,15 @@ fn case_reply(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
             }
             save_settings(tx, &square, &value)?;
         }
-    } else if matches!(input.as_str(), "ban" | "再参加禁止") {
+    } else if matches!(input.as_str(), "ban" | "再参加禁止" | "処分" | "キック") {
         job.operation = "case-ban".into();
         job.case_id = Some(id);
         job.targets = vec![target];
         return next_target(tx, job, now);
-    } else if !matches!(input.as_str(), "ignore" | "無視" | "unban" | "解除") {
+    } else if !matches!(
+        input.as_str(),
+        "ignore" | "無視" | "対応不要" | "不要" | "unban" | "解除" | "再参加禁止解除"
+    ) {
         return reply(
             tx,
             job,
@@ -1013,7 +1183,7 @@ fn case_reply(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
         "UPDATE oc_cases SET state=?2 WHERE id=?1",
         params![
             id,
-            if matches!(input.as_str(), "unban" | "解除") {
+            if matches!(input.as_str(), "unban" | "解除" | "再参加禁止解除") {
                 "unban-requested"
             } else {
                 "resolved"

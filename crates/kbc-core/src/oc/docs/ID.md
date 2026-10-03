@@ -1,0 +1,21 @@
+﻿# IDとリプライ参照
+
+2026-10-03。実装・オフライン検証済み。本番確認は配備後に記録する。旧LINE src/commands/id.tsを参照し、照会を共通OcRequest / Jobへ移した。通常のprefixは!、o.も受け付ける。
+
+!idは自分、メンション・p MID指定は対象、talkは現在トーク・親OC、ocは親OC MIDを表示する。talk ocはBOT admin以上の参加中OC一覧。1ページ30件、続きは--cursor。OC管理者権限だけでは全参加OC一覧を許可しない。同じOC以外のmember照会結果は表示しない。
+
+名前検索は同じOCの保存済み名前と現在のLINE member directoryを照合する。NFKC・小文字・空白除去・部分一致と順序を保った文字一致を使う。oldはLEFT / KICK_OUT / BANNED / JOINEDを調べ、退会済みも表示する。状態ごとに20件×最大4ページ、表示20人まで。上限では絞り込みを案内し、全参加者の無制限な取得を持ち込まない。末尾logは状態数・ページ数・表示件数だけを表示し、生のSDK例外や巨大なdebug payloadを出さない。旧log allの過去履歴一括取得は利用者指定で後回し。現在の定期取得・ログ保存とは別扱い。
+
+message / reply / metadataはmessage IDとrelatedMessageId / relatedMessageServiceCode=SQUARE / messageRelationType=REPLYを取得する。replyは入力のリプライ先、messageは入力自身が既定。message IDを引数で直接指定でき、--chat mMIDで受信済み参照を絞れる。元トーク・OC・送信者・時刻と元投稿のreply metadataは同じOCの観測済み情報だけを表示する。未観測の元トークを現在トークと推定しない。
+
+message_refsは本文なし、最大8,192件。参照可能なのは48時間以内。同じOCのサブトークのmessage IDも索引で参照できる。旧idはreply先を見ておらず、この部分は新版の追加。LINEJS 3.4.2のUnresolvedMessageはIDだけを持ち、OCの単一message IDから本文・元トークを取得するAPIはこの移植で確認していない。未観測の古い投稿を完全解決できるとは扱わない。別OCへのリプライ送信は未確認。
+
+| 関数 | 働きと関係 |
+| --- | --- |
+| initialize / remember | 共通受付transactionでmessage_refsへ必要なID metadataだけを保存。既存の本文ログを複製しない |
+| parse / execute | 入力・権限・表示範囲をRustで判断。OC contextと共通requestを使用 |
+| next_member / search_page / complete | Member・Members・JoinedChatsを既存照会Workerへ渡し、有限ページと結果を永続Jobで継続 |
+| message_info | 同じOCと任意chatに絞った索引照会。受信済みID・未観測を区別 |
+| SquareDirectory.execute | SDK呼出とplain DTO変換だけ。共通API枠・cooldown・timeoutを共有 |
+
+Protocol v7でmembers・joinedChatsのread DTOを追加し、NativeとAdapterを同時更新する。未完了の旧v6 Jobには新しい任意状態をdefaultで補い、旧OcChatに親OCフィールドがない場合も復元可能にした。既存Smokeで通常応答が非リプライであることと、別サブトークの入力をreplyまたはID引数で参照できることを確認する。

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTOCOL_VERSION: u32 = 6;
+pub const PROTOCOL_VERSION: u32 = 7;
 
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -93,6 +93,9 @@ pub enum CoreEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         member_created_at_ms: Option<f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        metadata_json: Option<String>,
         #[ts(type = "number")]
         created_at_ms: i64,
     },
@@ -237,6 +240,15 @@ pub enum OcRequest {
     Chats {
         square_id: String,
     },
+    JoinedChats {
+        continuation_token: Option<String>,
+    },
+    Members {
+        square_id: String,
+        query: String,
+        state: String,
+        continuation_token: Option<String>,
+    },
     Membership {
         square_id: String,
         member_id: String,
@@ -252,7 +264,11 @@ impl OcRequest {
     pub fn is_read(&self) -> bool {
         matches!(
             self,
-            Self::Context { .. } | Self::Member { .. } | Self::Chats { .. }
+            Self::Context { .. }
+                | Self::Member { .. }
+                | Self::Chats { .. }
+                | Self::JoinedChats { .. }
+                | Self::Members { .. }
         )
     }
 }
@@ -283,6 +299,8 @@ pub struct OcChat {
     pub chat_id: String,
     pub name: String,
     pub is_main: bool,
+    #[serde(default)]
+    pub square_id: String,
 }
 #[derive(Debug, Clone, Default, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -295,6 +313,11 @@ pub struct OcResult {
     pub member: Option<OcMember>,
     #[serde(default)]
     pub chats: Vec<OcChat>,
+    #[serde(default)]
+    pub members: Vec<OcMember>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub continuation_token: Option<String>,
 }
 
 #[derive(Debug, Serialize, TS)]

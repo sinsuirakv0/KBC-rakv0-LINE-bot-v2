@@ -25,6 +25,11 @@ impl NativeCore {
     }
 
     #[napi]
+    pub fn priority_chats(&self) -> Result<Vec<String>> {
+        convert(self.runtime.priority_chats())
+    }
+
+    #[napi]
     pub fn submit_batch(&self, batch: String) -> Result<Value> {
         let receipt = convert(
             self.runtime

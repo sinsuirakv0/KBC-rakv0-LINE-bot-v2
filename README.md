@@ -4,9 +4,9 @@
 
 Rust CoreとTypeScriptのLINEJS Adapterを使うLINE Bot。
 
-現在はPUSH基盤、検索コマンド、通常のOC管理機能の実装・オフライン検証まで完了。新Botの実LINE配備・PUSH返信は未確認。構成・設計原則とut / tut / stはDiscord Bot v2、その他のコマンドと運用知見は旧LINE Botを参照する。
+PUSH基盤・検索・OC管理を実装し、本環境の受信・保存復元を確認済み。今回追加したID取得・独立した参加退出取得の配備結果は [運用記録](docs/operations/MINIMAL_BOT.md) に残す。全件受信・長期安定性は引き続き観測する。構成・設計原則とut / tut / stはDiscord Bot v2、その他のコマンドと運用知見は旧LINE Botを参照する。
 
-LINEJSは最新公開版を採用する。2026-10-02に再確認して `3.4.2` の配布物をlock。受信・通信の改善と残る検証は[SDK調査](docs/research/RECEIVER_AND_BACKGROUND_EXPERIMENTS.md#8-最新公開版の改善と採用方針)に記録する。
+LINEJSは最新公開版を採用する。2026-10-03のnpm再確認でも `3.4.2`、採用配布物をlock。受信・通信の改善と残る検証は[SDK調査](docs/research/RECEIVER_AND_BACKGROUND_EXPERIMENTS.md#8-最新公開版の改善と採用方針)に記録する。
 
 ## 第一段階の目標
 
@@ -17,6 +17,8 @@ LINEJSは最新公開版を採用する。2026-10-02に再確認して `3.4.2` �
 コマンドprefixは `!` 。`!ping`・`!help`はtxtから読み込み、`!ut`・`!tut`・`!st`はID・名前検索、候補への番号リプライ、ut/tutのorigin・関連file・PNG/MP4/GIFのmotionに対応する。`!oc setup / join / leave / mute / kick / url / media / watch`も移植し、番号リプライで管理する。確認用 `!test-notify 5` も使える。`!` を既定、`o.` も別prefixとして受け付ける。
 
 ## 最小Bot
+
+`!id` は自分・相手のMID、名前検索、トーク・親OC、観測済みのサブトーク投稿のリプライ情報を取得する。[利用範囲](crates/kbc-core/src/oc/docs/ID.md)。通常応答は普通の投稿、必要な副官通知ではリプライを使う。
 
 OC PUSH → 取得ページの保存・ID重複排除 → RustのCommand → 共通API経路で返信する。通知確認コマンドはCoreの期限で起き、次の入力がなくても配送する。短時間RPCは全体2並列、同じ宛先の配送と同じcursorの取得は直列。
 
