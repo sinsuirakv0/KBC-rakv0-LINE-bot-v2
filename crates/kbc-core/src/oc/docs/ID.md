@@ -1,6 +1,6 @@
 ﻿# IDとリプライ参照
 
-2026-10-03。実装・オフライン検証済み。本番確認は配備後に記録する。旧LINE src/commands/id.tsを参照し、照会を共通OcRequest / Jobへ移した。通常のprefixは!、o.も受け付ける。
+2026-10-04。実装・オフライン検証済み。Protocol v7を既存Northflankへ配備し、参加一覧の実API取得を確認した。ID各形式の実LINE表示は運用観測を続ける。旧LINE src/commands/id.tsを参照し、照会を共通OcRequest / Jobへ移した。通常のprefixは!、o.も受け付ける。
 
 !idは自分、メンション・p MID指定は対象、talkは現在トーク・親OC、ocは親OC MIDを表示する。talk ocはBOT admin以上の参加中OC一覧。snapshotのイベント1ページ30件から参加トークを表示し、続きは--cursor。OC管理者権限だけでは全参加OC一覧を許可しない。同じOC以外のmember照会結果は表示しない。
 

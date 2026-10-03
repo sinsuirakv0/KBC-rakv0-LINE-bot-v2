@@ -1,6 +1,6 @@
 ﻿# 最小Botの起動と次の実験
 
-作成日: 2026-10-02、更新日: 2026-10-03。状態: Native build・型生成・TS build・オフラインSmoke・公開素材による動画生成済み。既存NorthflankへProtocol v6を配備し、PUSH受信・GitHubへの暗号化退避・変換済みログへの定期追記を確認。実Command配送と多数OCの長期負荷は運用観測を続ける。
+作成日: 2026-10-02、更新日: 2026-10-04。状態: Native build・型生成・TS build・オフラインSmoke・公開素材による動画生成済み。既存NorthflankへProtocol v7を配備し、PUSH・独立したトーク取得・GitHubへの暗号化退避・軽量ログへの追記を確認。実Commandごとの表示と多数OCの長期負荷は運用観測を続ける。
 
 ## 起動
 
@@ -31,7 +31,7 @@ npm start
 
 `storage/auth.json`と`storage/core.sqlite`は同じ運用単位で保管し、公開Gitへ置かない。旧認証のreqseq・refresh情報を保持する。Coreファイルを別アカウントへ使うとOwnerMismatchで停止する。結果不明はSQLiteのactionsに残し、勝手に再投稿しない。
 
-Protocol v6のNativeとAdapterを同時に更新する。重複IDの保持上限は`CORE_MAX_RETAINED_EVENTS=131072`が既定で、8,192〜524,288へ設定できる。SQLiteの64MiB page上限は別に効く。毎分metricsのretainedEvents / maxRetainedEvents、queued / preparingMedia / claimed / querying / sending / unknown / completedActions / activeSessionsと、receiverのpendingChats / chatFailuresを観測する。
+Protocol v7のNativeとAdapterを同時に更新する。重複IDの保持上限は`CORE_MAX_RETAINED_EVENTS=131072`が既定で、8,192〜524,288へ設定できる。SQLiteの64MiB page上限は別に効く。毎分metricsのretainedEvents / maxRetainedEvents、queued / preparingMedia / claimed / querying / sending / unknown / completedActions / activeSessionsと、receiverのpendingChats / chatFailuresを観測する。
 
 Mediaの成果はCore DBの隣の`media/`に置く。未解決8件まで、成果は合計最大64MiBで、生成中の素材・FFmpeg一時ファイル分も必要。DBを保管・復元する場合は未解決成果も同じ保存単位にする。プロセス再起動では生成途中を再準備し、送信途中はunknownとして保持する。成果消失は配送直前に再実行案内へ変えるため、unknownを解決する際に保存ファイルだけで送信成否を判断しない。[Mediaの保存・復旧](../../crates/kbc-core/docs/MEDIA.md)を参照。
 
@@ -78,3 +78,17 @@ GitHub指定時はBOT_PERMISSIONS_PATH / LEGACY_OC_SETTINGS_PATHの未指定path
 復元した補完待ち1トークはTypeErrorで再試行待ちのため、subscriptionを必須にする参照を修正した。[調査と判断](../research/RECEIVER_AND_BACKGROUND_EXPERIMENTS.md#13-本環境のトーク補完と購読情報)。受信cursorや待機トークを消さず、既存の再試行期限を引き継ぐ。
 
 86c1ca8 / equable-house-3257のbuild成功後、同じ停止・配備・起動手順で反映した。Core復元後の起動約48秒でhealth 200 / receiving、補完待ち0 / 補完失敗0。fetchSquareChatEvents 3回で履歴を含む185イベントを取得し、受付20・重複22・対象外143。API errors 0 / rateLimits 0、RSS約115MiB、Core backup成功。maxLagMsは取得した過去履歴の経過時間を含み、新着の応答時間として解釈しない。新着Command返信は別途実OCで確認する。
+
+## 2026-10-04の通常応答・ID・参加取得・Motion修正
+
+6825fa2 / brief-test-8821へ、Protocol v7のNativeとAdapterを同時配備した。既存instanceを0へ変更して停止を確認し、配備後に1へ戻した。0.2vCPU / 512MB、Volume追加なし、CD OFFを維持した。
+
+通常送信を既定にし、原因投稿を示す副官通知は同じOCのサブトークreplyを使う。!idの自分・対象・名前検索・message/reply参照を追加。log allは指定どおり後回し。[IDの範囲と上限](../../crates/kbc-core/src/oc/docs/ID.md)。旧OC管理との表示・権限・mute警告・再参加条件の差は[旧仕様照合](../research/OC_LEGACY_COMPATIBILITY_2026_10_03.md)へ記録した。SendBoundaryNotReachedの再起動経路はApiSchedulerのSendAttempt Context維持で修正した。
+
+約654秒の観測でhealth 200 / receiving、PUSH session 1、定期取得12トーク・優先5トーク、829周期。API requests 907 / errors 9 / rateLimits 0、Action完了4件（sendMessage RPC 3回を含む）・新しいAction失敗/unknown 0。旧unknown 8件は保持しており、成功と推定して消したり再送したりしない。CPUのNorthflank表示は0.0073vCPU（割当の約4%）、Memory 167.84MB、restart 0。RSSは約153MiB。Motion生成中や長期負荷の値ではない。
+
+暗号化backup 11回 / failures 0、ログ同期2周期 / failures 0。同期27行はmessages 21 / names 3 / member-events 3、既存payload8件への追記と新payload1件。遠隔manifest9件のSHA256・件数・gzip全行を照合した。参加退出のsource=poll・元eventType・receivedAtMsも保存されていた。[実測と未参加候補](../research/RECEIVER_AND_BACKGROUND_EXPERIMENTS.md#15-参加トーク一覧の実api差2026-10-04)。
+
+全5種のSmoke、buildとClippyを確認した。Motionは同じDockerfileの0.2CPU / 512MiBでMP4/GIF/PNGとメモリ圧迫時の生成中止・後続pingを検証し、OOMKilled=false。[測定条件と限界](../../experiments/motion-memory/docs/MEMORY.md)。報告されたメモリ異常そのものは同じ公開素材で再現できておらず、対策後の実Bot生成負荷は観測を続ける。
+
+続いて8a14f53 / natural-hands-3186へ切り替えた。参加一覧にない旧通知設定1トークを定期取得から除外し、設定は保持した。listedChats=11 / pollingChats=11 / priorityChats=4 / unlistedPriorityChats=1。起動約146秒で定期取得181周期、API requests 184 / errors 0 / rateLimits 0、PUSH session 1、暗号化backup 3回 / failures 0、RSS約127MiB。約3分時点のNorthflank表示はCPU 0.011vCPU（割当の約6%）、Memory 141.50MB、restart 0。新規投稿のない観測期間であり、Command応答時間の測定とは扱わない。前版のNOT_FOUNDはこの期間には出なかった。

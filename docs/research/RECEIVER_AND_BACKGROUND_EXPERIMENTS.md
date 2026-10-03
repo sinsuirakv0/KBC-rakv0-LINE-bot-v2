@@ -185,3 +185,7 @@ PUSHでも `fetchMyEvents(limit: 100)` を使い、SDKが永続受付より先�
 Receiver.runPollingは、一覧を全ページ取得できた場合だけ、その一覧を定期取得対象にする。旧通知設定は削除せず、一覧にない件数をunlistedPriorityChatsへ出す。初回の一覧障害時は設定由来の取得を維持し、更新失敗時も前回一覧を維持する。参加一覧を使うことで無効な設定先への定期要求を抑えるが、NOT_FOUNDのすべてが未参加を意味するとは判断しない。PUSH補完は従来どおり別経路で残す。
 
 既存Smokeで、一覧障害時も投稿なしの通知取得が動くことと、正常な一覧にない設定先へ要求せず設定行は残すことを確認した。実環境の一覧件数・除外件数・エラーは反映後に記録する。
+
+8a14f53を反映し、起動約22秒でlistedChats=11 / pollingChats=11 / priorityChats=4 / unlistedPriorityChats=1、定期取得19周期、API errors=0 / rateLimits=0を確認した。旧設定5トークのうち1トークがLINEの現在の一覧にない。除外後のNOT_FOUND解消と整合するが、退会・削除のどちらかまで特定したとは扱わない。
+
+約146秒時点も定期取得181周期、API errors=0 / rateLimits=0 / discoveryFailures=0、暗号化backup成功3回を維持した。新規イベントのない期間でも定期取得が進んだ。少数トークの短時間観測であり、多OC・制限後の復帰・参加退出の完全性の保証は継続観測事項。[配備記録](../operations/MINIMAL_BOT.md#2026-10-04の通常応答id参加取得motion修正)。
