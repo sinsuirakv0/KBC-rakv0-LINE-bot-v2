@@ -19,7 +19,7 @@ export class ApiScheduler {
   private cooldownUntil = 0;
   private scope = new AsyncLocalStorage<boolean>();
   private methodScope = new AsyncLocalStorage<string>();
-  private sendScope = new AsyncLocalStorage<SendAttempt>();
+  private sendScope = new AsyncLocalStorage<SendAttempt | undefined>();
   readonly metrics = { requests: 0, errors: 0, rateLimits: 0, maxActive: 0, totalWaitMs: 0, totalApiMs: 0, methods: {} as Record<string, number> };
 
   constructor(private signal: AbortSignal, private concurrency = 2, private intervalMs = 250) {
@@ -50,8 +50,10 @@ export class ApiScheduler {
     // SDKのtoken更新・再要求は親RPCの枠内で順に動くため、二重に枠を取らない。
     if (this.scope.getStore()) return execute();
     if (this.queue.length >= 32) throw Object.assign(new Error("ApiQueueFull"), { code: "ApiQueueFull" });
+    // 空いた枠を起こす別RPCのContextではなく、この要求の送信境界を引き継ぐ。
+    const attempt = this.sendScope.getStore();
     return new Promise<T>((resolve, reject) => {
-      this.queue.push({ execute, resolve: value => resolve(value as T), reject });
+      this.queue.push({ execute: () => this.sendScope.run(attempt, execute), resolve: value => resolve(value as T), reject });
       this.pump();
     });
   }

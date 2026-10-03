@@ -149,6 +149,20 @@ try {
   assert.equal((await deliverAction(networkClient, failedCore, networkGate, retry)).status, "unknown");
   assert.equal(networkCalls, 1);
   assert.equal(failedCore.stats().queuedActions, 0);
+  // 別RPCで枠が埋まった後の送信でも、実通信前のsendingと結果不明を記録する。
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  const holding = [networkGate.run("fixtureHold", () => blocked), networkGate.run("fixtureHold", () => blocked)];
+  await delay(10);
+  const queuedBatch = batch(["queued-network"]);
+  queuedBatch.events = queuedBatch.events.map(event => ({ ...event, chatId: "queued-chat" }));
+  failedCore.submitBatch(queuedBatch);
+  const queuedAction = await failedCore.nextAction();
+  assert(queuedAction);
+  const queuedDelivery = deliverAction(networkClient, failedCore, networkGate, queuedAction);
+  await delay(10); release(); await Promise.all(holding);
+  assert.equal((await queuedDelivery).status, "unknown");
+  assert.equal(networkCalls, 2);
   networkController.abort();
 } finally { failedCore.shutdown(); }
 
