@@ -92,3 +92,9 @@ GitHub指定時はBOT_PERMISSIONS_PATH / LEGACY_OC_SETTINGS_PATHの未指定path
 全5種のSmoke、buildとClippyを確認した。Motionは同じDockerfileの0.2CPU / 512MiBでMP4/GIF/PNGとメモリ圧迫時の生成中止・後続pingを検証し、OOMKilled=false。[測定条件と限界](../../experiments/motion-memory/docs/MEMORY.md)。報告されたメモリ異常そのものは同じ公開素材で再現できておらず、対策後の実Bot生成負荷は観測を続ける。
 
 続いて8a14f53 / natural-hands-3186へ切り替えた。参加一覧にない旧通知設定1トークを定期取得から除外し、設定は保持した。listedChats=11 / pollingChats=11 / priorityChats=4 / unlistedPriorityChats=1。起動約146秒で定期取得181周期、API requests 184 / errors 0 / rateLimits 0、PUSH session 1、暗号化backup 3回 / failures 0、RSS約127MiB。約3分時点のNorthflank表示はCPU 0.011vCPU（割当の約6%）、Memory 141.50MB、restart 0。新規投稿のない観測期間であり、Command応答時間の測定とは扱わない。前版のNOT_FOUNDはこの期間には出なかった。
+
+## 2026-10-04のリプライ送信テスト配備
+
+a42937f / boiling-throne-4097へ、BOT管理者限定の!test replyを配備した。Linux buildのSuccessを確認し、旧instanceを0へ変更して0 / 0を確認してから配備・1へ戻した。0.2vCPU / 512MB、Volume追加なし、CD OFFを維持。Protocolは既存v7のまま。[コマンド・関数・検証範囲](../../crates/kbc-core/src/oc/docs/TEST_REPLY.md)。
+
+起動約135秒でhealth 200 / receiving、PUSH session / sign-on各1、listedChats / pollingChats各11、priorityChats 4、補完・定期取得の失敗0。API requests 171 / errors 0 / rateLimits 0、暗号化backup 3回 / failures 0、RSS約129MiB。Coreの完了82件・旧unknown 8件を復元し、新規配送の失敗・unknownは0。新起動後のログ12行は5分同期の待機中で、この時点で新周期の完了は未確認。Northflank表示はCPU 0.0067vCPU（割当の約3%）、Memory 142.23MB、restart 0。実LINEでの!test reply投稿・サブトーク間/別OCの表示は利用者の試験対象であり、この起動確認を実送信成功の証明としない。
