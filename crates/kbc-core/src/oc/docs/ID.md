@@ -22,4 +22,4 @@ Protocol v7でmembers・joinedChatsのread DTOを追加し、NativeとAdapterを
 
 参加一覧のSDK入出力はjoinedChatPageを共有する。getJoinedSquareChatsが本環境でNOT_IMPLEMENTEDとなったため、LINEJS自身と同じfetchMyEventsの一覧snapshotへ変更した。通常受信のcheckpointは上書きしない。[取得の関数・上限](../../../../../apps/line/docs/ADAPTER.md)。
 
-!id replyは情報取得。取得したIDでBOTから実際に返信する試験はBOT管理者専用の [!test reply](TEST_REPLY.md) を使う。送信先MIDと返信先メッセージIDを分け、別OCの参照可否も試せる。
+!id replyは情報取得。取得したIDでBOTから実際に返信する試験はBOT管理者専用の [!test reply](TEST_REPLY.md) を使う。--chatには元メッセージがあるトークMIDを指定し、投稿先は実行トークに固定する。別OCの投稿の参照可否も試せる。

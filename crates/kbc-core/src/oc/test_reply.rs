@@ -45,18 +45,43 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &Job, now: i64) -> 
             now,
         );
     }
-    let mut chat = identity(&job.event).1;
+    let chat = identity(&job.event).1;
     if input.split_whitespace().next() == Some("--to") {
+        return reply(
+            tx,
+            job,
+            "返信は実行トークへ送ります。返信元トークMIDは --chat で指定してください。使い方: !test help",
+            now,
+        );
+    }
+    if input.split_whitespace().next() == Some("--chat") {
         take_word(&mut input);
-        chat = take_word(&mut input);
-        if !chat.starts_with('m')
-            || !(9..=64).contains(&chat.len())
-            || !chat[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
+        let source_chat = take_word(&mut input);
+        if !source_chat.starts_with('m')
+            || !(9..=64).contains(&source_chat.len())
+            || !source_chat[1..]
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
         {
             return reply(
                 tx,
                 job,
-                "送信先はmから始まるトークMIDを指定してください。",
+                "返信元はmから始まるトークMIDを指定してください。",
+                now,
+            );
+        }
+        // SDKに返信元MIDの引数はない。観測済みのIDとの矛盾だけを検査し、履歴取得は増やさない。
+        let wrong_chat: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM message_refs WHERE message=?1 AND chat<>?2 AND at>?3)
+                AND NOT EXISTS(SELECT 1 FROM message_refs WHERE chat=?2 AND message=?1 AND at>?3)",
+            params![message, source_chat, now - 48 * 3600000],
+            |row| row.get(0),
+        )?;
+        if wrong_chat {
+            return reply(
+                tx,
+                job,
+                "メッセージIDと返信元トークMIDが受信済み情報に一致しません。",
                 now,
             );
         }

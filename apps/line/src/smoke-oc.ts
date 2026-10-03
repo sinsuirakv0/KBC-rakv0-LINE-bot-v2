@@ -83,8 +83,9 @@ async function signal(id: string, state: string, scope = "square", targetChat = 
     displayName: "参加者🙂", state, scope, memberCreatedAtMs: at, createdAtMs: at });
 }
 try {
-  // BOT管理者だけが、任意のメッセージIDへ本文を崩さず1件送信できる。
+  // 返信元が別トーク・別OCでも送信先は実行トーク。BOT管理者だけが本文を崩さず1件送信できる。
   const replyMessage = "123456789012345678";
+  await message("返信元の投稿", user, undefined, sub, { messageId: replyMessage }); await drain();
   for (const actor of [admin, mod]) {
     await message(`!test reply ${replyMessage} 未許可`, actor);
     assert(texts(await drain()).includes("BOT管理者専用"));
@@ -94,18 +95,24 @@ try {
   await message(`!test reply ${replyMessage} ${replyText}`, owner);
   assert.equal((await drain()).filter(action => action.type === "sendMessage").length, 1);
   assert.deepEqual(replySends.at(-1), { chat, message: replyMessage, text: replyText });
-  await message(`o.test reply ${replyMessage} --to ${sub} サブトークへ返信`, owner); await drain();
-  assert.equal(replySends.at(-1)?.chat, sub);
+  await message(`o.test reply ${replyMessage} --chat ${sub} サブトークの投稿へ返信`, owner); await drain();
+  assert.deepEqual(replySends.at(-1), { chat, message: replyMessage, text: "サブトークの投稿へ返信" });
   const otherChat = mid("m", "a");
-  await message(`!test reply ${replyMessage} --to ${otherChat} 別OCでの表示確認`, owner); await drain();
-  assert.deepEqual(replySends.at(-1), { chat: otherChat, message: replyMessage, text: "別OCでの表示確認" });
+  const otherMessage = "123456789012345679";
+  await message("別OCの投稿", user, undefined, otherChat, { messageId: otherMessage, squareId: mid("s", "a") }); await drain();
+  await message(`!test reply ${otherMessage} --chat ${otherChat} 別OCの投稿へ返信`, owner); await drain();
+  assert.deepEqual(replySends.at(-1), { chat, message: otherMessage, text: "別OCの投稿へ返信" });
+  await message(`!test reply 123456789012345680 --chat ${otherChat} 未観測の投稿の表示確認`, owner); await drain();
+  assert.equal(replySends.at(-1)?.chat, chat);
   const beforeInvalid = replySends.length;
   await message(`!test reply ${chat} MIDを誤指定`, owner); assert(texts(await drain()).includes("メッセージID"));
-  await message(`!test reply ${replyMessage} --to ${square} OCのMIDを誤指定`, owner); assert(texts(await drain()).includes("トークMID"));
+  await message(`!test reply ${replyMessage} --chat ${square} OCのMIDを誤指定`, owner); assert(texts(await drain()).includes("トークMID"));
+  await message(`!test reply ${replyMessage} --chat ${otherChat} 返信元MIDの不一致`, owner); assert(texts(await drain()).includes("一致しません"));
+  await message(`!test reply ${replyMessage} --to ${sub} 旧引数で別トークへ送らない`, owner); assert(texts(await drain()).includes("--chat"));
   await message(`!test reply ${replyMessage} ${"🙂".repeat(751)}`, owner); assert(texts(await drain()).includes("1,500"));
   assert.equal(replySends.length, beforeInvalid);
-  await message(`!test reply ${replyMessage} -- --toから始まる本文`, owner); await drain();
-  assert.equal(replySends.at(-1)?.text, "--toから始まる本文");
+  await message(`!test reply ${replyMessage} -- --chatから始まる本文`, owner); await drain();
+  assert.equal(replySends.at(-1)?.text, "--chatから始まる本文");
   await message("!test reply help", user);
   const testHelp = await drain(); assert(texts(testHelp).includes("BOT管理者専用"));
   assert(testHelp.every(action => action.type === "sendMessage"));
