@@ -39,6 +39,7 @@ pub fn split_responses(
     Ok(result)
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub enum CommandPlan {
     Text(Vec<(String, i64)>),
     Search(SearchSession),
@@ -51,14 +52,15 @@ pub fn prepare(
     text: &str,
     now: i64,
 ) -> CommandPlan {
-    let Some(input) = text.trim().strip_prefix("o.") else {
+    let text = text.trim();
+    let Some(input) = text.strip_prefix('!').or_else(|| text.strip_prefix("o.")) else {
         return CommandPlan::Ignore;
     };
     let mut parts = input.split_whitespace();
     let name = parts.next().unwrap_or_default().to_ascii_lowercase();
     let name = canonical_name(&name);
     let args: Vec<&str> = parts.collect();
-    let known = matches!(name, "help" | "ut" | "tut" | "st" | "test-notify")
+    let known = matches!(name, "oc" | "help" | "ut" | "tut" | "st" | "test-notify")
         || content.responses.contains_key(name);
     if !known {
         return CommandPlan::Ignore;
@@ -76,9 +78,12 @@ pub fn prepare(
         return CommandPlan::Text(vec![(
             content
                 .command_help(target)
-                .unwrap_or("そのコマンドの案内はありません。o.help で一覧を確認できます。".into()),
+                .unwrap_or("そのコマンドの案内はありません。!help で一覧を確認できます。".into()),
             now,
         )]);
+    }
+    if name == "oc" {
+        return CommandPlan::Text(vec![(content.command_help("oc").unwrap_or_default(), now)]);
     }
     if matches!(name, "ut" | "tut" | "st") {
         if args.is_empty() {
@@ -119,7 +124,7 @@ pub fn prepare(
                     now + seconds * 1000,
                 ),
             ],
-            _ => vec![("確認用: o.test-notify 1〜60（秒）".into(), now)],
+            _ => vec![("確認用: !test-notify 1〜60（秒）".into(), now)],
         });
     }
     CommandPlan::Text(vec![(content.responses[name].clone(), now)])

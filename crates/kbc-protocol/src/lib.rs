@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -20,9 +20,18 @@ pub struct CoreConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub ffmpeg_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub permissions_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub legacy_oc_settings_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub restored_from_backup: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, Serialize, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
 #[serde(
     tag = "type",
     rename_all = "camelCase",
@@ -40,6 +49,41 @@ pub enum CoreEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         reply_to_message_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        square_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        bot_member_id: Option<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        mentions: Option<Vec<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        content_type: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        media_group_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        media_group_sequence: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        media_group_total: Option<u32>,
+        #[ts(type = "number")]
+        created_at_ms: i64,
+    },
+    MemberChanged {
+        event_id: String,
+        square_id: String,
+        chat_id: String,
+        member_id: String,
+        display_name: String,
+        scope: String,
+        state: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        member_created_at_ms: Option<f64>,
         #[ts(type = "number")]
         created_at_ms: i64,
     },
@@ -69,6 +113,9 @@ pub enum CoreAction {
         chat_id: String,
         related_message_id: String,
         text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        mention: Option<MessageMention>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         image_url: Option<String>,
@@ -104,6 +151,15 @@ pub enum CoreAction {
         #[ts(type = "number")]
         created_at_ms: i64,
     },
+    OcApi {
+        action_id: String,
+        event_id: String,
+        chat_id: String,
+        request: OcRequest,
+        continuation: String,
+        #[ts(type = "number")]
+        created_at_ms: i64,
+    },
 }
 
 #[derive(Debug, Deserialize, Serialize, TS)]
@@ -115,6 +171,14 @@ pub struct Attachment {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub duration_ms: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageMention {
+    pub member_id: String,
+    pub start: u32,
+    pub end: u32,
 }
 
 #[derive(Debug, Deserialize, Serialize, TS)]
@@ -134,6 +198,86 @@ pub struct ActionResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub oc_result: Option<OcResult>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum OcRequest {
+    Context {
+        member_id: String,
+        authority: bool,
+    },
+    Member {
+        member_id: String,
+    },
+    Chats {
+        square_id: String,
+    },
+    Membership {
+        square_id: String,
+        member_id: String,
+        revision: String,
+        state: String,
+    },
+    Report {
+        square_id: String,
+        message_id: String,
+    },
+}
+impl OcRequest {
+    pub fn is_read(&self) -> bool {
+        matches!(
+            self,
+            Self::Context { .. } | Self::Member { .. } | Self::Chats { .. }
+        )
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct OcMember {
+    pub member_id: String,
+    pub square_id: String,
+    pub name: String,
+    pub role: String,
+    pub state: String,
+    pub revision: String,
+}
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct OcContext {
+    pub square_id: String,
+    pub chat_name: String,
+    pub bot_member_id: String,
+    pub bot_role: String,
+    pub actor: OcMember,
+    pub authority: String,
+}
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct OcChat {
+    pub chat_id: String,
+    pub name: String,
+    pub is_main: bool,
+}
+#[derive(Debug, Clone, Default, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct OcResult {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub context: Option<OcContext>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub member: Option<OcMember>,
+    #[serde(default)]
+    pub chats: Vec<OcChat>,
 }
 
 #[derive(Debug, Serialize, TS)]
@@ -157,4 +301,5 @@ pub struct CoreStats {
     pub completed_actions: u32,
     pub active_sessions: u32,
     pub preparing_media: u32,
+    pub querying_actions: u32,
 }

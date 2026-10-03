@@ -5,6 +5,10 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+regex = "1.12"
+sha1 = "0.10"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 kbc-protocol = { path = "../kbc-protocol" }
 rusqlite = { version = "0.38", features = ["bundled"] }
 serde_json = "1"

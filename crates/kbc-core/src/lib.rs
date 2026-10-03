@@ -15,6 +15,8 @@ mod assets;
 mod commands;
 mod media;
 mod motion;
+mod oc;
+mod permissions;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -29,6 +31,7 @@ pub struct Runtime {
     stopped: AtomicBool,
     next_cleanup_ms: AtomicI64,
     max_retained_events: u32,
+    permissions: permissions::Permissions,
     content: commands::content::ContentCatalog,
     search: commands::search::SearchCatalog,
     assets: assets::AssetService,
@@ -71,7 +74,8 @@ impl Runtime {
             .unwrap_or(Path::new("storage"))
             .join("media");
         std::fs::create_dir_all(&media_root)?;
-        let db = Connection::open(config.database_path)?;
+        let permissions = permissions::Permissions::load(config.permissions_path.as_deref())?;
+        let mut db = Connection::open(config.database_path)?;
         // Event・Action・checkpointを一つのtransactionで確定する。
         db.execute_batch("PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL;
             PRAGMA max_page_count=16384;
@@ -108,9 +112,19 @@ impl Runtime {
             "INSERT OR IGNORE INTO metadata VALUES ('owner', ?1)",
             [&config.owner_id],
         )?;
+        oc::initialize(&db)?;
+        oc::import_legacy(&mut db, config.legacy_oc_settings_path.as_deref())?;
+        // 遠隔退避以後に送信された可能性がある。期限済みの副作用は照合まで再実行しない。
+        if config.restored_from_backup.unwrap_or(false) {
+            db.execute("UPDATE actions SET status='unknown',code='BackupRestoreNeedsReconciliation',completed=?1
+                WHERE status IN ('queued','claimed','sending') AND due<=?1 AND (json_extract(payload,'$.type') IN ('sendMessage','deleteMessage')
+                OR (json_extract(payload,'$.type')='ocApi' AND json_extract(payload,'$.request.type') IN ('membership','report')))",[now_ms()])?;
+        }
+        // 読み取りだけのOC照会は再実行できる。更新の結果不明と区別する。
+        db.execute("UPDATE actions SET status='queued' WHERE status='sending' AND json_extract(payload,'$.type')='ocApi' AND json_extract(payload,'$.request.type') IN ('context','member','chats')", [])?;
         // 取り出しただけの操作は再待機、通信開始済みは勝手に再投稿しない。
         db.execute(
-            "UPDATE actions SET status='queued' WHERE status IN ('claimed','preparing')",
+            "UPDATE actions SET status='queued' WHERE status IN ('claimed','preparing','querying')",
             [],
         )?;
         db.execute("UPDATE actions SET status='unknown', code='RestartDuringSend', completed=?1 WHERE status='sending'", [now_ms()])?;
@@ -131,6 +145,7 @@ impl Runtime {
             stopped: AtomicBool::new(false),
             next_cleanup_ms: AtomicI64::new(0),
             max_retained_events,
+            permissions,
             content,
             search,
             assets,
@@ -152,6 +167,23 @@ impl Runtime {
                 |row| row.get(0),
             )
             .optional()?)
+    }
+
+    pub fn persistence_revision(&self) -> Result<String> {
+        Ok(self
+            .database
+            .lock()
+            .map_err(|_| "DatabaseLock")?
+            .total_changes()
+            .to_string())
+    }
+
+    pub fn snapshot_database(&self, path: &str) -> Result<()> {
+        self.database
+            .lock()
+            .map_err(|_| "DatabaseLock")?
+            .execute("VACUUM INTO ?1", [path])?;
+        Ok(())
     }
 
     pub fn submit_batch(&self, batch: ReceivedBatch) -> Result<BatchReceipt> {
@@ -184,7 +216,33 @@ impl Runtime {
                 sender_id,
                 reply_to_message_id,
                 created_at_ms,
-            } = event;
+                ..
+            } = event
+            else {
+                if let CoreEvent::MemberChanged {
+                    event_id,
+                    square_id,
+                    chat_id,
+                    member_id,
+                    display_name,
+                    scope,
+                    state,
+                    created_at_ms,
+                    ..
+                } = event
+                    && ([event_id, square_id, chat_id, member_id]
+                        .iter()
+                        .any(|id| id.is_empty() || id.len() > 256)
+                        || display_name.len() > 320
+                        || scope.len() > 16
+                        || state.len() > 16
+                        || *created_at_ms < 0)
+                {
+                    return Err("InvalidMemberEvent".into());
+                }
+                plans.push(commands::CommandPlan::Ignore);
+                continue;
+            };
             if [event_id, chat_id, message_id]
                 .iter()
                 .any(|id| id.is_empty() || id.len() > 256)
@@ -215,7 +273,7 @@ impl Runtime {
         if cleanup_due {
             // 未解決操作のIDは残す。頻繁な空checkpoint保存で全行を掃除しない。
             tx.execute("DELETE FROM events WHERE received < ?1 AND NOT EXISTS
-                (SELECT 1 FROM actions WHERE event_id=events.id AND status IN ('queued','preparing','claimed','sending','unknown'))", [now - RETENTION_MS])?;
+                (SELECT 1 FROM actions WHERE event_id=events.id AND status IN ('queued','preparing','claimed','querying','sending','unknown'))", [now - RETENTION_MS])?;
             tx.execute(
                 "DELETE FROM actions WHERE status IN ('sent','failed') AND completed < ?1",
                 [now - RETENTION_MS],
@@ -226,14 +284,12 @@ impl Runtime {
             duplicates: 0,
             actions_created: 0,
         };
+        let first_row: i64 =
+            tx.query_row("SELECT COALESCE(max(rowid),0) FROM actions", [], |r| {
+                r.get(0)
+            })?;
         for (event, plan) in batch.events.into_iter().zip(plans) {
-            let CoreEvent::MessageReceived {
-                event_id,
-                chat_id,
-                message_id,
-                created_at_ms,
-                ..
-            } = &event;
+            let (event_id, _, _, _, created_at_ms) = oc::identity(&event);
             if tx.execute(
                 "INSERT OR IGNORE INTO events VALUES (?1,'',?2)",
                 params![event_id, now],
@@ -245,82 +301,22 @@ impl Runtime {
             receipt.accepted += 1;
             if batch
                 .baseline_before_ms
-                .is_some_and(|before| *created_at_ms < before)
+                .is_some_and(|before| created_at_ms < before)
             {
                 continue;
             }
-            let (mut responses, replacement) =
-                commands::sessions::apply(&tx, &event, plan, &self.search, now)?;
-            if responses.iter().any(|(_, _, media)| media.is_some()) {
-                let count: i64 = tx.query_row("SELECT count(*) FROM actions WHERE status IN ('queued','preparing','claimed','sending','unknown') AND (json_extract(payload,'$.type')='prepareMedia' OR json_extract(payload,'$.attachment') IS NOT NULL)", [], |row|row.get(0))?;
-                if count >= media::MAX_MEDIA_JOBS {
-                    responses = vec![(
-                        "素材取得・生成が混み合っています。少し待って再度お試しください。".into(),
-                        now,
-                        None,
-                    )];
-                    tx.execute("DELETE FROM sessions WHERE id=?1", [event_id])?;
-                }
-            }
-            let responses = commands::split_responses(responses)?;
-            for (index, (body, due, media)) in responses.into_iter().enumerate() {
-                let id = format!("{event_id}:{index}");
-                let is_prompt: bool = tx.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM sessions WHERE action=?1)",
-                    [&id],
-                    |row| row.get(0),
-                )?;
-                let replace_message_id = if index == 0 {
-                    replacement.clone()
-                } else {
-                    None
-                };
-                let action = if let Some(request) = media {
-                    CoreAction::PrepareMedia {
-                        action_id: id.clone(),
-                        event_id: event_id.clone(),
-                        chat_id: chat_id.clone(),
-                        related_message_id: message_id.clone(),
-                        request: serde_json::to_string(&media::MediaJob {
-                            catalog_revision: self.search.revision.clone(),
-                            request,
-                        })?,
-                        replace_message_id,
-                        is_prompt,
-                        created_at_ms: now,
-                    }
-                } else {
-                    CoreAction::SendMessage {
-                        action_id: id.clone(),
-                        event_id: event_id.clone(),
-                        chat_id: chat_id.clone(),
-                        related_message_id: message_id.clone(),
-                        text: body,
-                        image_url: None,
-                        attachment: None,
-                        replace_message_id,
-                        is_prompt,
-                        created_at_ms: now,
-                    }
-                };
-                tx.execute(
-                    "INSERT INTO actions (id,event_id,chat,payload,due,created,status)
-                    VALUES (?1,?2,?3,?4,?5,?6,'queued')",
-                    params![
-                        id,
-                        event_id,
-                        chat_id,
-                        serde_json::to_string(&action)?,
-                        due,
-                        now
-                    ],
-                )?;
-                receipt.actions_created += 1;
+            if !oc::ingest(self, &tx, &event, &plan, now)? {
+                self.apply_command(&tx, &event, plan, now)?;
             }
         }
+        receipt.actions_created = tx.query_row(
+            "SELECT count(*) FROM actions WHERE rowid>?1",
+            [first_row],
+            |r| r.get(0),
+        )?;
         let event_count: i64 = tx.query_row("SELECT count(*) FROM events", [], |row| row.get(0))?;
         let action_count: i64 = tx.query_row(
-            "SELECT count(*) FROM actions WHERE status IN ('queued','preparing','claimed','sending','unknown')",
+            "SELECT count(*) FROM actions WHERE status IN ('queued','preparing','claimed','querying','sending','unknown')",
             [],
             |row| row.get(0),
         )?;
@@ -338,7 +334,102 @@ impl Runtime {
         Ok(receipt)
     }
 
+    fn apply_command(
+        &self,
+        tx: &rusqlite::Transaction<'_>,
+        event: &CoreEvent,
+        plan: commands::CommandPlan,
+        now: i64,
+    ) -> Result<()> {
+        let CoreEvent::MessageReceived {
+            event_id,
+            chat_id,
+            message_id,
+            ..
+        } = event
+        else {
+            return Ok(());
+        };
+        let (mut responses, replacement) =
+            commands::sessions::apply(tx, event, plan, &self.search, now)?;
+        if responses.iter().any(|(_, _, media)| media.is_some()) {
+            let count: i64 = tx.query_row("SELECT count(*) FROM actions WHERE status IN ('queued','preparing','claimed','querying','sending','unknown') AND (json_extract(payload,'$.type')='prepareMedia' OR json_extract(payload,'$.attachment') IS NOT NULL)", [], |row|row.get(0))?;
+            if count >= media::MAX_MEDIA_JOBS {
+                responses = vec![(
+                    "素材取得・生成が混み合っています。少し待って再度お試しください。".into(),
+                    now,
+                    None,
+                )];
+                tx.execute("DELETE FROM sessions WHERE id=?1", [event_id])?;
+            }
+        }
+        let responses = commands::split_responses(responses)?;
+        for (index, (body, due, media)) in responses.into_iter().enumerate() {
+            let id = format!("{event_id}:{index}");
+            let is_prompt: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM sessions WHERE action=?1)",
+                [&id],
+                |row| row.get(0),
+            )?;
+            let replace_message_id = if index == 0 {
+                replacement.clone()
+            } else {
+                None
+            };
+            let action = if let Some(request) = media {
+                CoreAction::PrepareMedia {
+                    action_id: id.clone(),
+                    event_id: event_id.clone(),
+                    chat_id: chat_id.clone(),
+                    related_message_id: message_id.clone(),
+                    request: serde_json::to_string(&media::MediaJob {
+                        catalog_revision: self.search.revision.clone(),
+                        request,
+                    })?,
+                    replace_message_id,
+                    is_prompt,
+                    created_at_ms: now,
+                }
+            } else {
+                CoreAction::SendMessage {
+                    action_id: id.clone(),
+                    event_id: event_id.clone(),
+                    chat_id: chat_id.clone(),
+                    related_message_id: message_id.clone(),
+                    text: body,
+                    image_url: None,
+                    attachment: None,
+                    mention: None,
+                    replace_message_id,
+                    is_prompt,
+                    created_at_ms: now,
+                }
+            };
+            tx.execute(
+                "INSERT INTO actions (id,event_id,chat,payload,due,created,status)
+                VALUES (?1,?2,?3,?4,?5,?6,'queued')",
+                params![
+                    id,
+                    event_id,
+                    chat_id,
+                    serde_json::to_string(&action)?,
+                    due,
+                    now
+                ],
+            )?;
+        }
+        Ok(())
+    }
+
     pub async fn next_action(&self) -> Result<Option<CoreAction>> {
+        self.next_action_mode(false).await
+    }
+
+    pub async fn next_query_action(&self) -> Result<Option<CoreAction>> {
+        self.next_action_mode(true).await
+    }
+
+    async fn next_action_mode(&self, query: bool) -> Result<Option<CoreAction>> {
         loop {
             let notified = self.wake.notified();
             tokio::pin!(notified);
@@ -351,13 +442,18 @@ impl Runtime {
                 let next: Option<(String, String, i64)> = db.query_row(
                     "SELECT a.id,a.payload,a.due FROM actions a WHERE a.status='queued'
                     AND json_extract(a.payload,'$.type')<>'prepareMedia'
-                    AND NOT EXISTS (SELECT 1 FROM actions b WHERE b.chat=a.chat AND b.status IN ('claimed','sending'))
-                    ORDER BY a.due,a.rowid LIMIT 1", [],
+                    AND ?1=COALESCE(json_extract(a.payload,'$.type')='ocApi'
+                        AND json_extract(a.payload,'$.request.type') IN ('context','member','chats'),0)
+                    AND (?1=1 OR NOT EXISTS (SELECT 1 FROM actions b WHERE b.chat=a.chat AND b.status IN ('claimed','sending')))
+                    ORDER BY a.due,a.rowid LIMIT 1", [query],
                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).optional()?;
                 match next {
                     Some((id, payload, due)) if due <= now_ms() => {
                         let action = serde_json::from_str(&payload)?;
-                        db.execute("UPDATE actions SET status='claimed' WHERE id=?1", [id])?;
+                        db.execute(
+                            "UPDATE actions SET status=?2 WHERE id=?1",
+                            params![id, if query { "querying" } else { "claimed" }],
+                        )?;
                         return Ok(Some(action));
                     }
                     Some((_, _, due)) => {
@@ -379,7 +475,7 @@ impl Runtime {
             return Err("Stopped".into());
         }
         let count = self.database.lock().map_err(|_| "DatabaseLock")?.execute(
-            "UPDATE actions SET status='sending' WHERE id=?1 AND status='claimed'",
+            "UPDATE actions SET status=CASE WHEN status='querying' THEN 'querying' ELSE 'sending' END WHERE id=?1 AND status IN ('claimed','querying')",
             [action_id],
         )?;
         if count != 1 {
@@ -404,7 +500,12 @@ impl Runtime {
     }
 
     pub fn complete_action(&self, result: ActionResult) -> Result<()> {
-        self.finish_action(result, "sending")
+        let previous = match result.status {
+            DeliveryStatus::Sent => "completed",
+            DeliveryStatus::Failed => "failed_result",
+            DeliveryStatus::Unknown => "sending",
+        };
+        self.finish_action(result, previous)
     }
 
     // 運用者が照合した結果だけを明示的に確定する。結果不明の自動再送には使わない。
@@ -435,7 +536,9 @@ impl Runtime {
         let tx = db.transaction()?;
         let payload: String = tx
             .query_row(
-                "SELECT payload FROM actions WHERE id=?1 AND status=?2",
+                "SELECT payload FROM actions WHERE id=?1 AND (status=?2
+                 OR (?2='completed' AND status IN ('sending','querying'))
+                 OR (?2='failed_result' AND status IN ('claimed','sending','querying')))",
                 params![result.action_id, previous],
                 |row| row.get(0),
             )
@@ -505,6 +608,14 @@ impl Runtime {
         } else if matches!(result.status, DeliveryStatus::Failed) {
             tx.execute("DELETE FROM sessions WHERE action=?1", [&result.action_id])?;
         }
+        oc::complete(
+            self,
+            &tx,
+            &completed,
+            &result,
+            previous == "unknown",
+            now_ms(),
+        )?;
         trim_completed(&tx)?;
         tx.commit()?;
         if matches!(result.status, DeliveryStatus::Sent | DeliveryStatus::Failed) {
@@ -531,6 +642,7 @@ impl Runtime {
             max_retained_events: self.max_retained_events,
             queued_actions: count("queued")?,
             claimed_actions: count("claimed")?,
+            querying_actions: count("querying")?,
             sending_actions: count("sending")?,
             unknown_actions: count("unknown")?,
             failed_actions: count("failed")?,
@@ -611,7 +723,7 @@ fn enqueue_cleanup(
     )?;
     if !exists {
         let retained: i64 = tx.query_row(
-            "SELECT count(*) FROM actions WHERE status IN ('queued','preparing','claimed','sending','unknown')",
+            "SELECT count(*) FROM actions WHERE status IN ('queued','preparing','claimed','querying','sending','unknown')",
             [],
             |row| row.get(0),
         )?;

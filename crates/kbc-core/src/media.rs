@@ -167,7 +167,7 @@ impl Runtime {
     async fn prune_media(&self) -> Result<()> {
         let retained: std::collections::HashSet<i64> = {
             let db = self.database.lock().map_err(|_| "DatabaseLock")?;
-            let mut statement=db.prepare("SELECT rowid FROM actions WHERE status IN ('queued','preparing','claimed','sending','unknown') AND (json_extract(payload,'$.type')='prepareMedia' OR json_extract(payload,'$.attachment') IS NOT NULL)")?;
+            let mut statement=db.prepare("SELECT rowid FROM actions WHERE status IN ('queued','preparing','claimed','querying','sending','unknown') AND (json_extract(payload,'$.type')='prepareMedia' OR json_extract(payload,'$.attachment') IS NOT NULL)")?;
             statement
                 .query_map([], |row| row.get(0))?
                 .collect::<std::result::Result<_, _>>()?
@@ -369,6 +369,7 @@ impl Runtime {
             text,
             image_url: None,
             attachment,
+            mention: None,
             replace_message_id,
             is_prompt,
             created_at_ms,

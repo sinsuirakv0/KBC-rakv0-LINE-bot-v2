@@ -25,7 +25,10 @@ pub fn apply(
         sender_id,
         reply_to_message_id,
         ..
-    } = event;
+    } = event
+    else {
+        return Ok((vec![], None));
+    };
     let old: Option<String> = if let Some(owner) = sender_id {
         match &plan {
             CommandPlan::Search(_) => tx.query_row("SELECT prompt FROM sessions WHERE chat=?1 AND owner=?2", params![chat_id, owner], |row| row.get::<_, Option<String>>(0)).optional()?.flatten(),
@@ -66,7 +69,10 @@ fn apply_inner(
         sender_id,
         reply_to_message_id,
         ..
-    } = event;
+    } = event
+    else {
+        return Ok(vec![]);
+    };
     match plan {
         CommandPlan::Text(messages) => Ok(messages
             .into_iter()
@@ -230,7 +236,10 @@ fn selected(
                 chat_id,
                 sender_id,
                 ..
-            } = event;
+            } = event
+            else {
+                return Ok(vec![]);
+            };
             let Some(owner) = sender_id else {
                 return Ok(vec![(
                     "ファイル選択には送信者情報が必要です。".into(),

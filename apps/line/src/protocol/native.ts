@@ -18,12 +18,15 @@ export interface NativeCore {
   runMediaJobs(): Promise<void>;
   prepareAttachment(actionId: string): Promise<Buffer | null>;
   nextAction(): Promise<CoreAction | null>;
+  nextQueryAction(): Promise<CoreAction | null>;
   markSending(actionId: string): void;
   retryAction(actionId: string, delayMs: number): void;
   completeAction(result: ActionResult): void;
   resolveAction(result: ActionResult): void;
   stats(): CoreStats;
   shutdown(): void;
+  persistenceRevision(): string;
+  snapshotDatabase(path: string): Promise<void>;
 }
 
 export function createCore(config: CoreConfig): NativeCore {
@@ -39,11 +42,14 @@ export function createCore(config: CoreConfig): NativeCore {
     runMediaJobs: () => handle.runMediaJobs(),
     prepareAttachment: actionId => handle.prepareAttachment(actionId),
     nextAction: () => handle.nextAction(),
+    nextQueryAction: () => handle.nextQueryAction(),
     markSending: actionId => handle.markSending(actionId),
     retryAction: (actionId, delayMs) => handle.retryAction(actionId, delayMs),
     completeAction: result => handle.completeAction(JSON.stringify(result)),
     resolveAction: result => handle.resolveAction(JSON.stringify(result)),
     stats: () => handle.stats(),
     shutdown: () => handle.shutdown(),
+    persistenceRevision: () => handle.persistenceRevision(),
+    snapshotDatabase: path => handle.snapshotDatabase(path),
   };
 }

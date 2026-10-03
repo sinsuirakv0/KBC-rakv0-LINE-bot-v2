@@ -73,6 +73,13 @@ impl NativeCore {
     }
 
     #[napi]
+    pub async fn next_query_action(&self) -> Result<Option<Value>> {
+        convert(self.runtime.next_query_action().await)?
+            .map(|value| convert(serde_json::to_value(value)))
+            .transpose()
+    }
+
+    #[napi]
     pub fn complete_action(&self, result: String) -> Result<()> {
         convert(
             self.runtime
@@ -106,6 +113,19 @@ impl NativeCore {
     #[napi]
     pub fn shutdown(&self) {
         self.runtime.shutdown();
+    }
+
+    #[napi]
+    pub fn persistence_revision(&self) -> Result<String> {
+        convert(self.runtime.persistence_revision())
+    }
+
+    #[napi]
+    pub async fn snapshot_database(&self, path: String) -> Result<()> {
+        let runtime = self.runtime.clone();
+        convert(convert(
+            tokio::task::spawn_blocking(move || runtime.snapshot_database(&path)).await,
+        )?)
     }
 }
 

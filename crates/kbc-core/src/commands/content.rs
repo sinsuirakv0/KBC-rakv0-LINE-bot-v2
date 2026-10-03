@@ -22,13 +22,21 @@ impl ContentCatalog {
         if responses.keys().any(|key| {
             matches!(
                 key.as_str(),
-                "help" | "ut" | "tut" | "st" | "unit" | "enemy" | "stage" | "test-notify"
+                "oc" | "oc-admin"
+                    | "help"
+                    | "ut"
+                    | "tut"
+                    | "st"
+                    | "unit"
+                    | "enemy"
+                    | "stage"
+                    | "test-notify"
             )
         }) {
             return Err("ReservedContentName".into());
         }
         let help = read_folder(&root.join("help"))?;
-        for key in ["index", "ut", "tut", "st", "test-notify"] {
+        for key in ["index", "oc", "oc-admin", "ut", "tut", "st", "test-notify"] {
             if !help.contains_key(key) {
                 return Err(format!("MissingHelp:{key}").into());
             }
@@ -36,9 +44,16 @@ impl ContentCatalog {
         Ok(Self { responses, help })
     }
 
+    pub fn internal_help(&self, name: &str) -> Option<String> {
+        self.help.get(name).cloned()
+    }
+
     pub fn command_help(&self, name: &str) -> Option<String> {
+        if name == "oc-admin" {
+            return None;
+        }
         if name == "help" {
-            let mut names = vec!["help", "ut", "tut", "st", "test-notify"];
+            let mut names = vec!["help", "oc", "ut", "tut", "st", "test-notify"];
             names.extend(self.responses.keys().map(String::as_str));
             names.sort_unstable();
             return Some(format!(
@@ -46,7 +61,7 @@ impl ContentCatalog {
                 self.help["index"],
                 names
                     .into_iter()
-                    .map(|name| format!("・o.{name}"))
+                    .map(|name| format!("・!{name}"))
                     .collect::<Vec<_>>()
                     .join("\n")
             ));
