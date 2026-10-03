@@ -1,6 +1,6 @@
 ﻿# 受信ログの受付と同期
 
-2026-10-03。Protocol v6。logs_enabledを指定したCoreが受付を記録する。GitHub設定とOC_LOGS_ENABLED=1が必要。旧ログ変換が完了してから有効化する。
+2026-10-03。Protocol v7。logs_enabledを指定したCoreが受付を記録する。GitHub設定とOC_LOGS_ENABLED=1が必要。旧ログ変換が完了してから有効化する。
 
 logs::initializeがlog_pendingとlog_membersを同じSQLiteへ作る。logs::ingestは重複排除・baseline判定後、Command処分前に呼ぶ。message rowは本文・contentType・senderName・metadataを保存する。無所属はunmappedへ残す。名前は以前の観測と比較し、違う時だけnamesへ保存する。古い観測で最新名を巻き戻さない。OCとトークのmember-eventを分ける。NAMEだけの更新は参加通知・処分へ渡さない。
 
@@ -13,3 +13,5 @@ LogSync.flush / append / runは最新manifest・追記先を取得してmergeす
 normalizeEventsは複数kickeeの通知を個別Eventへ展開する。Receiver.acceptは100件・256KiBのBatchへ分割し、最後まで古いcheckpointを維持する。途中失敗は受付済みIDを重複排除して続け、残りを飛ばさない。profile更新はNAMEへ正規化する。PUSHで届かない過去の名前変更時刻は推定しない。
 
 [階層・配列・同期契約](../../../docs/decisions/OC_LOG_STORAGE_V2.md)、[退避の契約](../../../docs/operations/GITHUB_RECOVERY.md)。
+
+MemberChangedのmetadata_jsonはmember-event行のextraへ保存する。source（push / chat / poll）、元eventType、receivedAtMsを含み、行のイベント時刻と取得時刻を比べる。既存v2配列・gzip形式は変えず、旧行のextra省略/nullも読める。複数kickeeの展開でも元eventTypeを保持する。実イベントIDの重複受付では最初に保存した観測を残す。

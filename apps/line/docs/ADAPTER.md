@@ -1,6 +1,6 @@
 ﻿# 最小LINE Adapter
 
-作成日: 2026-10-02。状態: TypeScript build・模擬PUSHの検証済み。実LINEのPUSH購読、返信、通知、長期復旧は未確認。
+更新日: 2026-10-03。v6の実PUSH・補完・保存復元は本環境で確認済み。以下のv7追加はbuild・通信なしの回帰検証を実施し、本番観測を運用資料へ記録する。全件受信・長期安定性は未確定。
 
 ## 関数と処理経路
 
@@ -14,13 +14,15 @@
 | `Receiver.session` | OCのservice 3だけをHTTP/2で購読。初期応答をSDK Thriftで読み、SDK既定Stream・先行cursor更新を使わない |
 | `accept` | SDK Eventをplain DTOへ変換。sender・REPLYの返信先もDTOへ正規化し、非同期Nativeのcommit後だけSDKの再接続用syncを進める |
 | `completePending / drainChat` | 必要と示されたchatだけ最大2系統、1回4ページずつ補完。同じchatは直列。失敗をトーク別の期限付き再試行へ変え、位置を残す |
+| `runPolling / fetchChat` | 投稿から独立したトークイベント取得。PUSH補完と同じcursor・最大2枠を共有 |
+| `Runtime::priority_chats / NativeCore.priorityChats` | Rustの通知・監視設定から短周期の対象を返す。AdapterはCommand固有の判断を持たない |
 | `deliverAction` / 配送loop | `nextAction`で`claimed`を取り出す。API枠・reqseq保存・通信準備後、`client.fetch`直前の`beforeFetch`で`markSending`する。通信前失敗は再待機、通信後の例外は`unknown`。次の受信入力を必要としない |
 
 PUSHはdirtyフラグに集約し、通知ごとにTaskやQueueを増やさない。account cursorを取得・保存するloopは一つ。取得中・継続ページ中に来たdirtyは全ページ終了後の再取得まで残す。補完待ちchatと`chatRetries`（試行数・再試行時刻）を全体checkpointへ保存し、補完終了後だけ消す。最大256トークを持ち、上限では黙って捨てず停止。最初のchat取得でも保存した初回originより前の履歴Commandは実行しない。
 
 局所補完の失敗は2秒から最大15分のbackoffにし、account PUSHを開始・継続する。未完了の継続ページは待ち列の末尾へ戻し、新着へ譲る。PUSH待機中は最も早い補完期限でも起き、chatだけを再取得する。補完のために空の`fetchMyEvents`を追加しない。`pendingChats` / `chatFailures`で部分障害を観測し、必要ならローカルcheckpointから対象を照合する。
 
-PUSH接続・ACKはRPC枠を占有しない。初期sign-onも間隔制御を通し、回数は`receiver.signOns`へ記録。短時間RPC回数は`api.methods`で観測する。PUSH通知、継続ページ、要求されたchat補完、subscriptionのttl期限（80%地点）で取得する。ttl不明時は30分を仮値とし、全OCの固定高頻度巡回は行わない。
+PUSH接続・ACKはRPC枠を占有しない。初期sign-onも間隔制御を通し、回数は`receiver.signOns`へ記録。短時間RPC回数は`api.methods`で観測する。account取得はPUSH通知、継続ページ、subscriptionのttl期限（80%地点）で起きる。ttl不明時は30分を仮値とする。
 
 HTTP 429の数値Retry-After、`EXCESSIVE_ACCESS`等の識別できる制限応答は全体cooldownへ反映。既定60秒、最大600秒。SDK token更新・再要求は親RPCの枠内で実行し、枠の循環待ちを避ける。RPC名のAsyncLocalStorageにより、送信に伴うrefresh通信を送信開始として扱わない。通信前の再待機以外にアプリ独自の送信再試行はしない。数値だけの未知codeや恒久的アカウント制限の正規化は今後の観測対象。
 
@@ -38,17 +40,17 @@ HTTP/2の初期接続とsign-on待ちは各15秒。PUSH入力の組立Bufferは1
 
 未知イベントは種別と件数を最大64種で観測し、媒体・対象の参加退出もCoreへ正規化する。ログには本文・トークID・message ID・認証値・SDKの生の例外を出さない。受信後の詳細はローカルSQLiteに残る。ログはstdoutの集計と配送結果のみ。毎分CPU（1core比）、RSS・heap、API・受信・配送・容量を出す。`/health`は受信ready時200、それ以外503。PUSH heartbeatだけで全メッセージの受信成功を保証しない。
 
-LINEJSの最新公開版は2026-10-02も3.4.2。npm配布物revision 11をlock。そこでreqseq初回並列の直列化を確認した。SDKが依存するThrift 0.20はnpm auditでhighが出たため、0.25.0へoverride。実SDKのCompact Protocol初期応答を模擬検証し、audit 0件を確認。通信先の実互換性は少数OCの実験で確認する。
+LINEJSの最新公開版は2026-10-03のnpm再確認でも3.4.2。npm配布物revision 11をlock。そこでreqseq初回並列の直列化を確認した。SDKが依存するThrift 0.20はnpm auditでhighが出たため、0.25.0へoverride。実SDKのCompact Protocol初期応答を模擬検証し、audit 0件を確認。通信先の実互換性は少数OCの実験で確認する。
 
 ## Commandの追加境界
 
-Protocol v6。通常返信の実送信IDをCoreへ渡し、候補promptへ結び付ける。管理者削除はsquare.destroyMessageへ渡し、新しい返信成功後に実行する。OCのメディアはoid省略のOBS reqseq upload自身が投稿し、空のIMAGE/VIDEOを先に送らない。画像・動画・GIF・ファイルの素材準備はRust共通Worker、BlobとLINEJS入出力はAdapterが扱う。uploadMediaも共通API枠・実fetch直前のsending記録を通し、HTTP statusを共通transportで検査する。動画durationはCoreの実Frame数から渡す。メディア自体はrelatedMessageId付き返信にならない。通信後の不明結果はunknownで自動再投稿しない。[Media Worker](../../../crates/kbc-core/docs/MEDIA.md) と [実素材実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) を参照。
+Protocol v7。通常返信の実送信IDをCoreへ渡し、候補promptへ結び付ける。管理者削除はsquare.destroyMessageへ渡し、新しい返信成功後に実行する。OCのメディアはoid省略のOBS reqseq upload自身が投稿し、空のIMAGE/VIDEOを先に送らない。画像・動画・GIF・ファイルの素材準備はRust共通Worker、BlobとLINEJS入出力はAdapterが扱う。uploadMediaも共通API枠・実fetch直前のsending記録を通し、HTTP statusを共通transportで検査する。動画durationはCoreの実Frame数から渡す。メディア自体はrelatedMessageId付き返信にならない。通信後の不明結果はunknownで自動再投稿しない。[Media Worker](../../../crates/kbc-core/docs/MEDIA.md) と [実素材実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) を参照。
 
 ## OCイベント・管理API
 
 normalizeEventは本文なしの画像・動画、OC全体のmember状態、トーク内の参加退出を正規化する。時刻・scope・状態を分け、関連member作成時刻がない場合は初参加と推定しない。SquareDirectoryはchat→OC/botを512件・10分でcacheし、32件まで同じ照会をまとめる。roleはcacheから許可せず現在のgetSquareMemberで確認する。SDK返値のMIDとrevisionを検査する。baseline以前の履歴ではOC追加取得をしない。
 
-context / member / chatsはnextQueryActionから1本の照会loopで取得する。通常配送は2本のままで、全RPCは既存ApiSchedulerの同じ上限を共有する。membershipはupdateSquareMember(updatedAttrs=[5], revision付き)、通報はreportSquareMessage(SCAM)。更新・通報も実fetch直前にsendingを保存し、通信後失敗を自動再試行しない。読み取りはfailedで確定でき、再起動は再取得する。
+context / member / chats / members / joinedChatsはnextQueryActionから1本の照会loopで取得する。通常配送は2本のままで、全RPCは既存ApiSchedulerの同じ上限を共有する。membershipはupdateSquareMember(updatedAttrs=[5], revision付き)、通報はreportSquareMessage(SCAM)。更新・通報も実fetch直前にsendingを保存し、通信後失敗を自動再試行しない。読み取りはfailedで確定でき、再起動は再取得する。
 
 入退室のメンションはRustがUTF-16位置を作り、AdapterはMENTIONへ変換する。通常通知の空relatedMessageIdはSDKへundefinedで渡す。[OCの仕様・上限・検証](../../../crates/kbc-core/src/oc/docs/OC.md)。ノート・threadのURL削除と参加イベントの実OC網羅性は後続調査。
 
@@ -56,8 +58,18 @@ context / member / chatsはnextQueryActionから1本の照会loopで取得する
 
 mainはGitHubPersistence.restore / restoreSettingsの後にAuthStorageとCoreを開く。beforePersistがsequence予約とtoken退避を通信前に確定する。Coreのsnapshotは起動・毎分の変更時・正常終了で暗号化保存する。全て既存の非公開データrepoを使う。[関数と障害時の契約](../../../docs/operations/GITHUB_RECOVERY.md)。
 
-受信metadataとsenderDisplayNameをProtocol v6へ正規化し、Profile更新をNAME、複数kickeeを個別Eventへ変換する。展開後のページは100件・256KiBに分割し、最後まで古いcheckpointを保つ。LogSyncは同じ追記先を4MiBまで5分ごとに更新する。競合はblob SHAで確認し、再取得してmergeする。`OC_LOGS_ENABLED=1`は旧データ変換後に設定する。[ログの契約](../../../crates/kbc-core/docs/LOGS.md)。
+受信metadataとsenderDisplayNameをProtocol v7へ正規化し、Profile更新をNAME、複数kickeeを個別Eventへ変換する。展開後のページは100件・256KiBに分割し、最後まで古いcheckpointを保つ。LogSyncは同じ追記先を4MiBまで5分ごとに更新する。競合はblob SHAで確認し、再取得してmergeする。`OC_LOGS_ENABLED=1`は旧データ変換後に設定する。[ログの契約](../../../crates/kbc-core/docs/LOGS.md)。
 
 トーク補完のdrainChatはsubscription省略時に以前のトーク購読IDを保持し、未取得なら省略する。SDKのSquareChat.listenもトーク補完で購読IDを要求していない。返値にIDがある場合は正のsafe integerを検査する。accountのPUSH sign-on・lease検査は別で、省略可能にはしない。Smokeでは購読情報なしの初回・継続ページを受付し、checkpointと重複照合を確認する。
 
 ApiScheduler.runはenqueue時のSendAttemptを保持し、pumpが別RPCの完了Contextから起動しても要求元のsendScopeへ戻して実行する。送信以外の要求ではsendScopeを空にし、別送信の開始を誤記録しない。2枠を別RPCで埋めた後の実SDK送信をSmokeで再現し、修正前は実transport例外をqueuedへ誤分類、修正後はsending記録とunknown確定を確認する。
+
+## 投稿から独立した参加・退出の取得（v7）
+
+`Receiver.run`はPUSH loopと補助取得loopを並行して監視する。`getJoinedSquareChats`は起動時と10分ごと、100件×最大21ページ・2,048トークまで。通知設定のあるトークと有効な参加監視の本OCは3秒、その他はログ回収のため60秒を取得完了後の目安にする。初回を分散し、設定変更は次のloopで反映する。新しい参加トークの発見は最大10分待ち得る。
+
+`drainChat`は同じトークの取得Promiseを共有し、PUSH補完と定期取得がcursorを並行更新しない。全トーク合計2取得、1回4ページ・各100件、保存済みcontinuationから続ける。定期取得は期限の古い順。新着メッセージやPUSH hintなしでも取得・受付・通知配送が動く。参加者一覧の常時取得はしない。
+
+失敗は対象トークだけ2秒〜15分のbackoff、一覧取得失敗は60秒後に再試行し、以前の対象を残す。Core保存失敗は全体停止。全通信は既存ApiSchedulerの2並列・250ms間隔・制限時cooldownを共有する。API回数は増えるため、3秒を全OCで保証せず、OC数・混雑・制限応答で周期を見直す。`pollingChats / priorityChats / pollCycles / pollPages / pollFailures / discoveryFailures / maxPollDelayMs`をhealthへ出す。pollCyclesは完了した周期、pollPagesは定期取得が開始したページで、別経路への合流はAPI回数に加算しない。
+
+normalizeEventsのsourceはpush / chat / pollを区別する。MemberChangedにはeventTypeとreceivedAtMsも付け、ログのextraへ残す。イベント作成時刻と取得時刻を比較できるが、サーバーで発生してから保持されるまでの時間を保証しない。通常応答はrelatedMessageIdなし、副官部屋で原因投稿を残す一斉参加の監視などは同じOCのサブトークからreplyする。[ID取得と参照の範囲](../../../crates/kbc-core/src/oc/docs/ID.md)。

@@ -67,7 +67,12 @@ const kicked = await normalizeEvents({ type: "NOTIFIED_KICKOUT_FROM_SQUARE", cre
   notifiedKickoutFromSquare: { squareChatMid: chat, kickees: [member, "p" + "2".repeat(32)].map(squareMemberMid => ({squareMemberMid, squareMid: square, displayName: "参加者"})) },
 } } as Parameters<typeof normalizeEvents>[0]);
 assert.equal(kicked.length, 2); assert(kicked.every(event => event.type === "memberChanged" && event.state === "KICK_OUT"));
+assert(kicked.every(event => event.type === "memberChanged" && JSON.parse(event.metadataJson!).source === "push"));
 await submit(kicked); await sync.flush();
+const membership = [...files.entries()].find(([path]) => path.includes("member-events/") && path.endsWith(".gz"))!;
+const membershipRows = gunzipSync(membership[1].data).toString("utf8").trim().split("\n").slice(1).map(line => JSON.parse(line));
+assert.equal(membershipRows[0][4].source, "push"); assert.equal(membershipRows[0][4].eventType, "NOTIFIED_KICKOUT_FROM_SQUARE");
+assert(Number.isSafeInteger(membershipRows[0][4].receivedAtMs));
 assert.equal(core.stats().pendingLogs, 0);
 const previous = JSON.stringify({ originMs: at - 1000, syncToken: "before" });
 await core.submitBatchAsync({ protocolVersion: PROTOCOL_VERSION, streamKey: "page", checkpoint: previous, baselineBeforeMs: null, events: [] });

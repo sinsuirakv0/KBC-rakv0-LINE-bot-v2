@@ -88,6 +88,7 @@ pub fn ingest(tx: &Transaction<'_>, event: &CoreEvent) -> Result<()> {
             display_name,
             scope,
             state,
+            metadata_json,
             created_at_ms,
             ..
         } => {
@@ -133,7 +134,11 @@ pub fn ingest(tx: &Transaction<'_>, event: &CoreEvent) -> Result<()> {
                         json!(kind),
                         json!(member_id),
                         json!(display_name),
-                        Value::Null,
+                        metadata_json
+                            .as_deref()
+                            .map(serde_json::from_str)
+                            .transpose()?
+                            .unwrap_or(Value::Null),
                         if scope == "square" && chat_id != square_id {
                             json!(chat_id)
                         } else {

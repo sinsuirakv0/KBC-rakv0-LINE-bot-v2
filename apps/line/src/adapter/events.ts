@@ -10,7 +10,7 @@ const name = (value: unknown): string => Array.from(string(value)).slice(0, 80).
 const timestamp = (value: unknown): number | undefined => { const number = Number(value); return Number.isSafeInteger(number) && number > 0 ? number : undefined; };
 const sequence = (value: unknown): number | undefined => { const number = timestamp(value); return number && number <= 1_000_000 ? number : undefined; };
 
-export async function normalizeEvent(event: Event, directory?: SquareDirectory, baselineBeforeMs = 0): Promise<CoreEvent | null> {
+export async function normalizeEvent(event: Event, directory?: SquareDirectory, baselineBeforeMs = 0, source = "push"): Promise<CoreEvent | null> {
   const payload = event.payload;
   const message = (payload?.notificationMessage ?? payload?.receiveMessage)?.squareMessage?.message;
   if (message) {
@@ -32,8 +32,9 @@ export async function normalizeEvent(event: Event, directory?: SquareDirectory, 
       botMemberId: chat?.squareChatMember.squareMemberMid,
       mentions, contentType: String(message.contentType ?? "TEXT"), mediaGroupId: metadata.GID || undefined,
       senderName: string(record(payload?.notificationMessage ?? payload?.receiveMessage).senderDisplayName) || undefined,
-      metadataJson: JSON.stringify({ source: "push", hasContent: message.hasContent, contentMetadata: metadata,
-        relatedMessageId: message.relatedMessageId, messageRelationType: message.messageRelationType, location: message.location },
+      metadataJson: JSON.stringify({ source, hasContent: message.hasContent, contentMetadata: metadata,
+        relatedMessageId: message.relatedMessageId, relatedMessageServiceCode: message.relatedMessageServiceCode,
+        messageRelationType: message.messageRelationType, location: message.location },
         (_key, value: unknown) => typeof value === "bigint" ? String(value) : value),
       mediaGroupSequence: sequence(metadata.GSEQ), mediaGroupTotal: sequence(metadata.GTOTAL),
       replyToMessageId: ["REPLY", "3"].includes(String(message.messageRelationType)) && message.relatedMessageId ? message.relatedMessageId : undefined };
@@ -69,10 +70,11 @@ export async function normalizeEvent(event: Event, directory?: SquareDirectory, 
   if (!squareId || !memberId || !state || !created) return null;
   chatId ||= squareId;
   return { type: "memberChanged", eventId: `member:${squareId}:${scope === "square" ? "all" : chatId}:${memberId}:${state}:${created}`,
-    squareId, chatId, memberId, displayName: name(member.displayName), scope, state, memberCreatedAtMs: timestamp(member.createdAt), createdAtMs: created };
+    squareId, chatId, memberId, displayName: name(member.displayName), scope, state, memberCreatedAtMs: timestamp(member.createdAt), createdAtMs: created,
+    metadataJson: JSON.stringify({ source, eventType: type, receivedAtMs: Date.now() }) };
 }
 
-export async function normalizeEvents(event: Event, directory?: SquareDirectory, baselineBeforeMs = 0): Promise<CoreEvent[]> {
+export async function normalizeEvents(event: Event, directory?: SquareDirectory, baselineBeforeMs = 0, source = "push"): Promise<CoreEvent[]> {
   if (["19", "NOTIFIED_KICKOUT_FROM_SQUARE"].includes(String(event.type))) {
     const payload = record(record(event.payload).notifiedKickoutFromSquare);
     if (!Array.isArray(payload.kickees) || payload.kickees.length > 64) throw new Error("InvalidKickEvent");
@@ -83,11 +85,12 @@ export async function normalizeEvents(event: Event, directory?: SquareDirectory,
       const converted = await normalizeEvent({ ...event, type: "NOTIFIED_UPDATE_SQUARE_MEMBER", payload: {
         notifiedUpdateSquareMember: { squareMid: string(member.squareMid), squareMemberMid: string(member.squareMemberMid),
           squareMember: { ...member, membershipState: "KICK_OUT" } },
-      } } as unknown as Event, directory, baselineBeforeMs);
-      if (converted) result.push({ ...converted, chatId: string(payload.squareChatMid) || converted.chatId });
+      } } as unknown as Event, directory, baselineBeforeMs, source);
+      if (converted) result.push({ ...converted, chatId: string(payload.squareChatMid) || converted.chatId,
+        metadataJson: JSON.stringify({ source, eventType: String(event.type), receivedAtMs: Date.now() }) });
     }
     return result;
   }
-  const single = await normalizeEvent(event, directory, baselineBeforeMs);
+  const single = await normalizeEvent(event, directory, baselineBeforeMs, source);
   return single ? [single] : [];
 }

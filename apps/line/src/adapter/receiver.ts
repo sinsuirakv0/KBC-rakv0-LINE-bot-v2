@@ -12,14 +12,17 @@ type AccountPage = Awaited<ReturnType<BaseClient["square"]["fetchMyEvents"]>>;
 type ChatPage = Awaited<ReturnType<BaseClient["square"]["fetchSquareChatEvents"]>>;
 type SquareEvent = AccountPage["events"][number];
 type ChatRetry = { attempts: number; retryAtMs: number };
+type PollTarget = { nextAtMs: number; attempts: number; intervalMs: number };
 type Checkpoint = { syncToken?: string; continuationToken?: string; originMs: number; subscriptionId?: number;
   pendingChats?: string[]; chatRetries?: Record<string, ChatRetry> };
 
 export class Receiver {
   readonly metrics = { sessions: 0, signOns: 0, pushHints: 0, leaseRenewals: 0, pages: 0, events: 0, accepted: 0, duplicates: 0, ignored: 0, maxLagMs: 0,
-    pendingChats: 0, chatFailures: 0, types: {} as Record<string, number> };
+    pendingChats: 0, chatFailures: 0, pollingChats: 0, priorityChats: 0, pollCycles: 0, pollPages: 0, pollFailures: 0, discoveryFailures: 0, maxPollDelayMs: 0,
+    types: {} as Record<string, number> };
   status = "starting";
   private outgoingBytes = 0;
+  private chatRequests = new Map<string, Promise<boolean>>();
 
   constructor(private client: BaseClient, private core: NativeCore, private gate: ApiScheduler, private signal: AbortSignal, private directory?: SquareDirectory) {
     const nativePush = client.fetchPush;
@@ -41,6 +44,10 @@ export class Receiver {
   }
 
   async run(): Promise<void> {
+    await Promise.all([this.runPush(), this.runPolling()]);
+  }
+
+  private async runPush(): Promise<void> {
     let backoff = 1000;
     while (!this.signal.aborted) {
       try { await this.session(); backoff = 1000; }
@@ -73,14 +80,14 @@ export class Receiver {
     } catch (error) { throw Object.assign(new Error(errorCode(error)), { name: "CoreStoreError" }); }
   }
 
-  private async accept(stream: string, checkpoint: Checkpoint, events: SquareEvent[]): Promise<void> {
+  private async accept(stream: string, checkpoint: Checkpoint, events: SquareEvent[], source = "push"): Promise<void> {
     if (!Array.isArray(events) || events.length > 100) throw new Error("InvalidPage");
     const normalized: CoreEvent[] = [];
     for (const event of events) {
       this.metrics.events++;
       const kind = String(event.type);
       if (kind in this.metrics.types || Object.keys(this.metrics.types).length < 64) this.metrics.types[kind] = (this.metrics.types[kind] ?? 0) + 1;
-      const converted = await normalizeEvents(event, this.directory, checkpoint.originMs);
+      const converted = await normalizeEvents(event, this.directory, checkpoint.originMs, source);
       if (!converted.length) { this.metrics.ignored++; continue; }
       for (const item of converted) this.metrics.maxLagMs = Math.max(this.metrics.maxLagMs, Date.now() - item.createdAtMs);
       normalized.push(...converted);
@@ -112,11 +119,22 @@ export class Receiver {
     this.metrics.pages++;
   }
 
-  private async drainChat(chat: string, originMs: number): Promise<boolean> {
+  private drainChat(chat: string, originMs: number, source = "chat"): Promise<boolean> {
+    const pending = this.chatRequests.get(chat);
+    if (pending) return pending;
+    // PUSH補完と定期取得は同じcursor・2枠を共有する。枠が埋まったトークは次回へ残す。
+    if (this.chatRequests.size >= 2) return Promise.resolve(false);
+    const task = this.fetchChat(chat, originMs, source).finally(() => this.chatRequests.delete(chat));
+    this.chatRequests.set(chat, task);
+    return task;
+  }
+
+  private async fetchChat(chat: string, originMs: number, source: string): Promise<boolean> {
     const stream = `chat:${chat}`;
     let checkpoint = this.readCheckpoint(stream, originMs);
     for (let pages = 0; pages < 4; pages++) {
       this.signal.throwIfAborted();
+      if (source === "poll") this.metrics.pollPages++;
       // SDK公開wrapperで型に出ていないcontinuationTokenも生成済みThrift型を使って渡す。
       const response: ChatPage = await this.client.request.request(
         LINEStruct.SquareService_fetchSquareChatEvents_args({ request: {
@@ -129,11 +147,84 @@ export class Receiver {
       if (subscriptionId !== undefined && (!Number.isSafeInteger(subscriptionId) || subscriptionId <= 0)) throw new Error("InvalidSubscription");
       checkpoint = { originMs, syncToken: response.syncToken, continuationToken: response.continuationToken || undefined,
         subscriptionId };
-      await this.accept(stream, checkpoint, response.events);
+      await this.accept(stream, checkpoint, response.events, source);
       if (!checkpoint.continuationToken) return true;
     }
     // 大量の補完でも、保存したcontinuationを残して他トーク・新着取得へ譲る。
     return false;
+  }
+
+  private async runPolling(): Promise<void> {
+    const targets = new Map<string, PollTarget>();
+    const originMs = this.readCheckpoint("account", Date.now()).originMs;
+    let discoverAt = 0;
+    while (!this.signal.aborted) {
+      const now = Date.now();
+      let priority: Set<string>;
+      try { priority = new Set(this.core.priorityChats()); }
+      catch (error) { throw Object.assign(new Error(errorCode(error)), { name: "CoreStoreError" }); }
+      if (now >= discoverAt) {
+        try {
+          const joined = new Set<string>();
+          let continuationToken: string | undefined;
+          for (let page = 0; page < 21; page++) {
+            this.signal.throwIfAborted();
+            const response = await this.client.square.getJoinedSquareChats({ request: { limit: 100, continuationToken } });
+            if (!Array.isArray(response.chats) || response.chats.length > 100) throw new Error("InvalidJoinedChats");
+            for (const chat of response.chats) {
+              const id = chat.squareChatMid;
+              if (typeof id !== "string" || !/^m[0-9a-f]{8,63}$/i.test(id)) throw new Error("InvalidJoinedChatId");
+              joined.add(id);
+            }
+            if (joined.size > 2048) throw new Error("PollingChatCapacity");
+            if (!response.continuationToken) break;
+            if (response.continuationToken === continuationToken || page === 20) throw new Error("JoinedChatPageLimit");
+            continuationToken = response.continuationToken;
+          }
+          for (const id of targets.keys()) if (!joined.has(id)) targets.delete(id);
+          for (const id of joined) if (!targets.has(id)) {
+            const intervalMs = priority.has(id) ? 3000 : 60_000;
+            targets.set(id, { nextAtMs: Date.now() + Math.floor(Math.random() * intervalMs), attempts: 0, intervalMs });
+          }
+          discoverAt = Date.now() + 600_000;
+        } catch (error) {
+          if (this.signal.aborted) break;
+          this.metrics.discoveryFailures++;
+          console.log(JSON.stringify({ kind: "chat-discovery-error", code: errorCode(error) }));
+          discoverAt = Date.now() + 60_000;
+        }
+      }
+      for (const [id, target] of targets) {
+        const intervalMs = priority.has(id) ? 3000 : 60_000;
+        if (intervalMs < target.intervalMs && !target.attempts) target.nextAtMs = Math.min(target.nextAtMs, Date.now() + intervalMs);
+        target.intervalMs = intervalMs;
+      }
+      this.metrics.pollingChats = targets.size;
+      this.metrics.priorityChats = [...targets.keys()].filter(id => priority.has(id)).length;
+      const due = [...targets].filter(([, target]) => target.nextAtMs <= Date.now())
+        .sort((a, b) => a[1].nextAtMs - b[1].nextAtMs).slice(0, 2);
+      const results = await Promise.allSettled(due.map(([id]) => this.drainChat(id, originMs, "poll")));
+      for (const [index, result] of results.entries()) {
+        const [, target] = due[index];
+        if (result.status === "fulfilled") {
+          this.metrics.pollCycles++;
+          this.metrics.maxPollDelayMs = Math.max(this.metrics.maxPollDelayMs, Date.now() - target.nextAtMs);
+          target.attempts = 0;
+          target.nextAtMs = Date.now() + (result.value ? target.intervalMs : 1000);
+        } else {
+          if (this.signal.aborted) break;
+          if ((result.reason as Error)?.name === "CoreStoreError") throw result.reason;
+          target.attempts = Math.min(10, target.attempts + 1);
+          target.nextAtMs = Date.now() + Math.min(900_000, 1000 * 2 ** target.attempts);
+          this.metrics.pollFailures++;
+          console.log(JSON.stringify({ kind: "chat-poll-error", code: errorCode(result.reason), attempts: target.attempts }));
+        }
+      }
+      if (!this.signal.aborted) await delay(Math.max(100, Math.min(1000, discoverAt - Date.now(),
+        ...[...targets.values()].map(target => target.nextAtMs - Date.now()))), undefined, { signal: this.signal }).catch(error => {
+          if (!this.signal.aborted) throw error;
+        });
+    }
   }
 
   private async completePending(checkpoint: Checkpoint): Promise<Checkpoint> {

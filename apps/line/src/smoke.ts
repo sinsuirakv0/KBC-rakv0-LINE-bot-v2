@@ -172,6 +172,7 @@ const replayConfig = { databasePath: join(directory, "receiver.sqlite"), ownerId
 let replayCore = createCore(replayConfig);
 const replayController = new AbortController();
 const client = new BaseClient({ device: "DESKTOPWIN" });
+client.square.getJoinedSquareChats = async () => ({ chats: [] }) as unknown as Awaited<ReturnType<typeof client.square.getJoinedSquareChats>>;
 const push = client.push;
 let finishRead!: () => void;
 let reading: Promise<void>;
@@ -262,4 +263,35 @@ try {
   assert.equal(accountCalls, beforeRetry);
   assert.deepEqual(JSON.parse(replayCore.checkpoint("account")!).pendingChats, []);
 } finally { resumedController.abort(); await resuming; replayCore.shutdown(); }
+
+// 新しい発言なしで参加イベントを取得し、同時のPUSH補完と同じcursorを二重取得しない。
+const polledChat = "m" + "a".repeat(32), polledSquare = "s" + "a".repeat(32), polledMember = "p" + "a".repeat(32);
+replayCore = createCore({ databasePath: join(directory, "poll.sqlite"), ownerId: "test-account" });
+const pollDb = new DatabaseSync(join(directory, "poll.sqlite"));
+pollDb.prepare("INSERT INTO oc_notifications VALUES(?,?,?)").run(polledChat, polledSquare, JSON.stringify({ join: { text: "参加通知", mention: false, show_id: false } }));
+const pollController = new AbortController();
+client.square.getJoinedSquareChats = async () => ({ chats: [{ squareChatMid: polledChat }] }) as unknown as Awaited<ReturnType<typeof client.square.getJoinedSquareChats>>;
+client.square.fetchMyEvents = async () => page([{ type: "NOTIFICATION_MESSAGE", payload: { notificationMessage: {
+  squareChatMid: polledChat, requiredToFetchChatEvents: true,
+} } }], "poll-account");
+let activeChatFetches = 0, maximumChatFetches = 0;
+const pollEventAt = Date.now() + 100;
+(client.request as unknown as { request: (...args: unknown[]) => Promise<AccountPage> }).request = async () => {
+  activeChatFetches++; maximumChatFetches = Math.max(maximumChatFetches, activeChatFetches);
+  hint(); await delay(100); activeChatFetches--;
+  return page([{ type: "NOTIFIED_JOIN_SQUARE_CHAT", createdTime: pollEventAt, payload: { notifiedJoinSquareChat: {
+    squareChatMid: polledChat, joinedMember: { squareMemberMid: polledMember, squareMid: polledSquare, displayName: "参加者" },
+  } } }], "poll-chat");
+};
+const polling = new Receiver(client, replayCore, new ApiScheduler(pollController.signal, 2, 1), pollController.signal);
+const pollRun = polling.run();
+try {
+  const deadline = Date.now() + 5000;
+  while (!polling.metrics.pollCycles || replayCore.stats().queuedActions < 1
+      || JSON.parse(replayCore.checkpoint("account") ?? "{}").pendingChats?.length) { assert(Date.now() < deadline); await delay(5); }
+  assert.equal(maximumChatFetches, 1);
+  assert.equal(JSON.parse(replayCore.checkpoint(`chat:${polledChat}`)!).syncToken, "poll-chat");
+  assert.equal(pollDb.prepare("SELECT count(*) AS count FROM oc_presence").get()?.count, 1);
+  assert.equal(polling.metrics.priorityChats, 1);
+} finally { pollController.abort(); await pollRun; replayCore.shutdown(); pollDb.close(); }
 console.log(JSON.stringify({ smoke: "passed", network: false, cases: ["two-distinct-ids", "dedup", "batch-rollback", "claimed-restart", "sending-restart", "explicit-unknown-resolution", "autonomous-notification", "owner-check", "bounded-api-refresh", "completed-capacity", "unresolved-capacity-rollback", "pre-send-storage-failure", "post-send-unknown", "push-sign-on", "continuation-dirty-hint", "chat-failure-isolation", "durable-chat-retry"] }));

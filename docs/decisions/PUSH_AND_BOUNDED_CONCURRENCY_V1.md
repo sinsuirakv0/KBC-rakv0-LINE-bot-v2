@@ -56,3 +56,7 @@ SDK既定PUSHループには、[認証なしProbe](../../experiments/linejs-rece
 - [構成と責務](../architecture/CORE_AND_ADAPTER.md)
 - [PUSHで得られる情報・SDK関数の関係](../research/PUSH_RECEPTION.md)
 - [受信と常時処理の調査・実測](../research/RECEIVER_AND_BACKGROUND_EXPERIMENTS.md)
+
+## 7. 投稿を起点にしない補助取得（2026-10-03）
+
+本運用で、参加から後続投稿まで通知が届かなかったとの報告を受け、トークイベントを独立取得する。通知設定・参加監視対象3秒、その他60秒を目安とし、PUSH補完と同一cursor・全体2取得・全API2並列/250msを共有する。accountを高頻度巡回しない。API数増加と未発見トークの最大10分待ちを負担として受け入れ、遅れ・制限応答を計測して見直す。[関数・上限・障害時動作](../../apps/line/docs/ADAPTER.md)。

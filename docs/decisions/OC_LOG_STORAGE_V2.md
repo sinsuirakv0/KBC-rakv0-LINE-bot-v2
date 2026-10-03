@@ -27,8 +27,10 @@ metadataは [object,mask]。1=to、2=toType、4=squareChatMid、8=squareMid、16
 
 ## 受付と復旧
 
-Rust Coreは受信transactionでpendingを保存する。上限8,192行・8MiB、row64KiB。超過Batchはcheckpointを進めずrollbackする。満杯を無言で削除しない。Protocol v6のplain DTOを使い、SDK objectを渡さない。ログの圧縮・GitHub入出力はAdapterの共通Worker。
+Rust Coreは受信transactionでpendingを保存する。上限8,192行・8MiB、row64KiB。超過Batchはcheckpointを進めずrollbackする。満杯を無言で削除しない。Protocol v7のplain DTOを使い、SDK objectを渡さない。ログの圧縮・GitHub入出力はAdapterの共通Worker。
 
 pendingはCoreの毎分暗号化snapshotにも含まれる。長期ログ同期が5分でも、Core snapshotから未同期分を再開する。最後の成功退避以後はコンテナ消失で失われ得る。単一BOTで書き込み、移行Workflowが運用中の追記先を置き換えない。[保存・復旧の限界](../operations/GITHUB_RECOVERY.md)。
 
 旧ログはActionsで変換・照合後に整理する。元状態のbackup branchを作って復旧可能にする。認証・設定・Coreを整理対象へ混ぜない。破損原ファイルと旧集約索引も新形式側へ残す。[変換関数・Workflow・実測](../../scripts/logs/docs/MIGRATION.md)。
+
+参加退出の新版extraには受信元source・元eventType・receivedAtMsを保存する。常時取得の遅れを比較するための観測値で、元のイベント時刻を新着時刻に置き換えない。行の配列schemaと旧ログの可逆復元は変更しない。
