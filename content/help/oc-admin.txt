@@ -1,0 +1,35 @@
+﻿OC管理者向け
+
+!oc setup
+  番号リプライで設定。解除は off 1 2
+!oc modroom set / off / test
+  このトークを副官部屋へ設定・解除・テスト
+!oc main / main set
+  本OCトークを選択・このトークを指定
+!oc join set [--mention] [--id] 本文
+!oc leave set [--mention] [--id] 本文
+  入退室通知。<name>を参加者名へ置換。複数行対応
+!oc join off / leave off
+  通知解除。副官部屋では送信先を番号選択
+!oc url on / off / list
+!oc url add HTTPS-URL [exact|path|prefix|domain]
+!oc url remove 番号|all
+  URL許可制削除と許可範囲
+!oc media on / off
+  30秒に7枚目以降の画像・動画を削除
+!oc watch early|danger|cohort|report on|off
+  即抜け・危険語・一斉参加・危険語通報
+!oc mute @対象 170 / 0:17 / 8/7-0:17 / inf
+!oc mute @対象 off / mute list
+  発言の管理者削除。OC管理者またはBOT mod以上
+!oc kick @対象 理由 / kick pで始まるMID 理由
+  直接再参加禁止へ更新。BOT mod以上・1回8人まで
+!oc history / kick history
+  最近の操作結果
+
+副官部屋ログへのリプライ
+URL: 1 完全一致 / 2 パス / 3 配下 / 4 ドメイン / 5 却下
+処分: 再参加禁止 / 無視 / 解除（依頼の記録のみ）
+
+旧joinmes / leavemes / del / hisも使えます。
+probe・identityは後続段階で扱います。

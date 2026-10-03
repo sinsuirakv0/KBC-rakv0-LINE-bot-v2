@@ -4,27 +4,27 @@
 
 ## 入力と移植元
 
-`o.ping` 等は [txt catalog](../../../../../content/docs/CONTENT.md) で登録。`o.help / o.ut help` は同じcatalogの案内を返す。`ut / tut / st` はDiscord v2のcommit `02e6e9b` の仕様・公開資料・素材解決を参照する。LINE向けの表示・Session・配送を共通化し、Discord Client・Reaction・編集は持ち込まない。
+`!ping` 等は [txt catalog](../../../../../content/docs/CONTENT.md) で登録。`!help / !ut help` は同じcatalogの案内を返す。`ut / tut / st` はDiscord v2のcommit `02e6e9b` の仕様・公開資料・素材解決を参照する。LINE向けの表示・Session・配送を共通化し、Discord Client・Reaction・編集は持ち込まない。
 
 | 入力 | 動作 |
 | --- | --- |
-| o.ut / o.tut / o.st | JDB検索ページ |
-| o.ut 0 / o.ut ネコ | 正式な形態名と別称を検索。ヒットした形態・別称を表示 |
-| o.ut 検索語 -f | 正規化なし・正式な形態名だけを検索。-forceはutのflagではない |
-| o.tut わんこ / o.tut 0 | 現行Enemynameの名称と別称。ダミーは対応する別称を表示 |
-| o.tut 検索語 -f / -force | 表記そのままで名称・別称を検索。数値ID解決は有効 |
-| o.st N000-000 / o.st 3000-000 | 分類・数値IDを完全解決。省略した0埋めも数値として解釈 |
-| o.st -f 検索語 | 先頭のflagでID解決・正規化をせず名前だけを検索 |
-| o.ut 0 origin [icon/wide/sprite] [f/c/s/u] | 形態画像。共有形態はUnitBuy列61/62から素材ID・m suffixを解決 |
-| o.ut 0 origin gacha [m/z] | ガチャ画像。省略時f |
-| o.tut 0 origin | 敵アイコン |
-| o.ut 0 file [f/c/s/u] / o.tut 0 file | 存在確認済みの画像・imgcut・mamodel・maanimを番号で選択 |
-| o.ut 0 motion png f a 0 | 攻撃のFrame 0をPNG生成 |
-| o.ut 0 motion mp4 f w 0~~5 a 0~~5 | 歩行6＋攻撃6FrameをMP4生成 |
-| o.tut 0 motion gif a | 敵の攻撃全FrameをGIF生成 |
-| o.test-notify 5 | 別の入力なしで期限通知が配送される確認 |
+| !ut / !tut / !st | JDB検索ページ |
+| !ut 0 / !ut ネコ | 正式な形態名と別称を検索。ヒットした形態・別称を表示 |
+| !ut 検索語 -f | 正規化なし・正式な形態名だけを検索。-forceはutのflagではない |
+| !tut わんこ / !tut 0 | 現行Enemynameの名称と別称。ダミーは対応する別称を表示 |
+| !tut 検索語 -f / -force | 表記そのままで名称・別称を検索。数値ID解決は有効 |
+| !st N000-000 / !st 3000-000 | 分類・数値IDを完全解決。省略した0埋めも数値として解釈 |
+| !st -f 検索語 | 先頭のflagでID解決・正規化をせず名前だけを検索 |
+| !ut 0 origin [icon/wide/sprite] [f/c/s/u] | 形態画像。共有形態はUnitBuy列61/62から素材ID・m suffixを解決 |
+| !ut 0 origin gacha [m/z] | ガチャ画像。省略時f |
+| !tut 0 origin | 敵アイコン |
+| !ut 0 file [f/c/s/u] / !tut 0 file | 存在確認済みの画像・imgcut・mamodel・maanimを番号で選択 |
+| !ut 0 motion png f a 0 | 攻撃のFrame 0をPNG生成 |
+| !ut 0 motion mp4 f w 0~~5 a 0~~5 | 歩行6＋攻撃6FrameをMP4生成 |
+| !tut 0 motion gif a | 敵の攻撃全FrameをGIF生成 |
+| !test-notify 5 | 別の入力なしで期限通知が配送される確認 |
 
-prefixは `o.`、コマンド名はASCII大文字小文字を区別しない。`unit / enemy / stage` は別名。検索引数は16語・512byteまで。通常はDiscordと同じNFKC・小文字・かな・長音・波線の正規化。空白区切りの語は一つの名称内でAND照合する。形態名と別称を連結して語を跨がせない。utの通常検索は正式形態名を優先し、その後に別称を調べる。
+prefixは `!` を既定とし、`o.` も受け付ける。コマンド名はASCII大文字小文字を区別しない。`unit / enemy / stage` は別名。検索引数は16語・512byteまで。通常はDiscordと同じNFKC・小文字・かな・長音・波線の正規化。空白区切りの語は一つの名称内でAND照合する。形態名と別称を連結して語を跨がせない。utの通常検索は正式形態名を優先し、その後に別称を調べる。
 
 数値IDはDiscordと同じASCII数字。stはrawキーまたは最長分類名を使うtypeキーへ変換し、完全一致で1件を返す。IDで解決したマップはJDBのid=rawを使い、名前検索はtype/map、ステージはstage付きリンクを使う。マップ名とsale別称の両方で検索し、旧マップの表示名は維持する。[snapshotの元資料・更新](../../../../../data/search/docs/SNAPSHOT.md)。
 
@@ -54,3 +54,7 @@ motionはpng/mp4/gif、f/c/s/u（utだけ）、a=攻撃・w=歩行・i=待機・
 | split_responses | LINEの文字数で分割。媒体のbyteをJSONへ入れない |
 
 Bridgeの非同期受付は最大4受付・実処理1件。外部素材の取得や描画を受付・SQLite transaction内で待たない。基盤Smoke17条件、Command Smoke4経路、[実素材実験](../../../../../experiments/commands/docs/MEDIA_VERIFICATION.md)を確認した。コンテナ復元、実LINEでの番号返信・管理者削除・メディア表示は次の検証として残る。
+
+## OC管理との接続
+
+!ocの公開helpはContentCatalogを使う。管理入力・本人リプライ・審議・自動処理は [OC管理](../../oc/docs/OC.md) へ渡し、共通のsplit_responses・Outbox・prompt清掃を使う。OC照会は通常返信の配送枠を使わず、権限免除された投稿のCommandPlanは既存Runtime::apply_commandへ戻す。!コマンドの先頭語はURLとして誤検出しない。

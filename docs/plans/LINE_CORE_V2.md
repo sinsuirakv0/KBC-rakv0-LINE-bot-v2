@@ -254,3 +254,15 @@ Protocol v4、非同期Native受付、実送信ID、媒体の永続準備Worker�
 同梱データはDiscordと同じ公開資料をcommit固定で検証したsnapshot。自動更新は未実装。実LINEへの配備、認証・Coreのコンテナ消失時の復元、実際の表示・番号リプライ・画像送信とAPI制限の観測は残る。同時入力の手動試験は指定どおり運用観測へ回す。
 
 2026-10-03にDiscord版の正式名称・別称・stage range・共有形態へ更新し、file・PNG/MP4/GIFのmotionも追加した。共通Media Workerは生成1件・未解決8件で通常配送から分離。公開素材の生成とFrame/duration・同じトークのpingを [結合実験](../../experiments/commands/docs/MEDIA_VERIFICATION.md) で確認した。実LINE送信、Docker build、Northflankのquota下での性能確認は残る。
+
+## 13. 通常のOC管理移植（2026-10-03）
+
+旧ocとmoderationの現行コードを確認し、setup・入退室・mute・kick・URL許可・画像連投・初参加危険語・即抜け・一斉参加・副官部屋審議をRust Coreへ移植した。利用者の回答に従い旧権限区分を維持し、probe / identityは後回し。ノートURL削除は旧実装の制約を解消する調査へ回した。
+
+Protocol v5でテキスト以外の媒体・参加退出・OCのtyped APIを追加し、1照会loopと通常2配送を分けつつ全API上限を共有する。build、Clippy、既存Smoke、追加3シナリオのOC Smokeで、権限・番号返信・再起動・照会待ちのping・unknown非再送・URL/媒体・PUSH正規化と退会条件を確認した。[仕様と関数・制限](../../crates/kbc-core/src/oc/docs/OC.md)。
+
+実LINE API互換性、OCの通知網羅性、多OC/quotaでの負荷、Docker build、認証・Coreのコンテナ交換時復元は残る。実装と運用目標の達成を分けて扱う。
+
+## 14. 本環境とログ移行への追加指定（2026-10-03）
+
+既定prefixは!へ変更し、o.も同じコマンドを受け付ける。旧ログ廃棄を変更し、LINE bot dataの既存設定を引き継いで本環境へ配備、その後に旧ログの軽量変換Workflowと整理を行う。名前変更・トーク本文・参加退出と強制退会のログを別々に保存する。過去の新規開始・旧ログ非取り込みの記述はこの指定で更新される。

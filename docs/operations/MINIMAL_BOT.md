@@ -1,6 +1,6 @@
 ﻿# 最小Botの起動と次の実験
 
-作成日: 2026-10-02、更新日: 2026-10-03。状態: ローカルのNative build・型生成・TS build・オフラインSmoke・公開素材による動画生成済み。新BotのNorthflank配備はまだ行っていない。
+作成日: 2026-10-02、更新日: 2026-10-03。状態: ローカルのNative build・型生成・TS build・オフラインSmoke・公開素材による動画生成済み。旧版091d981のLinux build成功をNorthflankで確認。今回の配備結果は後続記録。
 
 ## 起動
 
@@ -13,7 +13,7 @@ npm run smoke
 npm run smoke:commands
 ```
 
-`npm run build`はProtocol型生成、Native release build、TypeScript buildの順。`scripts/native.cjs`はWindowsのNode dynamic symbol対応と必要なlibunwindのコピーも行う。DockerfileはLinuxで同じNativeとTSをbuildし、実行時はnodeユーザーを使う。2026-10-03の確認ではDocker Engineへ接続できず、Dockerイメージ自体は未検証。
+`npm run build`はProtocol型生成、Native release build、TypeScript buildの順。`scripts/native.cjs`はWindowsのNode dynamic symbol対応と必要なlibunwindのコピーも行う。DockerfileはLinuxで同じNativeとTSをbuildし、実行時はnodeユーザーを使う。ローカルDocker Engineは未利用。Northflankで旧版091d981のLinuxイメージbuild成功を確認した。
 
 旧Botと受信Probeを停止してから、旧認証ストレージを機密ファイルとして`storage/auth.json`へコピーする。同じ`LINE_DEVICE`を使い、`.env.example`を`.env`へコピーして`LINE_OLD_BOT_STOPPED=1`にする。保存済み`.auth`があればLINE_AUTH_TOKENは不要。新規QR・passwordログインは実装していない。
 
@@ -21,9 +21,9 @@ npm run smoke:commands
 npm start
 ```
 
-コマンドは`o.ping`→`pong!`、`o.test-notify 5`→受付案内と5秒後の確認通知。確認通知が来るまで次のコマンドを送らず、自律的な起床を観測する。テスト通知は1〜60秒に限定した確認用機能で、旧`push`通知の移植ではない。
+コマンドは`!ping`→`pong!`、`!test-notify 5`→受付案内と5秒後の確認通知。確認通知が来るまで次のコマンドを送らず、自律的な起床を観測する。テスト通知は1〜60秒に限定した確認用機能で、旧`push`通知の移植ではない。
 
-`o.help`と`o.ut / o.tut / o.st`も実装済み。[Command仕様](../../crates/kbc-core/src/commands/docs/COMMANDS.md)を参照。Dockerには`content/`と`data/search/`を同梱する。txtと検索データの変更は再起動・再配備で反映する。
+`!help`と`!ut / !tut / !st`も実装済み。[Command仕様](../../crates/kbc-core/src/commands/docs/COMMANDS.md)を参照。Dockerには`content/`と`data/search/`を同梱する。txtと検索データの変更は再起動・再配備で反映する。
 
 `motion`のMP4/GIFにはFFmpegが必要。DockerfileはFFmpegを同梱し、Linuxの既定pathは`/usr/bin/ffmpeg`。Windowsでは`FFMPEG_PATH`へ実行ファイルの絶対pathを指定する。PNGはFFmpegなしでも生成できる。公開素材だけを使う`npm run verify:media`はLINE認証・通信を行わず、PNG/MP4/GIF・file選択と生成中のpingを検査する。[実験結果](../../experiments/commands/docs/MEDIA_VERIFICATION.md)を参照。
 
@@ -31,22 +31,32 @@ npm start
 
 `storage/auth.json`と`storage/core.sqlite`は同じ運用単位で保管し、公開Gitへ置かない。旧認証のreqseq・refresh情報を保持する。Coreファイルを別アカウントへ使うとOwnerMismatchで停止する。結果不明はSQLiteのactionsに残し、勝手に再投稿しない。
 
-Protocol v4のNativeとAdapterを同時に更新する。重複IDの保持上限は`CORE_MAX_RETAINED_EVENTS=131072`が既定で、8,192〜524,288へ設定できる。SQLiteの64MiB page上限は別に効く。毎分metricsのretainedEvents / maxRetainedEvents、queued / preparingMedia / claimed / sending / unknown / completedActions / activeSessionsと、receiverのpendingChats / chatFailuresを観測する。
+Protocol v5のNativeとAdapterを同時に更新する。重複IDの保持上限は`CORE_MAX_RETAINED_EVENTS=131072`が既定で、8,192〜524,288へ設定できる。SQLiteの64MiB page上限は別に効く。毎分metricsのretainedEvents / maxRetainedEvents、queued / preparingMedia / claimed / querying / sending / unknown / completedActions / activeSessionsと、receiverのpendingChats / chatFailuresを観測する。
 
 Mediaの成果はCore DBの隣の`media/`に置く。未解決8件まで、成果は合計最大64MiBで、生成中の素材・FFmpeg一時ファイル分も必要。DBを保管・復元する場合は未解決成果も同じ保存単位にする。プロセス再起動では生成途中を再準備し、送信途中はunknownとして保持する。成果消失は配送直前に再実行案内へ変えるため、unknownを解決する際に保存ファイルだけで送信成否を判断しない。[Mediaの保存・復旧](../../crates/kbc-core/docs/MEDIA.md)を参照。
 
 保存障害は`AuthStorageError`で全体停止する。ディスク容量・書込先・権限を修復してから同じ保存ファイルで再起動し、未知の認証状態のまま継続させない。容量不足では新規Batchがrollbackされる。結果不明を削除して空きを作らず、実送信結果を照合できたものだけ、ローカルCoreの`resolveAction({ actionId, status: "sent" または "failed", code })`で明示的に解決する。公開healthにはID一覧を出さない。この操作用のチャットCommand / CLIはまだ実装していない。
 
-現在のNorthflankサービスは永続Volumeなし。SQLiteは同じファイルが残るプロセス再起動では復元できるが、コンテナ交換・再配備で失われる。予定通知・受付記録の永続性を本運用で主張する前に、永続ディスクまたは整合した退避・復元方式を確定する。旧Botの暗号化GitHubバックアップからの自動復元・新しいCoreの退避は今回未実装。Dockerfileだけで現行コンテナへ切り替えると認証ファイルを引き継げない。
+Northflankは永続Volumeなし。追加料金を使わず、既存の非公開GitHubへ認証・Core状態を暗号化退避し、コンテナ交換で自動復元する。未退避期間の損失と送信成否の照合が必要。詳細は [GitHubへの退避・復元](GITHUB_RECOVERY.md)。
 
-退避先は旧Botと同じ非公開GitHubストレージを使う方針。長期OCログは旧履歴を読み込まず、OC MID / トークMIDの階層で新規開始する。長期ログの新規開始を理由に認証・reqseq・RuntimeのcheckpointやActionを削除しない。現時点では長期ログの保存・同期も未実装。[新しいOCログの保存方針](../decisions/OC_LOG_STORAGE_V2.md)に切り替えと実装順を記録する。
+長期ログは旧履歴を軽量形式へ変換して引き継ぎ、OC MID / トークMIDの階層に整理する。認証・設定・Runtimeはログとは別の保存単位。[OCログ方針](../decisions/OC_LOG_STORAGE_V2.md)。
 
 ## 次の少数OC実験
 
 1. 旧認証の機密ファイルを新Adapterへ渡す経路、Container消失時の試験データの扱い、切戻しを確定する。旧受信器は動かさない。
 2. PUSHのsign-on、イベント種別、API回数、無通信CPU/RSSを記録する。
-3. 通常の`o.ping`返信と、次の入力なしの`o.test-notify 5`を確認する。
+3. 通常の`!ping`返信と、次の入力なしの`!test-notify 5`を確認する。
 4. 多OCとコマンド量は段階的に増やす。重なった入力の返信抜けを再現する手動試験は利用者の指定どおり運用観測へ回す。
 5. `origin`・`file`・短い`motion`の実LINE投稿、番号リプライ、管理者削除を確認する。0.2コア・512MiBで生成中のRSS・応答時間・CPUを計測してからFrame範囲を増やす。
 
 オフラインSmokeは一つのファイルで、異なるID、重複、Batch rollback、claimed / sendingからの再開、結果不明、自律期限、アカウント所有者、API枠内のtoken更新、実SDKのreqseq保存障害と送信境界、完了・未解決容量、Thrift sign-on、継続中のPUSH集約、chat補完の部分障害と期限再試行を確認した。[修正の判断と容量Probe](../decisions/FOUNDATION_RECOVERY_V1.md)を参照。実LINEの全件配送・API制限回避・PUSH再接続の成功証明としては扱わない。
+
+## OC管理の起動設定
+
+通常の!oc管理を追加した。BOT mod/adminが必要な操作にはBOT_PERMISSIONS_PATHへ機密permissions.jsonの絶対pathまたはworkspace相対pathを指定する。未指定ではBOT権限なしで、OC ADMIN / CO_ADMINが許可された設定操作だけを使える。初期値の自動処理はOFF。旧認証・権限ファイル・Core DBを公開Gitへcommitしない。
+
+既存Core DBで起動するとOC用tableを作る。設定・mute・参加状態・審議・OC対話は同じDBの退避単位に含める。旧ログの変換・整理とこの状態の継承を混同しない。照会のqueryingは再起動時再待機、更新・通報・削除のsendingはunknownとなる。例外時は実OCと履歴を照合する。
+
+追加のnpm run smoke:ocはLINEへ接続しない。少数OCではBotの管理者削除・membership API権限、入退室の実PUSH種別、同時入力、API回数とquota下のCPU/RSSを測定する。GitHub保存復元はオフライン検証済み。本番配備結果は後続記録。[OCの操作と制限](../../crates/kbc-core/src/oc/docs/OC.md)。
+
+GitHub指定時はBOT_PERMISSIONS_PATH / LEGACY_OC_SETTINGS_PATHの未指定pathをstorage/permissions.json / storage/legacy-oc-settings.jsonとして旧データから配置する。旧OC設定3件・通知設定5トークの取り込みを実データで確認済み。`npm run smoke:persistence` は外部通信なしの復元検証。

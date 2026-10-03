@@ -114,3 +114,7 @@ LINEにDiscordと同じnonce保証があるとは仮定しない。送信結果�
 停止は新規受付と背景処理を止め、Receiver取消、永続受付完了、Core停止、ローカル保存、実行中Action回収を有限時間内に終える。未処理Inboxは残し、GitHub全同期やプロフィール名変更を終了の必須条件にしない。
 
 旧CommandからSDK Clientへの直接依存を除くため、照会・操作をActionへ分割する必要がある。Core / Protocol / Bridge分離では型生成とNative buildを管理する。0.2コアではCPU重処理を無制限spawnせず、必要なService・Session・Taskを必要なPhaseだけ追加する。
+
+## OC管理の実装境界（2026-10-03）
+
+Protocol v5のOcRequest / Resultを既存Outboxへ接続し、OC設定・権限判断・対話・自動処分をRustへ配置した。TSはPUSHイベント正規化・有限OC対応cache・SDK入出力だけを担当する。読み取りは1照会loop、変更と返信は既存2配送loop、全APIの上限は共有する。[OC設計判断](../decisions/OC_MANAGEMENT_V1.md) と [実装・関数](../../crates/kbc-core/src/oc/docs/OC.md) を参照。
