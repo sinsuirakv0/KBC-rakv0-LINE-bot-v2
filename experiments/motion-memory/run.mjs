@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 const format = process.env.MOTION_FORMAT ?? 'mp4';
 if (!['png', 'mp4', 'gif'].includes(format)) throw Error('InvalidFormat');
 const baselineMiB = Number(process.env.MOTION_BASELINE_MIB ?? 110);
-if (![110, 390].includes(baselineMiB)) throw Error('InvalidBaseline');
+if (![110, 420].includes(baselineMiB)) throw Error('InvalidBaseline');
 const baseline = Buffer.alloc(baselineMiB * 1024 * 1024, 1);
 const directory = await mkdtemp(join(tmpdir(), 'kbc-motion-memory-'));
 const core = createCore({ databasePath: join(directory, 'core.sqlite'), ownerId: 'fixture',

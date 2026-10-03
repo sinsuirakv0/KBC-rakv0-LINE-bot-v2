@@ -2,7 +2,7 @@
 
 2026-10-03。利用者の運用報告を調査。Node RSSだけでFFmpegの子process分を把握したとは扱わない。
 
-本環境の生成ログと機密のトークログから `!ut 710 motion mp4 f w i a k` を確認。345Frame・488×390、生成9.03秒、出力約1.4MB。累積入力RGBA 262,641,600byteはpipeへ逐次書いた合計であり、常駐メモリの測定値ではない。
+本環境の生成ログと機密のトークログから `!ut 710 motion mp4 f w i a k` を確認。345Frame・488×420、生成9.03秒、出力約1.4MB。累積入力RGBA 262,641,600byteはpipeへ逐次書いた合計であり、常駐メモリの測定値ではない。
 
 同コマンドのWindows / Node24.15 / FFmpeg9.0.2 / Protocol v6実行では、parent peak55.5MiB、子FFmpeg peak31MiB、合計peak86.5MiB。Windowsのprocess working setを約100msごとに外部から取得した。LinuxのOOM回避を証明する値ではない。
 
@@ -14,4 +14,4 @@ run.mjsは共通WorkerへCommandを投入し、成果・生成時間・Node maxR
 
 対策はFFmpeg入力decodeも1threadに限定し、Rendererを成果照合より前にdropする。Media共通Contextのcheck_memoryはLinux cgroup使用量（子FFmpeg・file cache込み）を読み、コンテナ上限から64MiBを残した予算を確認する。Sprite展開前に展開・cut合計byteも加えて確認し、動画は16Frameごとに観測する。超過では生成だけを失敗案内にする。急激な増加を原子的に防ぐ硬い予約ではなく、入力の絶対上限・単一Workerと組み合わせる。非Linuxや制限値を取得できない環境では既存の入力上限を維持する。
 
-追加の390MiB常駐近似では、OOMを起こさずMediaMemoryBudgetExceededで生成を中止できることを確認する。これは正常生成の成功とは別の検証で、expectedExitCode=1を記録する。
+追加の420MiB常駐近似では、OOMを起こさずMediaMemoryBudgetExceededで生成を中止できることを確認する。これは正常生成の成功とは別の検証で、expectedExitCode=1を記録する。
