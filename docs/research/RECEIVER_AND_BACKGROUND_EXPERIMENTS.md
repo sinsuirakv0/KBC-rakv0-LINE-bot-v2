@@ -175,3 +175,13 @@ PUSHでも `fetchMyEvents(limit: 100)` を使い、SDKが永続受付より先�
 ## 15. 参加トーク一覧の実API差（2026-10-04）
 
 6537914の起動直後、getJoinedSquareChatsがNOT_IMPLEMENTEDで失敗し、補助取得の対象が0だった。PUSHと保存復元は継続していた。採用SDKのClient.fetchJoinedSquareChatsはfetchMyEvents({limit:200})からnotifiedCreateSquareChatMember.chatを抽出している。これを上限・継続ページ付きのjoinedChatPageとして共有し、受信checkpointを変更せず一覧だけを読む。通知設定済みトークの取得は一覧成功に依存させない。既存smokeでsnapshotの次ページにsyncToken・continuationTokenが渡ることと、一覧API失敗時の通知取得を確認する。実APIでの対象件数と補助取得は配備後に記録する。
+
+6825fa2を配備し、一覧失敗0、定期取得12トーク・優先5トーク、起動約654秒で定期取得829周期を確認した。古い通知設定だけのトークも対象へ含めていたため、1トーク相当のNOT_FOUNDがattempts 1〜9でbackoffした。他の取得・PUSHは継続し、API制限0、再起動0。未参加・削除済み等のどれかはエラーcodeだけでは確定しない。利用者からも未参加トークの可能性を指摘された。
+
+最初のログ同期27行は、既存payload8件への追記と新payload1件。manifest9件のSHA256・gzip全行・件数を遠隔blobと照合した。messages 21 / names 3 / member-events 3。member-eventsはsource=poll、元のjoin/leave種別・取得時刻を保存していた。新しい退出の時刻差12秒の例と、約2時間以上前の参加退出の回収が含まれる。短時間・少数例なので3秒の通知保証やPUSHだけでの網羅性とは扱わない。
+
+## 16. 未参加の旧設定と定期取得（2026-10-04）
+
+Receiver.runPollingは、一覧を全ページ取得できた場合だけ、その一覧を定期取得対象にする。旧通知設定は削除せず、一覧にない件数をunlistedPriorityChatsへ出す。初回の一覧障害時は設定由来の取得を維持し、更新失敗時も前回一覧を維持する。参加一覧を使うことで無効な設定先への定期要求を抑えるが、NOT_FOUNDのすべてが未参加を意味するとは判断しない。PUSH補完は従来どおり別経路で残す。
+
+既存Smokeで、一覧障害時も投稿なしの通知取得が動くことと、正常な一覧にない設定先へ要求せず設定行は残すことを確認した。実環境の一覧件数・除外件数・エラーは反映後に記録する。

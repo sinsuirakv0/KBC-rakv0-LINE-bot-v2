@@ -18,7 +18,7 @@ type Checkpoint = { syncToken?: string; continuationToken?: string; originMs: nu
 
 export class Receiver {
   readonly metrics = { sessions: 0, signOns: 0, pushHints: 0, leaseRenewals: 0, pages: 0, events: 0, accepted: 0, duplicates: 0, ignored: 0, maxLagMs: 0,
-    pendingChats: 0, chatFailures: 0, pollingChats: 0, priorityChats: 0, pollCycles: 0, pollPages: 0, pollFailures: 0, discoveryFailures: 0, maxPollDelayMs: 0,
+    pendingChats: 0, chatFailures: 0, pollingChats: 0, priorityChats: 0, listedChats: 0, unlistedPriorityChats: 0, pollCycles: 0, pollPages: 0, pollFailures: 0, discoveryFailures: 0, maxPollDelayMs: 0,
     types: {} as Record<string, number> };
   status = "starting";
   private outgoingBytes = 0;
@@ -158,12 +158,13 @@ export class Receiver {
     const targets = new Map<string, PollTarget>();
     const originMs = this.readCheckpoint("account", Date.now()).originMs;
     let discoverAt = 0;
+    let listed: Set<string> | undefined;
     while (!this.signal.aborted) {
       const now = Date.now();
       let priority: Set<string>;
       try { priority = new Set(this.core.priorityChats()); }
       catch (error) { throw Object.assign(new Error(errorCode(error)), { name: "CoreStoreError" }); }
-      for (const id of priority) if (!targets.has(id)) {
+      for (const id of priority) if ((!listed || listed.has(id)) && !targets.has(id)) {
         if (targets.size >= 2048) throw Object.assign(new Error("PollingChatCapacity"), { name: "CoreStoreError" });
         targets.set(id, { nextAtMs: now, attempts: 0, intervalMs: 3000 });
       }
@@ -185,8 +186,9 @@ export class Receiver {
             if (response.continuationToken === continuationToken || page === 20) throw new Error("JoinedChatPageLimit");
             continuationToken = response.continuationToken;
           }
-          if (new Set([...joined, ...priority]).size > 2048) throw new Error("PollingChatCapacity");
-          for (const id of targets.keys()) if (!joined.has(id) && !priority.has(id)) targets.delete(id);
+          // 全ページ取得できた一覧だけで参加判定する。旧通知設定は消さず、未参加トークの定期取得を止める。
+          listed = joined;
+          for (const id of targets.keys()) if (!joined.has(id)) targets.delete(id);
           for (const id of joined) if (!targets.has(id)) {
             const intervalMs = priority.has(id) ? 3000 : 60_000;
             targets.set(id, { nextAtMs: Date.now() + Math.floor(Math.random() * intervalMs), attempts: 0, intervalMs });
@@ -206,6 +208,8 @@ export class Receiver {
       }
       this.metrics.pollingChats = targets.size;
       this.metrics.priorityChats = [...targets.keys()].filter(id => priority.has(id)).length;
+      this.metrics.listedChats = listed?.size ?? 0;
+      this.metrics.unlistedPriorityChats = [...priority].filter(id => listed?.has(id) === false).length;
       const due = [...targets].filter(([, target]) => target.nextAtMs <= Date.now())
         .sort((a, b) => a[1].nextAtMs - b[1].nextAtMs).slice(0, 2);
       const results = await Promise.allSettled(due.map(([id]) => this.drainChat(id, originMs, "poll")));

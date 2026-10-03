@@ -311,4 +311,27 @@ try {
   assert.equal(polling.metrics.priorityChats, 1);
   assert.equal(polling.metrics.discoveryFailures, 1);
 } finally { pollController.abort(); await pollRun; replayCore.shutdown(); pollDb.close(); }
+// 一覧を最後まで取得できた場合だけ、未参加の旧通知設定を定期取得から外す。設定は保持する。
+replayCore = createCore({ databasePath: join(directory, "poll.sqlite"), ownerId: "test-account" });
+const membershipDb = new DatabaseSync(join(directory, "poll.sqlite"));
+const unlistedChat = "m" + "b".repeat(32);
+membershipDb.prepare("INSERT INTO oc_notifications VALUES(?,?,?)").run(unlistedChat, polledSquare, JSON.stringify({ join: { text: "旧通知", mention: false, show_id: false } }));
+client.square.fetchMyEvents = async () => page([{ payload: { notifiedCreateSquareChatMember: {
+  chat: { squareChatMid: polledChat, squareMid: polledSquare },
+} } }], "joined-only");
+(client.request as unknown as { request: (...args: unknown[]) => Promise<AccountPage> }).request = async (...args) => {
+  assert(!JSON.stringify(args[0]).includes(unlistedChat));
+  return page([], "member-filtered");
+};
+const membershipController = new AbortController();
+const membershipReceiver = new Receiver(client, replayCore, new ApiScheduler(membershipController.signal, 2, 1), membershipController.signal);
+const membershipRun = membershipReceiver.run();
+try {
+  const deadline = Date.now() + 3000;
+  while (!membershipReceiver.metrics.pollCycles) { assert(Date.now() < deadline); await delay(5); }
+  assert.equal(membershipReceiver.metrics.pollingChats, 1);
+  assert.equal(membershipReceiver.metrics.listedChats, 1);
+  assert.equal(membershipReceiver.metrics.unlistedPriorityChats, 1);
+  assert.equal(membershipDb.prepare("SELECT count(*) AS count FROM oc_notifications").get()?.count, 2);
+} finally { membershipController.abort(); await membershipRun; replayCore.shutdown(); membershipDb.close(); }
 console.log(JSON.stringify({ smoke: "passed", network: false, cases: ["two-distinct-ids", "dedup", "batch-rollback", "claimed-restart", "sending-restart", "explicit-unknown-resolution", "autonomous-notification", "owner-check", "bounded-api-refresh", "completed-capacity", "unresolved-capacity-rollback", "pre-send-storage-failure", "post-send-unknown", "push-sign-on", "continuation-dirty-hint", "chat-failure-isolation", "durable-chat-retry"] }));
