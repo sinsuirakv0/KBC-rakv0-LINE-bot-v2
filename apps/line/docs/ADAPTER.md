@@ -42,7 +42,7 @@ LINEJSの最新公開版は2026-10-02も3.4.2。npm配布物revision 11をlock�
 
 ## Commandの追加境界
 
-Protocol v5。通常返信の実送信IDをCoreへ渡し、候補promptへ結び付ける。管理者削除はsquare.destroyMessageへ渡し、新しい返信成功後に実行する。OCのメディアはoid省略のOBS reqseq upload自身が投稿し、空のIMAGE/VIDEOを先に送らない。画像・動画・GIF・ファイルの素材準備はRust共通Worker、BlobとLINEJS入出力はAdapterが扱う。uploadMediaも共通API枠・実fetch直前のsending記録を通し、HTTP statusを共通transportで検査する。動画durationはCoreの実Frame数から渡す。メディア自体はrelatedMessageId付き返信にならない。通信後の不明結果はunknownで自動再投稿しない。[Media Worker](../../../crates/kbc-core/docs/MEDIA.md) と [実素材実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) を参照。
+Protocol v6。通常返信の実送信IDをCoreへ渡し、候補promptへ結び付ける。管理者削除はsquare.destroyMessageへ渡し、新しい返信成功後に実行する。OCのメディアはoid省略のOBS reqseq upload自身が投稿し、空のIMAGE/VIDEOを先に送らない。画像・動画・GIF・ファイルの素材準備はRust共通Worker、BlobとLINEJS入出力はAdapterが扱う。uploadMediaも共通API枠・実fetch直前のsending記録を通し、HTTP statusを共通transportで検査する。動画durationはCoreの実Frame数から渡す。メディア自体はrelatedMessageId付き返信にならない。通信後の不明結果はunknownで自動再投稿しない。[Media Worker](../../../crates/kbc-core/docs/MEDIA.md) と [実素材実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) を参照。
 
 ## OCイベント・管理API
 
@@ -55,3 +55,5 @@ context / member / chatsはnextQueryActionから1本の照会loopで取得する
 ## 永続Volumeなしの復旧
 
 mainはGitHubPersistence.restore / restoreSettingsの後にAuthStorageとCoreを開く。beforePersistがsequence予約とtoken退避を通信前に確定する。Coreのsnapshotは起動・毎分の変更時・正常終了で暗号化保存する。全て既存の非公開データrepoを使う。[関数と障害時の契約](../../../docs/operations/GITHUB_RECOVERY.md)。
+
+受信metadataとsenderDisplayNameをProtocol v6へ正規化し、Profile更新をNAME、複数kickeeを個別Eventへ変換する。展開後のページは100件・256KiBに分割し、最後まで古いcheckpointを保つ。LogSyncは同じ追記先を4MiBまで5分ごとに更新する。競合はblob SHAで確認し、再取得してmergeする。`OC_LOGS_ENABLED=1`は旧データ変換後に設定する。[ログの契約](../../../crates/kbc-core/docs/LOGS.md)。

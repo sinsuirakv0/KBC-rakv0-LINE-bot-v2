@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { createServer } from "node:http";
 import { AuthStorage } from "./adapter/storage.js";
 import { GitHubPersistence } from "./adapter/persistence.js";
+import { LogSync } from "./adapter/logs.js";
 import { ApiScheduler, errorCode, installApiScheduler } from "./adapter/api.js";
 import { Receiver } from "./adapter/receiver.js";
 import { deliverAction } from "./adapter/delivery.js";
@@ -45,6 +46,7 @@ async function main(): Promise<void> {
   });
   let core: NativeCore | undefined;
   let receiver: Receiver | undefined;
+  let logs: LogSync | undefined;
   let started = false;
   let shutdownTimer: NodeJS.Timeout | undefined;
   const deliveries = { sent: 0, failed: 0, unknown: 0, queued: 0, maxQueueWaitMs: 0 };
@@ -61,6 +63,7 @@ async function main(): Promise<void> {
     response.writeHead(request.url === "/health" ? (healthy ? 200 : 503) : 404, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ state: receiver?.status ?? "starting", core: core?.stats(), api: gate.metrics,
       receiver: receiver?.metrics, deliveries, backup: persistence?.metrics,
+      logs: logs?.metrics,
       rssBytes: process.memoryUsage().rss, uptimeSeconds: process.uptime() }));
   });
   await new Promise<void>((resolve, reject) => {
@@ -81,6 +84,7 @@ async function main(): Promise<void> {
     await storage.flush();
     if (!client.profile?.mid) throw new Error("MissingAccountOwner");
     core = createCore({ databasePath, ownerId: client.profile.mid, restoredFromBackup,
+      logsEnabled: Boolean(persistence) && process.env.OC_LOGS_ENABLED === "1",
       maxRetainedEvents: integerSetting("CORE_MAX_RETAINED_EVENTS", 131072, 8192, 524288),
       contentDirectory: resolve(process.env.CONTENT_DIRECTORY ?? "content"),
       searchDataPath: resolve(process.env.SEARCH_DATA_PATH ?? "data/search/catalog.json"),
@@ -89,6 +93,7 @@ async function main(): Promise<void> {
     const directory = new SquareDirectory(client);
     receiver = new Receiver(client, core, gate, controller.signal, directory);
     const activeCore = core;
+    if (persistence && process.env.OC_LOGS_ENABLED === "1") logs = new LogSync(activeCore, persistence);
     await persistence?.backup(activeCore);
     const deliver = async (query = false) => {
       while (!controller.signal.aborted) {
@@ -104,6 +109,7 @@ async function main(): Promise<void> {
     started = true;
     tasks.push(receiver.run(), deliver(), deliver(), deliver(true), activeCore.runMediaJobs());
     if (persistence) tasks.push(persistence.run(activeCore, controller.signal));
+    if (logs) tasks.push(logs.run(controller.signal));
     await Promise.all(tasks);
   } finally {
     stop();
@@ -111,6 +117,8 @@ async function main(): Promise<void> {
     await Promise.allSettled(tasks);
     try {
       await storage.flush();
+      try { await logs?.flush(); }
+      catch (error) { console.error(JSON.stringify({kind: "logSyncFailure", code: errorCode(error)})); }
       if (core) await persistence?.backup(core);
     }
     finally {

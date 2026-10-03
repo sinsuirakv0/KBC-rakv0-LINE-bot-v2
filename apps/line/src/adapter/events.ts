@@ -31,6 +31,10 @@ export async function normalizeEvent(event: Event, directory?: SquareDirectory, 
       squareId: chat?.squareChat.squareMid ?? payload?.receiveMessage?.squareMid,
       botMemberId: chat?.squareChatMember.squareMemberMid,
       mentions, contentType: String(message.contentType ?? "TEXT"), mediaGroupId: metadata.GID || undefined,
+      senderName: string(record(payload?.notificationMessage ?? payload?.receiveMessage).senderDisplayName) || undefined,
+      metadataJson: JSON.stringify({ source: "push", hasContent: message.hasContent, contentMetadata: metadata,
+        relatedMessageId: message.relatedMessageId, messageRelationType: message.messageRelationType, location: message.location },
+        (_key, value: unknown) => typeof value === "bigint" ? String(value) : value),
       mediaGroupSequence: sequence(metadata.GSEQ), mediaGroupTotal: sequence(metadata.GTOTAL),
       replyToMessageId: ["REPLY", "3"].includes(String(message.messageRelationType)) && message.relatedMessageId ? message.relatedMessageId : undefined };
   }
@@ -40,6 +44,9 @@ export async function normalizeEvent(event: Event, directory?: SquareDirectory, 
   else if (["11", "NOTIFIED_UPDATE_SQUARE_MEMBER"].includes(type)) {
     const update = record(raw.notifiedUpdateSquareMember); member = record(update.squareMember); scope = "square";
     squareId = string(update.squareMid); memberId = string(update.squareMemberMid);
+  } else if (["12", "NOTIFIED_UPDATE_SQUARE_MEMBER_PROFILE"].includes(type)) {
+    const update = record(raw.notifiedUpdateSquareMemberProfile); member = record(update.squareMember);
+    chatId = string(update.squareChatMid); scope = "square"; state = "NAME";
   } else if (["16", "NOTIFIED_CREATE_SQUARE_CHAT_MEMBER"].includes(type)) {
     const update = record(raw.notifiedCreateSquareChatMember), chat = record(update.chat), chatMember = record(update.chatMember);
     member = record(update.peerSquareMember); chatId = string(chat.squareChatMid) || string(chatMember.squareChatMid);
@@ -54,12 +61,33 @@ export async function normalizeEvent(event: Event, directory?: SquareDirectory, 
     state = ["1", "JOINED"].includes(String(chatMember.membershipState)) ? "JOINED" : ["2", "LEFT"].includes(String(chatMember.membershipState)) ? "LEFT" : "";
   } else return null;
   memberId ||= string(member.squareMemberMid); squareId ||= string(member.squareMid);
-  if (scope === "square") state = ({ "2": "JOINED", JOINED: "JOINED", "4": "LEFT", LEFT: "LEFT", "5": "KICK_OUT", KICK_OUT: "KICK_OUT", "6": "BANNED", BANNED: "BANNED" } as Record<string, string>)[String(member.membershipState)] ?? "";
+  if (scope === "square" && state !== "NAME") state = ({ "2": "JOINED", JOINED: "JOINED", "4": "LEFT", LEFT: "LEFT", "5": "KICK_OUT", KICK_OUT: "KICK_OUT", "6": "BANNED", BANNED: "BANNED" } as Record<string, string>)[String(member.membershipState)] ?? "";
   const created = timestamp(event.createdTime);
   if (!created || created < baselineBeforeMs) return null;
   if (!squareId && chatId && directory) squareId = (await directory.chat(chatId)).squareChat.squareMid;
+  if (!state && ["11", "NOTIFIED_UPDATE_SQUARE_MEMBER"].includes(type) && string(member.displayName)) state = "NAME";
   if (!squareId || !memberId || !state || !created) return null;
   chatId ||= squareId;
   return { type: "memberChanged", eventId: `member:${squareId}:${scope === "square" ? "all" : chatId}:${memberId}:${state}:${created}`,
     squareId, chatId, memberId, displayName: name(member.displayName), scope, state, memberCreatedAtMs: timestamp(member.createdAt), createdAtMs: created };
+}
+
+export async function normalizeEvents(event: Event, directory?: SquareDirectory, baselineBeforeMs = 0): Promise<CoreEvent[]> {
+  if (["19", "NOTIFIED_KICKOUT_FROM_SQUARE"].includes(String(event.type))) {
+    const payload = record(record(event.payload).notifiedKickoutFromSquare);
+    if (!Array.isArray(payload.kickees) || payload.kickees.length > 64) throw new Error("InvalidKickEvent");
+    if ((timestamp(event.createdTime) ?? 0) < baselineBeforeMs) return [];
+    const result: CoreEvent[] = [];
+    for (const target of payload.kickees) {
+      const member = record(target);
+      const converted = await normalizeEvent({ ...event, type: "NOTIFIED_UPDATE_SQUARE_MEMBER", payload: {
+        notifiedUpdateSquareMember: { squareMid: string(member.squareMid), squareMemberMid: string(member.squareMemberMid),
+          squareMember: { ...member, membershipState: "KICK_OUT" } },
+      } } as unknown as Event, directory, baselineBeforeMs);
+      if (converted) result.push({ ...converted, chatId: string(payload.squareChatMid) || converted.chatId });
+    }
+    return result;
+  }
+  const single = await normalizeEvent(event, directory, baselineBeforeMs);
+  return single ? [single] : [];
 }

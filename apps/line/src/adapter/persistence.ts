@@ -69,6 +69,32 @@ export class GitHubPersistence {
     return Buffer.concat(chunks);
   }
 
+  async readVersionedRemote(path: string): Promise<{ data: Buffer; sha: string } | undefined> {
+    const response = await this.api(`${this.fileUrl(path)}?ref=${encodeURIComponent(this.branch)}`);
+    if (response.status === 404) return undefined;
+    if (!response.ok) throw new Error(`GitHubRead${response.status}`);
+    const metadata = await response.json() as { sha: string; encoding: string; content?: string; size: number };
+    if (metadata.size > MAX_REMOTE_BYTES) throw new Error("BackupTooLarge");
+    const blob = metadata.encoding === "base64" ? metadata : await (async () => {
+      const response = await this.api(`/git/blobs/${metadata.sha}`);
+      if (!response.ok) throw new Error(`GitHubRead${response.status}`);
+      return response.json() as Promise<{ content: string }>;
+    })();
+    if (!blob.content) throw new Error("MissingGitHubBlob");
+    return { data: Buffer.from(blob.content.replace(/\s/g, ""), "base64"), sha: metadata.sha };
+  }
+
+  async writeVersionedRemote(path: string, data: Buffer, sha?: string): Promise<boolean> {
+    if (data.length > MAX_REMOTE_BYTES) throw new Error("BackupTooLarge");
+    const response = await this.api(this.fileUrl(path), { method: "PUT", body: JSON.stringify({
+      message: "OCログを追記", branch: this.branch, sha, content: data.toString("base64"),
+    }) });
+    await response.body?.cancel();
+    if (response.status === 409 || response.status === 422) return false;
+    if (!response.ok) throw new Error(`GitHubWrite${response.status}`);
+    return true;
+  }
+
   async writeRemote(path: string, data: Buffer, message: string): Promise<void> {
     if (data.length > MAX_REMOTE_BYTES) throw new Error("BackupTooLarge");
     for (let attempt = 0; attempt < 3; attempt++) {

@@ -5,7 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { PROTOCOL_VERSION, type NativeCore, type ReceivedBatch } from "../protocol/native.js";
 import type { CoreEvent } from "../protocol/generated/CoreEvent.js";
 import { ApiScheduler, errorCode } from "./api.js";
-import { normalizeEvent } from "./events.js";
+import { normalizeEvents } from "./events.js";
 import type { SquareDirectory } from "./square.js";
 
 type AccountPage = Awaited<ReturnType<BaseClient["square"]["fetchMyEvents"]>>;
@@ -80,19 +80,31 @@ export class Receiver {
       this.metrics.events++;
       const kind = String(event.type);
       if (kind in this.metrics.types || Object.keys(this.metrics.types).length < 64) this.metrics.types[kind] = (this.metrics.types[kind] ?? 0) + 1;
-      const converted = await normalizeEvent(event, this.directory, checkpoint.originMs);
-      if (!converted) { this.metrics.ignored++; continue; }
-      this.metrics.maxLagMs = Math.max(this.metrics.maxLagMs, Date.now() - converted.createdAtMs);
-      normalized.push(converted);
+      const converted = await normalizeEvents(event, this.directory, checkpoint.originMs);
+      if (!converted.length) { this.metrics.ignored++; continue; }
+      for (const item of converted) this.metrics.maxLagMs = Math.max(this.metrics.maxLagMs, Date.now() - item.createdAtMs);
+      normalized.push(...converted);
     }
-    const batch: ReceivedBatch = { protocolVersion: PROTOCOL_VERSION, streamKey: stream,
-      checkpoint: JSON.stringify(checkpoint), baselineBeforeMs: checkpoint.originMs, events: normalized };
+    const chunks: CoreEvent[][] = [[]];
+    let bytes = 0;
+    for (const event of normalized) {
+      const size = Buffer.byteLength(JSON.stringify(event));
+      if (size > 256 * 1024) throw Object.assign(new Error("EventByteLimit"), { name: "CoreStoreError" });
+      if (chunks.at(-1)!.length === 100 || bytes + size > 256 * 1024) { chunks.push([]); bytes = 0; }
+      chunks.at(-1)!.push(event); bytes += size;
+    }
+    const previous = this.core.checkpoint(stream) ?? JSON.stringify({ originMs: checkpoint.originMs });
     try {
+      for (let index = 0; index < chunks.length; index++) {
+      const batch: ReceivedBatch = { protocolVersion: PROTOCOL_VERSION, streamKey: stream,
+        checkpoint: index === chunks.length - 1 ? JSON.stringify(checkpoint) : previous,
+        baselineBeforeMs: checkpoint.originMs, events: chunks[index] };
       const receipt = await this.core.submitBatchAsync(batch);
       this.metrics.accepted += receipt.accepted;
       this.metrics.duplicates += receipt.duplicates;
       if (receipt.actionsCreated) console.log(JSON.stringify({ kind: "accepted", source: stream === "account" ? "notification" : "chat",
         accepted: receipt.accepted, duplicates: receipt.duplicates, actions: receipt.actionsCreated }));
+      }
     } catch (error) {
       // 容量超過・保存失敗時はcursorを進めず停止して原因を観測する。
       throw Object.assign(new Error(errorCode(error)), { name: "CoreStoreError" });
