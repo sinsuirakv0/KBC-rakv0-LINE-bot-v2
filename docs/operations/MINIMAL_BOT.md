@@ -98,3 +98,7 @@ GitHub指定時はBOT_PERMISSIONS_PATH / LEGACY_OC_SETTINGS_PATHの未指定path
 a42937f / boiling-throne-4097へ、BOT管理者限定の!test replyを配備した。Linux buildのSuccessを確認し、旧instanceを0へ変更して0 / 0を確認してから配備・1へ戻した。0.2vCPU / 512MB、Volume追加なし、CD OFFを維持。Protocolは既存v7のまま。[コマンド・関数・検証範囲](../../crates/kbc-core/src/oc/docs/TEST_REPLY.md)。
 
 起動約135秒でhealth 200 / receiving、PUSH session / sign-on各1、listedChats / pollingChats各11、priorityChats 4、補完・定期取得の失敗0。API requests 171 / errors 0 / rateLimits 0、暗号化backup 3回 / failures 0、RSS約129MiB。Coreの完了82件・旧unknown 8件を復元し、新規配送の失敗・unknownは0。新起動後のログ12行は5分同期の待機中で、この時点で新周期の完了は未確認。Northflank表示はCPU 0.0067vCPU（割当の約3%）、Memory 142.23MB、restart 0。実LINEでの!test reply投稿・サブトーク間/別OCの表示は利用者の試験対象であり、この起動確認を実送信成功の証明としない。
+
+続く利用者の仕様訂正で、トークMIDは返信元メッセージがあるトークを表し、投稿先はコマンド実行トークと確定した。初版の--toによる送信先変更を廃止し、--chatによる返信元指定・受信済み情報との照合へ修正。3dd8c61 / capable-horn-3678のLinux build成功後、0 / 0の停止確認→配備→1 instanceへの起動で反映した。既存v7・0.2vCPU / 512MB・Volumeなし・CD OFFを維持する。
+
+切替直前の初版はbackup 31回 / failures 0、ログ同期6周期・26行 / failures 0、pendingLogs 0。修正版の起動約114秒でhealth 200 / receiving、PUSH session / sign-on各1、11トークの定期取得、優先4トーク、補完・定期取得の失敗0。API requests 146 / errors 0 / rateLimits 0、backup 2回 / failures 0、RSS約129MiB。完了87件・旧unknown 8件を復元し、新規配送の失敗・unknownは0。ログ2行は5分同期の待機中。Northflank表示はCPU 0.0081vCPU（割当の約4%）、Memory 141.37MB、restart 0。修正版の実LINEリプライ投稿・別OC表示は未確認。
