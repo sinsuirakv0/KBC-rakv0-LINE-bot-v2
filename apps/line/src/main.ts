@@ -1,7 +1,9 @@
+import { SquareDirectory } from "./adapter/square.js";
 import { BaseClient, type Device } from "@evex/linejs/base";
 import { resolve } from "node:path";
 import { createServer } from "node:http";
 import { AuthStorage } from "./adapter/storage.js";
+import { GitHubPersistence } from "./adapter/persistence.js";
 import { ApiScheduler, errorCode, installApiScheduler } from "./adapter/api.js";
 import { Receiver } from "./adapter/receiver.js";
 import { deliverAction } from "./adapter/delivery.js";
@@ -18,7 +20,17 @@ async function main(): Promise<void> {
   const device = process.env.LINE_DEVICE ?? "DESKTOPWIN";
   if (!["DESKTOPWIN", "DESKTOPMAC", "ANDROID", "ANDROIDSECONDARY", "IOS", "IOSIPAD", "WATCHOS", "WEAROS"].includes(device)) throw new Error("InvalidDevice");
   const controller = new AbortController();
-  const storage = new AuthStorage(resolve(process.env.LINE_STORAGE_FILE ?? "storage/auth.json"), error => controller.abort(error));
+  const authPath = resolve(process.env.LINE_STORAGE_FILE ?? "storage/auth.json");
+  const databasePath = resolve(process.env.CORE_DATABASE_PATH ?? "storage/core.sqlite");
+  const persistence = GitHubPersistence.fromEnvironment(authPath, databasePath);
+  const restoredFromBackup = await persistence?.restore() ?? false;
+  const permissionsPath = process.env.BOT_PERMISSIONS_PATH?.trim() ? resolve(process.env.BOT_PERMISSIONS_PATH) :
+    persistence ? resolve("storage/permissions.json") : undefined;
+  const legacyOcSettingsPath = process.env.LEGACY_OC_SETTINGS_PATH?.trim() ? resolve(process.env.LEGACY_OC_SETTINGS_PATH) :
+    persistence ? resolve("storage/legacy-oc-settings.json") : undefined;
+  if (persistence && permissionsPath && legacyOcSettingsPath) await persistence.restoreSettings(permissionsPath, legacyOcSettingsPath);
+  const storage = new AuthStorage(authPath, error => controller.abort(error),
+    persistence ? data => persistence.protectAuth(data) : undefined);
   await storage.load();
   const token = await storage.get(".auth") ?? process.env.LINE_AUTH_TOKEN;
   if (typeof token !== "string" || !token) throw new Error("MissingStoredAuthToken");
@@ -35,7 +47,7 @@ async function main(): Promise<void> {
   let receiver: Receiver | undefined;
   let started = false;
   let shutdownTimer: NodeJS.Timeout | undefined;
-  const deliveries = { sent: 0, unknown: 0, queued: 0, maxQueueWaitMs: 0 };
+  const deliveries = { sent: 0, failed: 0, unknown: 0, queued: 0, maxQueueWaitMs: 0 };
   const stop = () => controller.abort();
   controller.signal.addEventListener("abort", () => {
     core?.shutdown();
@@ -48,7 +60,8 @@ async function main(): Promise<void> {
     const healthy = started && !controller.signal.aborted && receiver?.status === "receiving";
     response.writeHead(request.url === "/health" ? (healthy ? 200 : 503) : 404, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ state: receiver?.status ?? "starting", core: core?.stats(), api: gate.metrics,
-      receiver: receiver?.metrics, deliveries, rssBytes: process.memoryUsage().rss, uptimeSeconds: process.uptime() }));
+      receiver: receiver?.metrics, deliveries, backup: persistence?.metrics,
+      rssBytes: process.memoryUsage().rss, uptimeSeconds: process.uptime() }));
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -67,32 +80,39 @@ async function main(): Promise<void> {
     await client.loginProcess.login({ authToken: token });
     await storage.flush();
     if (!client.profile?.mid) throw new Error("MissingAccountOwner");
-    core = createCore({ databasePath: resolve(process.env.CORE_DATABASE_PATH ?? "storage/core.sqlite"), ownerId: client.profile.mid,
+    core = createCore({ databasePath, ownerId: client.profile.mid, restoredFromBackup,
       maxRetainedEvents: integerSetting("CORE_MAX_RETAINED_EVENTS", 131072, 8192, 524288),
       contentDirectory: resolve(process.env.CONTENT_DIRECTORY ?? "content"),
       searchDataPath: resolve(process.env.SEARCH_DATA_PATH ?? "data/search/catalog.json"),
+      permissionsPath, legacyOcSettingsPath,
       ffmpegPath: process.env.FFMPEG_PATH?.trim() || (process.platform === "linux" ? "/usr/bin/ffmpeg" : undefined) });
-    receiver = new Receiver(client, core, gate, controller.signal);
+    const directory = new SquareDirectory(client);
+    receiver = new Receiver(client, core, gate, controller.signal, directory);
     const activeCore = core;
-    const deliver = async () => {
+    await persistence?.backup(activeCore);
+    const deliver = async (query = false) => {
       while (!controller.signal.aborted) {
-        const action = await activeCore.nextAction();
+        const action = await (query ? activeCore.nextQueryAction() : activeCore.nextAction());
         if (!action) return;
         const queuedMs = Date.now() - action.createdAtMs;
         if (action.type === "sendMessage") deliveries.maxQueueWaitMs = Math.max(deliveries.maxQueueWaitMs, queuedMs);
-        const { status, code } = await deliverAction(client, activeCore, gate, action);
+        const { status, code } = await deliverAction(client, activeCore, gate, action, directory);
         deliveries[status]++;
         console.log(JSON.stringify({ kind: "delivery", operation: action.type, status, code, queueWaitMs: queuedMs }));
       }
     };
     started = true;
-    tasks.push(receiver.run(), deliver(), deliver(), activeCore.runMediaJobs());
+    tasks.push(receiver.run(), deliver(), deliver(), deliver(true), activeCore.runMediaJobs());
+    if (persistence) tasks.push(persistence.run(activeCore, controller.signal));
     await Promise.all(tasks);
   } finally {
     stop();
     core?.shutdown();
     await Promise.allSettled(tasks);
-    try { await storage.flush(); }
+    try {
+      await storage.flush();
+      if (core) await persistence?.backup(core);
+    }
     finally {
       clearInterval(metricsTimer);
       server.closeAllConnections();

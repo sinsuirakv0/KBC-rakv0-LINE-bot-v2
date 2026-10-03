@@ -26,6 +26,7 @@ try {
   assert.deepEqual(core.submitBatch(batch(["one", "two"])), { accepted: 2, duplicates: 0, actionsCreated: 2 });
   assert.equal(core.submitBatch(batch(["one", "two"])).duplicates, 2);
   const invalid = batch(["rollback", "invalid"], "o.ping", "bad-cursor");
+  assert(invalid.events[1].type === "messageReceived");
   invalid.events[1] = { ...invalid.events[1], messageId: "" };
   assert.throws(() => core.submitBatch(invalid), /InvalidEvent/);
   assert.equal(core.checkpoint("account"), "cursor-1");

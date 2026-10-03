@@ -11,6 +11,8 @@
     "check": "tsc --noEmit",
     "smoke": "node dist/smoke.js",
     "smoke:commands": "node dist/smoke-commands.js",
+    "smoke:oc": "node dist/smoke-oc.js",
+    "smoke:persistence": "node dist/smoke-persistence.js",
     "snapshot:search": "node scripts/search-snapshot.cjs",
     "verify:media": "node experiments/commands/verify-media.mjs",
     "start": "node --env-file-if-exists=.env dist/main.js"

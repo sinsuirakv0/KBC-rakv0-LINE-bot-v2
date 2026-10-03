@@ -1,0 +1,140 @@
+﻿import assert from "node:assert/strict";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { BaseClient } from "@evex/linejs/base";
+import { ApiScheduler } from "./adapter/api.js";
+import { deliverAction } from "./adapter/delivery.js";
+import { SquareDirectory } from "./adapter/square.js";
+import { normalizeEvent } from "./adapter/events.js";
+import { createCore, PROTOCOL_VERSION, type CoreAction } from "./protocol/native.js";
+import type { CoreEvent } from "./protocol/generated/CoreEvent.js";
+
+// LINEへ接続せず、永続ActionとSDK境界を三つの運用シナリオで検証する。
+const directory = await mkdtemp(join(tmpdir(), "kbc-oc-smoke-"));
+const mid = (prefix: string, digit: string) => prefix + digit.repeat(32);
+const square = mid("s", "1"), chat = mid("m", "1"), sub = mid("m", "2");
+const admin = mid("p", "1"), co = mid("p", "2"), mod = mid("p", "3"), user = mid("p", "4"), bot = mid("p", "5");
+const roles = new Map([[admin, "ADMIN"], [co, "CO_ADMIN"], [mod, "MEMBER"], [user, "MEMBER"], [bot, "CO_ADMIN"]]);
+const states = new Map<string, string>();
+await writeFile(join(directory, "permissions.json"), JSON.stringify({ version: 1, roles: [{ chatMid: square, userMid: mod, chatType: "SQUARE", role: "mod" }] }));
+const config = { databasePath: join(directory, "core.sqlite"), ownerId: "fixture-account", permissionsPath: join(directory, "permissions.json") };
+let core = createCore(config);
+const db = new DatabaseSync(config.databasePath);
+const controller = new AbortController(), gate = new ApiScheduler(controller.signal, 2, 1);
+const client = new BaseClient({ device: "DESKTOPWIN" });
+const member = (id: string) => ({ squareMemberMid: id, squareMid: square, displayName: id === user ? "参加者🙂" : "メンバー",
+  role: roles.get(id) ?? "MEMBER", membershipState: states.get(id) ?? "JOINED", revision: 7n });
+let failMutation = false;
+client.square.getSquareChat = async ({ squareChatMid }) => ({ squareChat: { squareChatMid, squareMid: square, name: "検証", type: "SQUARE_DEFAULT" },
+  squareChatMember: { squareMemberMid: bot } }) as Awaited<ReturnType<typeof client.square.getSquareChat>>;
+client.square.getSquareMember = async ({ squareMemberMid }) => ({ squareMember: member(squareMemberMid) }) as Awaited<ReturnType<typeof client.square.getSquareMember>>;
+client.square.updateSquareMember = async options => gate.run("updateSquareMember", async () => {
+  const updated = options?.request?.squareMember; assert(updated?.squareMemberMid);
+  gate.beforeFetch(); assert.equal(core.stats().sendingActions, 1);
+  if (failMutation) throw new Error("DisconnectedAfterRequest");
+  states.set(updated.squareMemberMid, String(updated.membershipState));
+  return { squareMember: member(updated.squareMemberMid) } as Awaited<ReturnType<typeof client.square.updateSquareMember>>;
+});
+const deleted: string[] = [];
+client.square.destroyMessage = async options => gate.run("destroyMessage", async () => {
+  gate.beforeFetch(); deleted.push(options.messageId); return {} as Awaited<ReturnType<typeof client.square.destroyMessage>>;
+});
+let promptSequence = 0;
+client.square.sendMessage = async () => gate.run("sendMessage", async () => {
+  gate.beforeFetch(); return { createdSquareMessage: { message: { id: `bot-${++promptSequence}` } } } as Awaited<ReturnType<typeof client.square.sendMessage>>;
+});
+const service = new SquareDirectory(client);
+let sequence = 0;
+async function submitEvent(event: CoreEvent) {
+  return core.submitBatchAsync({ protocolVersion: PROTOCOL_VERSION, streamKey: "account", checkpoint: String(++sequence), baselineBeforeMs: null, events: [event] });
+}
+async function message(text: string, actor = admin, replyToMessageId?: string, targetChat = chat, extra: Partial<Extract<CoreEvent, { type: "messageReceived" }>> = {}) {
+  const id = `message-${sequence}`;
+  await submitEvent({ type: "messageReceived", eventId: `${targetChat}:${id}`, chatId: targetChat, messageId: id, senderId: actor,
+    squareId: square, botMemberId: bot, text, replyToMessageId, createdAtMs: Date.now(), ...extra });
+  return id;
+}
+const actions: CoreAction[] = [];
+async function drain() {
+  const start = actions.length;
+  for (let count = 0; count < 100; count++) {
+    const next = db.prepare("SELECT payload FROM actions WHERE status='queued' AND due<=? ORDER BY due,rowid LIMIT 1").get(Date.now() + 100) as { payload: string } | undefined;
+    if (!next) return actions.slice(start);
+    const data = JSON.parse(next.payload) as CoreAction;
+    const action = await (data.type === "ocApi" && ["context", "member", "chats"].includes(data.request.type) ? core.nextQueryAction() : core.nextAction());
+    assert(action); actions.push(action);
+    await deliverAction(client, core, gate, action, service);
+  }
+  throw new Error("FixtureDidNotDrain");
+}
+const texts = (values: CoreAction[]) => values.filter(a => a.type === "sendMessage").map(a => a.text).join("\n");
+const settings = () => JSON.parse((db.prepare("SELECT payload FROM oc_settings WHERE square=?").get(square) as { payload: string }).payload);
+async function signal(id: string, state: string, scope = "square", targetChat = chat, at = Date.now()) {
+  return submitEvent({ type: "memberChanged", eventId: `member-${sequence}`, squareId: square, chatId: targetChat, memberId: id,
+    displayName: "参加者🙂", state, scope, memberCreatedAtMs: at, createdAtMs: at });
+}
+try {
+  // 旧権限区分、本人への番号返信、照会待ちの通常配送と再起動。
+  await message(`o.oc kick ${user}`, admin); assert(texts(await drain()).includes("実行権限"));
+  await message("o.oc setup", mod); assert(texts(await drain()).includes("実行権限"));
+  await message(`o.oc mute ${user} inf`, co); assert(texts(await drain()).includes("実行権限"));
+  await message("!oc setup", co); await drain(); const oldPrompt = `bot-${promptSequence}`;
+  assert.equal((await message("1", user, oldPrompt), await drain()).length, 0);
+  await message("1 2", co, oldPrompt); await drain(); assert(settings().url && settings().media);
+  await message("8", co, `bot-${promptSequence}`); await drain(); assert(!settings().url && !settings().media);
+  await message("o.oc media on", co); const held = await core.nextQueryAction(); assert(held?.type === "ocApi");
+  await message("o.ping", user); const ping = await core.nextAction(); assert(ping?.type === "sendMessage" && ping.text === "pong!");
+  await deliverAction(client, core, gate, ping, service); assert.equal(core.stats().queryingActions, 1);
+  core.shutdown(); core = createCore(config); await drain(); assert(settings().media);
+  await message(`o.oc kick ${user}`, mod); failMutation = true; const unknown = await drain(); failMutation = false;
+  assert(unknown.some(a => a.type === "ocApi" && a.request.type === "membership")); assert.equal(core.stats().unknownActions, 1);
+  core.shutdown(); core = createCore(config); assert.equal(core.stats().unknownActions, 1);
+
+  // 明示muteは権限免除より優先。URL免除と連投の7件目を確認。
+  await message(`o.oc mute ${user} inf`, mod); await drain();
+  roles.set(user, "ADMIN"); const muted = await message("o.ping", user); await drain(); assert(deleted.includes(muted));
+  roles.set(user, "MEMBER"); await message(`o.oc mute ${user} off`, mod); await drain();
+  await message("o.oc url add https://example.com/docs prefix"); await drain(); await message("o.oc url on"); await drain();
+  const prefixed = await message("o.ping", user); assert(texts(await drain()).includes("pong!")); assert(!deleted.includes(prefixed));
+  await message("!ping", user); assert(texts(await drain()).includes("pong!"));
+  const allowed = await message("https://example.com/docs/page", user); assert.equal((await drain()).length, 0); assert(!deleted.includes(allowed));
+  const blocked = await message("https://example.com/docs-evil", user); await drain(); assert(deleted.includes(blocked));
+  const attached = await message("こちらhttps://blocked.example/", user); await drain(); assert(deleted.includes(attached));
+  const longUrl = await message("https://blocked.example/" + "x".repeat(15000), user); await drain(); assert(deleted.includes(longUrl));
+  const exempt = await message("https://other.example/", co); await drain(); assert(!deleted.includes(exempt));
+  const pictures: string[] = [];
+  for (let i = 1; i <= 7; i++) { pictures.push(await message("", user, undefined, chat, { contentType: "IMAGE", mediaGroupSequence: i, mediaGroupTotal: 7 })); await drain(); }
+  assert(pictures.slice(0, 6).every(id => !deleted.includes(id))); assert(deleted.includes(pictures[6]));
+
+  // PUSHの正規化、トーク通知、サブトーク退出とOC全体退出を区別。
+  await message("o.oc main set"); await drain(); await message("o.oc watch early on"); await drain();
+  await message("o.oc join set --mention --id <name>さん\nようこそ"); await drain();
+  const joined = mid("p", "6"); roles.set(joined, "MEMBER"); const joinAt = Date.now();
+  await signal(joined, "JOINED", "square", chat, joinAt); const notified = await drain();
+  const notification = notified.find(a => a.type === "sendMessage" && a.mention); assert(notification?.type === "sendMessage");
+  assert(notification.text.includes("参加者🙂さん\nようこそ") && notification.text.includes("ID:")); assert.equal(notification.relatedMessageId, "");
+  await signal(joined, "LEFT", "chat", sub, joinAt + 1); assert.equal((await drain()).length, 0); assert.equal(states.get(joined), undefined);
+  states.set(joined, "LEFT"); await signal(joined, "LEFT", "square", chat, joinAt + 2); await drain(); assert.equal(states.get(joined), "BANNED");
+  await message("o.oc watch danger on"); await drain(); await message("o.oc watch cohort on"); await drain();
+  const newcomer = mid("p", "7"); await signal(newcomer, "JOINED"); await drain();
+  await message("ﾁｰﾄの代行", newcomer); await drain(); assert.equal(states.get(newcomer), "KICK_OUT");
+  await message("o.oc modroom set"); await drain();
+  for (const digit of ["8", "9", "a"]) { await signal(mid("p", digit), "JOINED"); await drain(); }
+  const cohortMember = mid("p", "a"); await message("招待はこちら https://example.com/docs/", cohortMember); const watched = await drain();
+  assert(texts(watched).includes("自動処分なし")); assert.equal(states.get(cohortMember), undefined);
+  await message("https://allow.example/path", user); const review = await drain();
+  assert(texts(review).includes("完全一致"));
+  const storedCase = db.prepare("SELECT prompt FROM oc_cases WHERE url LIKE 'https://allow.example/%'").get() as { prompt: string };
+  assert(storedCase.prompt);
+  await message("4", co, storedCase.prompt); await drain();
+  const approved = await message("https://allow.example/another", user); await drain(); assert(!deleted.includes(approved));
+  const converted = await normalizeEvent({ type: "NOTIFIED_CREATE_SQUARE_MEMBER", createdTime: BigInt(Date.now()), payload: {
+    notifiedCreateSquareMember: { squareMember: { ...member(user), createdAt: BigInt(Date.now()) } } } } as Parameters<typeof normalizeEvent>[0], service);
+  assert(converted?.type === "memberChanged" && converted.scope === "square" && converted.state === "JOINED");
+  const media = await normalizeEvent({ type: "RECEIVE_MESSAGE", payload: { receiveMessage: { squareMessage: { message: {
+    id: "media-fixture", to: chat, from: user, createdTime: BigInt(Date.now()), contentType: "IMAGE", contentMetadata: { GSEQ: "999999999999", GTOTAL: "7" } } } } } } as unknown as Parameters<typeof normalizeEvent>[0], service);
+  assert(media?.type === "messageReceived" && media.text === "" && media.mediaGroupSequence === undefined);
+  console.log(JSON.stringify({ ok: true, scenarios: ["permissions-session-query-restart-unknown", "mute-url-media", "push-notification-oc-leave"] }));
+} finally { controller.abort(); core.shutdown(); db.close(); }

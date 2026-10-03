@@ -8,7 +8,8 @@ export class AuthStorage extends BaseStorage {
   private pending = 0;
   private failure?: Error;
 
-  constructor(private path: string, private onFailure: (error: Error) => void = () => {}) { super(); }
+  constructor(private path: string, private onFailure: (error: Error) => void = () => {},
+    private beforePersist?: (data: Record<string, Storage["Value"]>) => Promise<void>) { super(); }
 
   async load(): Promise<void> {
     try {
@@ -50,6 +51,7 @@ export class AuthStorage extends BaseStorage {
       if (this.failure) throw this.failure;
       const data = { ...this.data };
       change(data);
+      await this.beforePersist?.(data);
       await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
       const file = await open(`${this.path}.tmp`, "w", 0o600);
       try { await file.writeFile(JSON.stringify(data)); await file.sync(); }

@@ -4,7 +4,7 @@
 
 ## 関数と処理経路
 
-`main → AuthStorage.load → SDK login → createCore → Receiver.run + 2本の配送loop`。
+`main → AuthStorage.load → SDK login → createCore → Receiver.run + 2本の配送loop + 1本の照会loop`。
 
 | 関数・状態 | 働き・相互関係 |
 | --- | --- |
@@ -34,12 +34,24 @@ HTTP/2の初期接続とsign-on待ちは各15秒。PUSH入力の組立Bufferは1
 
 ## 今回の対応範囲と観測
 
-コマンドはtxtの応答・help、ut/tut/stの検索・番号リプライ・origin画像、確認用test-notify。[Command実装](../../../crates/kbc-core/src/commands/docs/COMMANDS.md)を参照。ping本文は旧LINEのpong!、登録と引数解析はDiscordのcatalog方式。個人・グループ、LINE thread固有メッセージ、権限・停止設定、旧通知機能は未対応。
+コマンドはtxtの応答・help、ut/tut/stの検索・番号リプライ・origin画像、確認用test-notify。[Command実装](../../../crates/kbc-core/src/commands/docs/COMMANDS.md)を参照。ping本文は旧LINEのpong!、登録と引数解析はDiscordのcatalog方式。個人・グループ、LINE thread固有メッセージ、旧Botの停止設定・一般通知機能は未対応。通常のOC管理は追加済み。
 
-未知・非テキストイベントは種別と件数を最大64種で観測する。ログには本文・トークID・message ID・認証値・SDKの生の例外を出さない。受信後の詳細はローカルSQLiteに残る。ログはstdoutの集計と配送結果のみ。毎分CPU（1core比）、RSS・heap、API・受信・配送・容量を出す。`/health`は受信ready時200、それ以外503。PUSH heartbeatだけで全メッセージの受信成功を保証しない。
+未知イベントは種別と件数を最大64種で観測し、媒体・対象の参加退出もCoreへ正規化する。ログには本文・トークID・message ID・認証値・SDKの生の例外を出さない。受信後の詳細はローカルSQLiteに残る。ログはstdoutの集計と配送結果のみ。毎分CPU（1core比）、RSS・heap、API・受信・配送・容量を出す。`/health`は受信ready時200、それ以外503。PUSH heartbeatだけで全メッセージの受信成功を保証しない。
 
 LINEJSの最新公開版は2026-10-02も3.4.2。npm配布物revision 11をlock。そこでreqseq初回並列の直列化を確認した。SDKが依存するThrift 0.20はnpm auditでhighが出たため、0.25.0へoverride。実SDKのCompact Protocol初期応答を模擬検証し、audit 0件を確認。通信先の実互換性は少数OCの実験で確認する。
 
 ## Commandの追加境界
 
-Protocol v4。通常返信の実送信IDをCoreへ渡し、候補promptへ結び付ける。管理者削除はsquare.destroyMessageへ渡し、新しい返信成功後に実行する。OCのメディアはoid省略のOBS reqseq upload自身が投稿し、空のIMAGE/VIDEOを先に送らない。画像・動画・GIF・ファイルの素材準備はRust共通Worker、BlobとLINEJS入出力はAdapterが扱う。uploadMediaも共通API枠・実fetch直前のsending記録を通し、HTTP statusを共通transportで検査する。動画durationはCoreの実Frame数から渡す。メディア自体はrelatedMessageId付き返信にならない。通信後の不明結果はunknownで自動再投稿しない。[Media Worker](../../../crates/kbc-core/docs/MEDIA.md) と [実素材実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) を参照。
+Protocol v5。通常返信の実送信IDをCoreへ渡し、候補promptへ結び付ける。管理者削除はsquare.destroyMessageへ渡し、新しい返信成功後に実行する。OCのメディアはoid省略のOBS reqseq upload自身が投稿し、空のIMAGE/VIDEOを先に送らない。画像・動画・GIF・ファイルの素材準備はRust共通Worker、BlobとLINEJS入出力はAdapterが扱う。uploadMediaも共通API枠・実fetch直前のsending記録を通し、HTTP statusを共通transportで検査する。動画durationはCoreの実Frame数から渡す。メディア自体はrelatedMessageId付き返信にならない。通信後の不明結果はunknownで自動再投稿しない。[Media Worker](../../../crates/kbc-core/docs/MEDIA.md) と [実素材実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) を参照。
+
+## OCイベント・管理API
+
+normalizeEventは本文なしの画像・動画、OC全体のmember状態、トーク内の参加退出を正規化する。時刻・scope・状態を分け、関連member作成時刻がない場合は初参加と推定しない。SquareDirectoryはchat→OC/botを512件・10分でcacheし、32件まで同じ照会をまとめる。roleはcacheから許可せず現在のgetSquareMemberで確認する。SDK返値のMIDとrevisionを検査する。baseline以前の履歴ではOC追加取得をしない。
+
+context / member / chatsはnextQueryActionから1本の照会loopで取得する。通常配送は2本のままで、全RPCは既存ApiSchedulerの同じ上限を共有する。membershipはupdateSquareMember(updatedAttrs=[5], revision付き)、通報はreportSquareMessage(SCAM)。更新・通報も実fetch直前にsendingを保存し、通信後失敗を自動再試行しない。読み取りはfailedで確定でき、再起動は再取得する。
+
+入退室のメンションはRustがUTF-16位置を作り、AdapterはMENTIONへ変換する。通常通知の空relatedMessageIdはSDKへundefinedで渡す。[OCの仕様・上限・検証](../../../crates/kbc-core/src/oc/docs/OC.md)。ノート・threadのURL削除と参加イベントの実OC網羅性は後続調査。
+
+## 永続Volumeなしの復旧
+
+mainはGitHubPersistence.restore / restoreSettingsの後にAuthStorageとCoreを開く。beforePersistがsequence予約とtoken退避を通信前に確定する。Coreのsnapshotは起動・毎分の変更時・正常終了で暗号化保存する。全て既存の非公開データrepoを使う。[関数と障害時の契約](../../../docs/operations/GITHUB_RECOVERY.md)。

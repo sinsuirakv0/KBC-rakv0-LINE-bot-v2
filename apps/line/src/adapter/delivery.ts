@@ -1,9 +1,45 @@
 ﻿import type { BaseClient } from "@evex/linejs/base";
 import type { CoreAction, NativeCore } from "../protocol/native.js";
 import { ApiScheduler, errorCode, type SendAttempt } from "./api.js";
+import { SquareDirectory } from "./square.js";
 
-export async function deliverAction(client: BaseClient, core: NativeCore, gate: ApiScheduler, action: CoreAction): Promise<{ status: "sent" | "unknown" | "queued"; code: string }> {
+export async function deliverAction(client: BaseClient, core: NativeCore, gate: ApiScheduler, action: CoreAction, directory?: SquareDirectory): Promise<{ status: "sent" | "failed" | "unknown" | "queued"; code: string }> {
   if (action.type === "prepareMedia") throw new Error("InternalActionReachedAdapter");
+  if (action.type === "ocApi") {
+    const service = directory ?? new SquareDirectory(client);
+    const read = ["context", "member", "chats"].includes(action.request.type);
+    if (read) {
+      core.markSending(action.actionId);
+      let result;
+      try { result = await service.execute(action.chatId, action.request); }
+      catch (error) {
+        const code = errorCode(error);
+        core.completeAction({ actionId: action.actionId, status: "failed", code });
+        return { status: "failed", code };
+      }
+      core.completeAction({ actionId: action.actionId, status: "sent", code: "OK", ocResult: result });
+      return { status: "sent", code: "OK" };
+    }
+    let storeError: unknown;
+    const attempt: SendAttempt = { started: false, method: action.request.type === "report" ? "reportSquareMessage" : "updateSquareMember", beforeSend: () => {
+      if (Date.now() - action.createdAtMs > 30_000) throw new Error("OcActionExpired");
+      try { core.markSending(action.actionId); } catch (error) { storeError = error; throw error; }
+    } };
+    let result;
+    try { result = await gate.withSendAttempt(attempt, () => service.execute(action.chatId, action.request)); }
+    catch (error) {
+      if (storeError) throw storeError;
+      const code = errorCode(error);
+      if (!attempt.started) {
+        if (code === "OcActionExpired") { core.completeAction({ actionId: action.actionId, status: "failed", code }); return { status: "failed", code }; }
+        core.retryAction(action.actionId, 1000); return { status: "queued", code };
+      }
+      core.completeAction({ actionId: action.actionId, status: "unknown", code }); return { status: "unknown", code };
+    }
+    if (!attempt.started) throw new Error("SendBoundaryNotReached");
+    core.completeAction({ actionId: action.actionId, status: "sent", code: "OK", ocResult: result });
+    return { status: "sent", code: "OK" };
+  }
   const message = action.type === "sendMessage" ? action : null;
   const bytes = message?.attachment ? await core.prepareAttachment(action.actionId) : message?.imageUrl ? await core.prepareImage(action.actionId) : null;
   if (message?.attachment && !bytes) return { status: "queued", code: "MediaUnavailable" };
@@ -28,7 +64,8 @@ export async function deliverAction(client: BaseClient, core: NativeCore, gate: 
         if (!messageId) throw new Error("MissingSentMessageId");
       } else {
         const sent = await gate.withSendAttempt(attempt, () => client.square.sendMessage({ squareChatMid: action.chatId,
-          relatedMessageId: action.relatedMessageId, text: action.text }));
+          relatedMessageId: action.relatedMessageId || undefined, text: action.text,
+          contentMetadata: action.mention ? { MENTION: JSON.stringify({ MENTIONEES: [{ S: String(action.mention.start), E: String(action.mention.end), M: action.mention.memberId }] }) } : undefined }));
         messageId = sent.createdSquareMessage?.message?.id;
         if (!messageId) throw new Error("MissingSentMessageId");
       }

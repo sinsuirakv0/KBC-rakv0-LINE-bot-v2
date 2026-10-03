@@ -5,6 +5,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { PROTOCOL_VERSION, type NativeCore, type ReceivedBatch } from "../protocol/native.js";
 import type { CoreEvent } from "../protocol/generated/CoreEvent.js";
 import { ApiScheduler, errorCode } from "./api.js";
+import { normalizeEvent } from "./events.js";
+import type { SquareDirectory } from "./square.js";
 
 type AccountPage = Awaited<ReturnType<BaseClient["square"]["fetchMyEvents"]>>;
 type ChatPage = Awaited<ReturnType<BaseClient["square"]["fetchSquareChatEvents"]>>;
@@ -19,7 +21,7 @@ export class Receiver {
   status = "starting";
   private outgoingBytes = 0;
 
-  constructor(private client: BaseClient, private core: NativeCore, private gate: ApiScheduler, private signal: AbortSignal) {
+  constructor(private client: BaseClient, private core: NativeCore, private gate: ApiScheduler, private signal: AbortSignal, private directory?: SquareDirectory) {
     const nativePush = client.fetchPush;
     const transport = client as unknown as { fetchPush: typeof client.fetchPush };
     transport.fetchPush = (input, init) => {
@@ -78,17 +80,10 @@ export class Receiver {
       this.metrics.events++;
       const kind = String(event.type);
       if (kind in this.metrics.types || Object.keys(this.metrics.types).length < 64) this.metrics.types[kind] = (this.metrics.types[kind] ?? 0) + 1;
-      const payload = event.payload;
-      const message = (payload?.notificationMessage ?? payload?.receiveMessage)?.squareMessage?.message;
-      const created = Number(message?.createdTime);
-      if (typeof message?.id !== "string" || typeof message.to !== "string" || typeof message.text !== "string"
-          || !Number.isSafeInteger(created) || created <= 0) { this.metrics.ignored++; continue; }
-      this.metrics.maxLagMs = Math.max(this.metrics.maxLagMs, Date.now() - created);
-      normalized.push({ type: "messageReceived", eventId: `${message.to}:${message.id}`, chatId: message.to,
-        messageId: message.id, text: message.text, createdAtMs: created,
-        senderId: typeof message.from === "string" && message.from ? message.from : undefined,
-        replyToMessageId: ["REPLY", "3"].includes(String(message.messageRelationType)) && typeof message.relatedMessageId === "string" && message.relatedMessageId
-          ? message.relatedMessageId : undefined });
+      const converted = await normalizeEvent(event, this.directory, checkpoint.originMs);
+      if (!converted) { this.metrics.ignored++; continue; }
+      this.metrics.maxLagMs = Math.max(this.metrics.maxLagMs, Date.now() - converted.createdAtMs);
+      normalized.push(converted);
     }
     const batch: ReceivedBatch = { protocolVersion: PROTOCOL_VERSION, streamKey: stream,
       checkpoint: JSON.stringify(checkpoint), baselineBeforeMs: checkpoint.originMs, events: normalized };
