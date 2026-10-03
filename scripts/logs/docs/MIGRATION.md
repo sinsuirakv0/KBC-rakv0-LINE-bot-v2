@@ -13,3 +13,11 @@ migrate.workflow.ymlは非公開データrepoの.github/workflows/migrate-logs-v
 初回切替中は旧BOTと新形式への書込を止める。変換済みreportがあれば再実行を止める。Coreの毎分退避がmainへcommitしても、ログ変更だけをrebaseして再試行する。Git push失敗では旧フォルダの遠隔削除は起きない。
 
 [保存形式](../../../docs/decisions/OC_LOG_STORAGE_V2.md)、[Core受付](../../../crates/kbc-core/docs/LOGS.md)。
+
+## 本データへの反映結果
+
+2026-10-03、試験run 37103698766と反映run [37103775100](https://github.com/sinsuirakv0/KBC-rakv0-line-bot-data/actions/runs/37103775100)が成功。変換コードはa1730c6に固定した。入力408,330,210byteから出力13,536,784byte（約96.7%削減）、payload107ファイル・89stream。manifest・索引・report・quarantineを含む新ログは199ファイル。
+
+発言424,492件・参加退出等4,775件・名前観測1,750件・profile2,136件を保管し、重複161,951件を統合した。発言の可逆照合と全gzipの再読込が成功。破損原ファイル1件はquarantineへ原形のまま圧縮保存した。
+
+logs-backup/37103775100がreportのsourceShaと一致すること、mainから旧ログ3パスが除去されたこと、旧権限・OC設定・認証ファイルのblob SHAが変わっていないことを確認した。原本はbackup branchとGit履歴から復元できる。

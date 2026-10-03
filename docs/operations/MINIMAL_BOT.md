@@ -1,6 +1,6 @@
 ﻿# 最小Botの起動と次の実験
 
-作成日: 2026-10-02、更新日: 2026-10-03。状態: ローカルのNative build・型生成・TS build・オフラインSmoke・公開素材による動画生成済み。旧版091d981のLinux build成功をNorthflankで確認。今回の配備結果は後続記録。
+作成日: 2026-10-02、更新日: 2026-10-03。状態: Native build・型生成・TS build・オフラインSmoke・公開素材による動画生成済み。既存NorthflankへProtocol v6を配備し、PUSH受信・GitHubへの暗号化退避・変換済みログへの定期追記を確認。実Command配送と多数OCの長期負荷は運用観測を続ける。
 
 ## 起動
 
@@ -66,3 +66,15 @@ GitHub指定時はBOT_PERMISSIONS_PATH / LEGACY_OC_SETTINGS_PATHの未指定path
 75a5dd7 / civil-noise-5798を既存サービスへ配備した。既存0.2vCPU・512MB、1 instance、永続Volume追加なし、CDはOFF。旧認証からlogin、PUSH sign-on、health 200 / receiving、Coreの暗号化GitHub退避成功を確認。最初の観測でAPI requests 4 / errors 0 / rateLimits 0、RSS約119MiB。Northflank表示のCPU <1% / memory 140.51MB・restart 0。長期負荷と実Command配送の検証完了とは扱わない。
 
 新形式ログは `OC_LOGS_ENABLED=1` で有効化する。まず非公開データrepoの変換Workflowを実行し、完了後に新版を配備する。配備は旧instanceを0にして停止を確認してから切り替え、同じアカウントの新旧プロセスを並行稼働させない。Core snapshotが復元した期限済みの副作用は照合待ち。`npm run smoke:logs`は追記・容量切替・manifest失敗後の再開・競合・改名・複数kick・分割ページのcheckpointを外部通信なしで確認する。
+
+## 2026-10-03の軽量ログ切替
+
+旧ログ変換Workflowの反映成功後、a1730c6 / equal-bell-3355を配備した。instanceを一旦0にし、停止後に配備・1へ戻した。旧Core snapshotから起動し、OC_LOGS_ENABLED=1でPUSHを受信した。永続Volume追加なし、0.2vCPU・512MB、CD OFFを維持する。
+
+最初の5分周期でログ8行を同期し、変換済みの既存payload2ファイルに追記した。新payloadは0、manifest2件の件数・gzip全行・SHA256を遠隔blobと照合した。health 200 / receiving、pendingLogs 0、logs cycles 1 / failures 0 / rows 8。起動約349秒時点のAPI requests 10 / errors 0 / rateLimits 0、Core backup 4 / failures 0、RSS約158MiB。短時間観測であり、API制限の回避や大量配送の保証ではない。
+
+2周期後もlogs failures 0。遠隔Git履歴とblobを再照合し、変換済みpayload4ファイルへ累計10行を追加、新payloadは0を確認した。
+
+復元した補完待ち1トークはTypeErrorで再試行待ちのため、subscriptionを必須にする参照を修正した。[調査と判断](../research/RECEIVER_AND_BACKGROUND_EXPERIMENTS.md#13-本環境のトーク補完と購読情報)。受信cursorや待機トークを消さず、既存の再試行期限を引き継ぐ。
+
+86c1ca8 / equable-house-3257のbuild成功後、同じ停止・配備・起動手順で反映した。Core復元後の起動約48秒でhealth 200 / receiving、補完待ち0 / 補完失敗0。fetchSquareChatEvents 3回で履歴を含む185イベントを取得し、受付20・重複22・対象外143。API errors 0 / rateLimits 0、RSS約115MiB、Core backup成功。maxLagMsは取得した過去履歴の経過時間を含み、新着の応答時間として解釈しない。新着Command返信は別途実OCで確認する。

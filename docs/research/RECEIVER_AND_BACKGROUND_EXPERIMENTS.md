@@ -163,3 +163,5 @@ PUSHでも `fetchMyEvents(limit: 100)` を使い、SDKが永続受付より先�
 2026-10-03、a1730c6の本環境でPUSH受信とログ追記は成功した一方、復元した補完待ち1トークにTypeErrorを観測した。エラー名だけでは原因を確定していない。drainChatの応答subscription参照に省略時の検査がなく、LINEJS 3.4.2のSquareChat.listenは購読情報を要求せずsyncTokenとeventsでトークを取得していることを再確認した。
 
 補完応答のsubscriptionを任意とし、提示されたIDだけを検査する。account PUSHの購読は引き続き必須。購読情報なしの初回・継続ページを既存Smokeへ加え、保存checkpointを確認する。再試行期限は維持し、エラーを消すために受信cursorや待機トークを破棄しない。実環境での補完成功は配備後に別途記録する。
+
+86c1ca8を本環境へ配備した後、同じCore snapshotから補完を再開し、3回のトーク取得と185イベントの受付経路が成功。補完待ち0 / 補完エラー0、health 200を確認した。過去履歴はbaselineと重複判定を通し、時刻を新着へ書き換えない。[配備時の計測](../operations/MINIMAL_BOT.md#2026-10-03の軽量ログ切替)。
