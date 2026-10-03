@@ -56,6 +56,7 @@ pub struct RenderContext {
     workspace: Arc<PathBuf>,
     cancellation: CancellationToken,
     queue_wait: Duration,
+    memory_peak: Arc<std::sync::atomic::AtomicU64>,
 }
 impl RenderContext {
     pub fn output_path(&self, name: &str) -> Result<PathBuf> {
@@ -74,6 +75,26 @@ impl RenderContext {
     }
     pub fn queue_wait(&self) -> Duration {
         self.queue_wait
+    }
+    pub fn check_memory(&self, additional_bytes: u64) -> Result<()> {
+        // 子プロセスも含むコンテナ使用量で判定し、受信・保存用に64MiBを残す。
+        let paths = [("/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory.max"),
+            ("/sys/fs/cgroup/memory/memory.usage_in_bytes", "/sys/fs/cgroup/memory/memory.limit_in_bytes")];
+        for (current_path, limit_path) in paths {
+            let current = std::fs::read_to_string(current_path).ok().and_then(|s| s.trim().parse::<u64>().ok());
+            let limit = std::fs::read_to_string(limit_path).ok().and_then(|s| s.trim().parse::<u64>().ok());
+            if let (Some(current), Some(limit)) = (current, limit) {
+                self.memory_peak.fetch_max(current, std::sync::atomic::Ordering::Relaxed);
+                if current.saturating_add(additional_bytes) > limit.saturating_sub(64 * 1024 * 1024) {
+                    return Err("MediaMemoryBudgetExceeded".into());
+                }
+                break;
+            }
+        }
+        Ok(())
+    }
+    pub fn memory_peak_bytes(&self) -> u64 {
+        self.memory_peak.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -128,11 +149,13 @@ impl Runtime {
                 workspace: Arc::new(workspace.clone()),
                 cancellation: self.cancel.child_token(),
                 queue_wait: Duration::from_millis((now_ms() - created_at_ms).max(0) as u64),
+                memory_peak: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             };
             let future = async {
                 if job.catalog_revision != self.search.revision {
                     return Err("SearchDataChanged".into());
                 }
+                context.check_memory(0)?;
                 self.generate_media(&action_id, job.request, context.clone())
                     .await
             };

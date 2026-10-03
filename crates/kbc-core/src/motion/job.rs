@@ -124,7 +124,7 @@ impl MotionJob {
                 prepared = render_gif(prepared, &ffmpeg, &palette, &output, &context).await?;
             }
         }
-        let _ = prepared;
+        drop(prepared);
         let encode_elapsed = encode_started.elapsed();
         let output_bytes = tokio::fs::metadata(&output)
             .await
@@ -167,6 +167,8 @@ impl MotionJob {
                 total_started.elapsed().as_millis(),
             );
         }
+        context.check_memory(0).map_err(|error| MotionError::render(error.to_string()))?;
+        eprintln!("Motion memory observed: container_peak_sample_bytes={}", context.memory_peak_bytes());
         Ok(TaskArtifact::new(
             output,
             format!("{}.{}", self.plan.filename_stem, extension),
@@ -199,7 +201,7 @@ impl PreparedMotion {
     ) -> Result<Self, MotionError> {
         context.report("⏳ モーションデータを解析しています");
         let project = MotionProject::parse(&assets)?;
-        let sprite = SpriteSheet::decode(&assets.sprite, &project.cuts)?;
+        let sprite = SpriteSheet::decode(&assets.sprite, &project.cuts, context)?;
         let frames = resolve_frames(&plan, &project)?;
         let total = frames.len();
         let layout = measure(&plan, &project, &sprite, &frames, |completed| {
@@ -286,6 +288,8 @@ async fn render_mp4(
         format!("{width}x{height}"),
         "-framerate".to_owned(),
         FRAME_RATE.to_string(),
+        "-threads:v".to_owned(),
+        "1".to_owned(),
         "-i".to_owned(),
         "pipe:0".to_owned(),
         "-c:v".to_owned(),
@@ -371,6 +375,8 @@ async fn render_gif(
         format!("{width}x{height}"),
         "-framerate".to_owned(),
         "30".to_owned(),
+        "-threads:v".to_owned(),
+        "1".to_owned(),
         "-i".to_owned(),
         "pipe:0".to_owned(),
         "-vf".to_owned(),
@@ -408,8 +414,12 @@ async fn render_gif(
         format!("{width}x{height}"),
         "-framerate".to_owned(),
         FRAME_RATE.to_string(),
+        "-threads:v".to_owned(),
+        "1".to_owned(),
         "-i".to_owned(),
         "pipe:0".to_owned(),
+        "-threads:v".to_owned(),
+        "1".to_owned(),
         "-i".to_owned(),
         palette.to_string_lossy().into_owned(),
         "-filter_complex".to_owned(),
@@ -450,6 +460,9 @@ fn render_frame(
 ) -> Result<RenderedFrame, MotionError> {
     if context.cancellation().is_cancelled() {
         return Err(MotionError::render("motion rendering was cancelled"));
+    }
+    if index.is_multiple_of(PROGRESS_FRAME_INTERVAL) {
+        context.check_memory(0).map_err(|error| MotionError::render(error.to_string()))?;
     }
     let render_started = Instant::now();
     let reused = prepared.render_rgba_frame(index)?;

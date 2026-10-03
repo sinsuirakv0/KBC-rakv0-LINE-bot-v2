@@ -18,3 +18,5 @@
 30fps・最大900Frame、最大辺960px。PNGの面積640×480、動画480×400を上限とする。Spriteの展開は8M pixel、複製cut合計16M pixelまで。入力は資料1件4MiB、imgcut/modelの最大4,096項目、animation track16,384・key65,536を維持。上限を超える場合は無制限に拡張せず失敗案内にする。生成1件・8MiB、待機/実行期限・停止は [Media Worker](../../../docs/MEDIA.md) が所有する。
 
 元Rendererの単体Testを大量複製せず、既存アルゴリズムを維持して実素材によるPNG・MP4・GIF・Frame数・durationとイベントループ応答を1つの [任意結合実験](../../../../../experiments/commands/docs/MEDIA_VERIFICATION.md) で確認した。NorthflankのCPU quota下の描画速度・RSSは未計測。
+
+2026-10-03のメモリ対策: FFmpegは入力decoder・filter・出力encoderを1threadにし、frameは逐次pipeへ渡す。SpriteSheet.decodeは共通Contextへ展開予算を照会し、render_frameは16Frameごとにコンテナ使用量を確認する。MotionJob.renderは描画状態を明示dropしてから成果を確認し、container_peak_sample_bytesをstdout以外の診断ログへ出す。[Linux 0.2CPU / 512MiBでの実測](../../../../../experiments/motion-memory/docs/MEMORY.md)。

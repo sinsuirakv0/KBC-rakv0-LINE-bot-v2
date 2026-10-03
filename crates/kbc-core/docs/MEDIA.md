@@ -23,3 +23,5 @@ LINEJS 3.4.2のOCメディア送信は `obs.uploadObjTalk(chat,type,blob,undefin
 FFmpegの実行pathはCoreConfig.ffmpegPath（FFMPEG_PATH）。Linuxコンテナは/usr/bin/ffmpeg、Windowsは絶対pathを指定する。DockerにFFmpegを追加したがDocker build・0.2core/512MiB環境・実LINEアップロードは未確認。ローカルで [公開素材のPNG/MP4/GIF・file実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) と、通信なしのジョブ復旧・OBS例外・削除失敗を確認した。
 
 未実行ジョブにもsnapshotのrevisionを保存し、更新後の索引・共有素材へ以前の解決結果を適用しない。revision不一致は未通信の再実行案内に変える。配送直前に成果が消失していても、通常返信へ変えて他の配送を維持する。fileの選択案内には固定commitのダウンロードURLも添える。
+
+RenderContext.check_memoryはLinuxコンテナの使用量を共通Workerで確認し、上限の64MiB手前で新規生成・Sprite展開を拒否する。動画では16Frameごとに再確認し、子FFmpegも含む使用量のsample最大値を記録する。取消・入力上限は従来どおり維持する。[条件・限界とLinux実験](../../../experiments/motion-memory/docs/MEMORY.md)。

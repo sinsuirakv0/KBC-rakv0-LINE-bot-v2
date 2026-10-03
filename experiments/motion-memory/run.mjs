@@ -1,4 +1,4 @@
-import { createCore, PROTOCOL_VERSION } from '../../dist/protocol/native.js';
+﻿import { createCore, PROTOCOL_VERSION } from '../../dist/protocol/native.js';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -6,7 +6,9 @@ import { join, resolve } from 'node:path';
 // 実運用で報告された素材を、LINE通信なしで同じRendererへ渡す。
 const format = process.env.MOTION_FORMAT ?? 'mp4';
 if (!['png', 'mp4', 'gif'].includes(format)) throw Error('InvalidFormat');
-const baseline = Buffer.alloc(110 * 1024 * 1024, 1);
+const baselineMiB = Number(process.env.MOTION_BASELINE_MIB ?? 110);
+if (![110, 390].includes(baselineMiB)) throw Error('InvalidBaseline');
+const baseline = Buffer.alloc(baselineMiB * 1024 * 1024, 1);
 const directory = await mkdtemp(join(tmpdir(), 'kbc-motion-memory-'));
 const core = createCore({ databasePath: join(directory, 'core.sqlite'), ownerId: 'fixture',
   contentDirectory: resolve('content'), searchDataPath: resolve('data/search/catalog.json'), ffmpegPath: '/usr/bin/ffmpeg' });
