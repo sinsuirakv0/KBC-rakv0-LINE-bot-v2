@@ -1,50 +1,34 @@
-﻿# OCログを新規保存する方針
+﻿# OCログの軽量保存と容量による統合
 
-決定日: 2026-10-02。状態: 新規開始とOC / トークの階層は採用。ファイル形式・分割上限・同期は未実装。旧ファイルの削除時期は確認中。
+更新日: 2026-10-03。最新の利用者指定を採用。旧ログを廃棄する以前の方針を置き換え、可逆変換して引き継ぐ。変換のローカル試験済み。Workflowと本環境の結果は後続記録。
 
-## 確定した変更
+## 階層と形式
 
-既存のGitHubストレージを引き続き使い、旧ログの変換・引き継ぎは取りやめる。メッセージ履歴と参加・退出等のメンバー履歴を、新Botで新しく記録する。旧ログを読み直す処理や、旧履歴を埋め直す定期取得を起動へ組み込まない。
+logs/v2/s<OC MID>/を親にする。OC全体のnames/とmember-events/を置き、m<トーク MID>/の下にmessages/、member-events/、旧profiles/を置く。各末端はmanifest.jsonと000001.jsonl.gz等。旧個人・グループはtalk/、所属不明はunmapped/へ残す。実MIDは機密データrepoだけに保存する。
 
-利用者の指定により、OCのMID（`s...`）を親フォルダ、そのOC内のトークのMID（`m...`）を子フォルダにする。同じOCに属する複数トークをまとめて管理し、検索範囲はOC全体または特定トークに限定できる構造にする。
+JSONLの先頭はversion・kind・contextのheader。contextはフォルダから導けない例外だけを保存する。各行は配列で、末尾の不要なnullを省く。keyとOC・トークMIDを発言ごとに繰り返さない。gzipで本文や送信者の反復も圧縮する。
 
-```text
-logs/v2/
-  s<OCのMID>/
-    manifest.json
-    member-events/          OC本体への参加・退出等
-    m<トークのMID>/
-      manifest.json
-      messages/            メッセージ履歴のまとまったファイル
-      member-events/       トークへの参加・退出等
-```
+| 種別 | 行の並び |
+| --- | --- |
+| messages | createdAt, messageId, senderMid, content, contentType, senderName, metadata, extra |
+| member-events | at, type, memberMid, name, extra, 通知元chat（OC全体の場合） |
+| names | firstSeenAtまたはat, memberMid, before, after, lastSeenAt, count, extra |
+| profiles | 旧profile object。stream contextを共用 |
 
-`s<...>` / `m<...>` は説明用で、実際は取得したMIDをそのまま使う。上の末端フォルダ名とmanifestの内容は設計案。OC本体のイベントとトークのイベントはscopeを保持し、OC本体のMIDを架空のトークMIDへ置き換えない。
+metadataは [object,mask]。1=to、2=toType、4=squareChatMid、8=squareMid、16=eventCreatedTimeのcontext一致項目を省略した印。フォルダcontext・例外header・行の時刻で復元する。違う値は省略しない。extraは未知のrecord属性とcontextとの差を保持する。旧名前観測はbefore=null、範囲と回数を保持し、正確な改名時刻へ読み替えない。新版はbefore / afterと観測時刻を保存する。
 
-認証、refresh情報、reqseq、Runtimeのcheckpointと送信待ちActionは長期ログとは別に扱う。ログを新しくするためにこれらを初期化しない。旧設定・他機能データは削除対象へ混ぜず、移植する機能ごとに採否を確認する。
+## 保存周期と切替
 
-## 容量と検索の方針
+5分ごとの保存ではGitHubからmanifestと現在の追記先を取得し、新着を追加して同じファイルを更新する。非圧縮4MiBを目安に、次の行が入らない場合だけ次の番号へ切り替える。時間・日付・月だけでは新ファイルを作らない。低頻度OCは長期間同じファイル。旧ログも同じ容量単位でまとめる。
 
-親フォルダの変更だけでは、冗長な記録形式と大量の小ファイルは解消しない。次の保存実装では、OC・トークの情報を各レコードへ必要以上に繰り返さず、期間と容量でログを分割する。1メッセージ1ファイルや、件数の少ない日にも必ずファイルを作る方式は採らない。
+現在のファイル更新後、manifest更新まで終わってからCoreでackする。途中失敗・再起動では新しいSHAを取得して再mergeし、同じ行を増やさない。SHA競合は最大3回読み直す。切替途中の次番号ファイルも取得する。復元で戻った未ack行は最新3ファイルと照合する。確定ファイルのchecksumを照合するが、更新途中のactive manifestのhashは確定保証として使わない。
 
-期間・送信者・message IDを索引で絞り、本文検索は絞った対象へ行う。全OCのログ・索引を起動時に読み込まず、必要なファイルだけを取得する。新着の書込と古い履歴の検索を同じ無制限Queueで待たせない。
+1周期は最大32stream。全履歴を起動時に読み込まず、現在ファイルと直近の確認対象だけをstreamごとに取得する。全文検索の索引と新log commandは未実装。将来はOC・トーク・必要なファイルへ絞って検索する。
 
-索引付きSQLiteのまとまったファイルを第一候補とする。利点は検索とRust側のSQLite利用を共通化しやすいこと。負担は索引による容量増加、遠隔同期でのファイル更新量、分割・圧縮・ローカルCacheの管理。軽量な追記形式との比較を小さな合成データで行い、容量・検索時間・Memoryを見て決める。ファイルの最大サイズ、期間、日本語の短い検索語の扱いは未確定で、旧形式の細分化をそのまま持ち込まない。
+## 受付と復旧
 
-## GitHubとの同期と整理
+Rust Coreは受信transactionでpendingを保存する。上限8,192行・8MiB、row64KiB。超過Batchはcheckpointを進めずrollbackする。満杯を無言で削除しない。Protocol v6のplain DTOを使い、SDK objectを渡さない。ログの圧縮・GitHub入出力はAdapterの共通Worker。
 
-保存先は既存の非公開データリポジトリ。公開BotリポジトリにOCのMID・本文・名前・データファイルを置かない。新Botの開始時点ではv2の既知のmanifestだけを参照し、旧ログのGit Trees全走査は不要にする。
+pendingはCoreの毎分暗号化snapshotにも含まれる。長期ログ同期が5分でも、Core snapshotから未同期分を再開する。最後の成功退避以後はコンテナ消失で失われ得る。単一BOTで書き込み、移行Workflowが運用中の追記先を置き換えない。[保存・復旧の限界](../operations/GITHUB_RECOVERY.md)。
 
-新着ログはローカルで受付を確定し、変更をまとめて有限バッチで同期する案を使う。コンテナ消失までの未同期分の扱いは、少数OC実験の前に認証・Runtimeの退避と合わせて確定する。GitHubへの非同期保存だけで全件の永続性が保証されるとは扱わない。
-
-旧ログの変換・統合用Workflowは作らない。今後、新ログの結合・圧縮・索引作成が必要になった場合は、データリポジトリ側のGitHub Actionsを候補にする。Botへの深夜処理の追加は通常応答への影響を測って判断する。Botが書込中のファイルを外部処理で上書きせず、確定済みのファイルを対象にする。
-
-## 切り替えと実装順
-
-1. 新しい履歴の開始点を記録し、旧履歴の検索・自動補完を新Botから外す。受信checkpointからの再取得に必要な処理は継続する。
-2. LINEJSイベントと保存した対応表からOC MIDとトークMIDを対応づける。未知の対応を推測でフォルダへ振り分けず、必要な照会をまとめ、受付記録を失わず解決する。毎メッセージの名前・OC照会は増やさない。
-3. ファイル形式・分割・索引を比較し、メッセージと両scopeのメンバー履歴の最小保存・検索を実装する。
-4. 変更集約とGitHubへの退避・復元を実装し、コンテナ交換時の残る損失範囲を確認する。
-5. 旧ログの実削除は、対象パスと切り替え時期を確定してから扱う。認証・設定・Runtimeの記録を巻き込まない。GitHubの現行ファイル削除とGit履歴からの完全消去は別作業とする。
-
-現在の最小Runtimeの`events`は受付・重複排除用で、48時間の保持と容量上限がある。この構成の長期OCログはまだ作っていない。[最小Runtime](../../crates/kbc-core/docs/RUNTIME.md)と[最小Botの保存制約](../operations/MINIMAL_BOT.md)を参照する。
+旧ログはActionsで変換・照合後に整理する。元状態のbackup branchを作って復旧可能にする。認証・設定・Coreを整理対象へ混ぜない。破損原ファイルと旧集約索引も新形式側へ残す。[変換関数・Workflow・実測](../../scripts/logs/docs/MIGRATION.md)。

@@ -14,6 +14,7 @@
 - OC管理変更時は `crates/kbc-core/src/oc/docs/OC.md`
 - 起動・配備の変更時は `docs/operations/MINIMAL_BOT.md`
 - ログ保存・同期の変更時は `docs/decisions/OC_LOG_STORAGE_V2.md`
+- ログの実装時は `crates/kbc-core/docs/LOGS.md` と `scripts/logs/docs/MIGRATION.md`
 
 ## 基本方針
 

@@ -1,0 +1,55 @@
+﻿name: 旧ログを軽量形式へ変換
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 検証後に新形式を保存して旧フォルダを整理する
+        type: boolean
+        default: false
+permissions:
+  contents: write
+concurrency:
+  group: kbc-log-migration
+  cancel-in-progress: false
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # 公開版v7.0.1
+        with:
+          ref: main
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # 公開版v7.0.1
+        with:
+          repository: sinsuirakv0/KBC-rakv0-LINE-bot-v2
+          ref: CODE_REF_PLACEHOLDER
+          path: .converter
+          persist-credentials: false
+      - name: 既存の変換結果を上書きしない
+        run: test ! -e logs/v2/migration-report.json
+      - name: 変換と内容照合
+        run: |
+          python .converter/scripts/logs/migrate.py --root . --output "$RUNNER_TEMP/log-v2" --source-sha "$(git rev-parse HEAD)"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # 公開版v7.0.1
+        with:
+          name: migration-report
+          path: ${{ runner.temp }}/log-v2/migration-report.json
+          retention-days: 7
+      - name: 復旧参照を保存して切り替える
+        if: inputs.apply
+        env:
+          BACKUP_REF: logs-backup/${{ github.run_id }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git push --quiet origin "HEAD:refs/heads/$BACKUP_REF"
+          mkdir -p logs
+          cp -a "$RUNNER_TEMP/log-v2" logs/v2
+          git rm -rq -- logs/message-log logs/member-event-log logs/member-name-history.json
+          git add logs/v2
+          git commit -q -m '旧ログを可逆な配列JSONLへ変換して容量で統合する'
+          for attempt in 1 2 3; do
+            if git push --quiet origin HEAD:main; then exit 0; fi
+            git pull --quiet --rebase origin main
+          done
+          exit 1

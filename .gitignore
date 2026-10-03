@@ -1,7 +1,7 @@
 node_modules/
 .generated/
 .live-smoke-*/
-logs/
+/logs/
 storage/
 .env*
 !.env.example
@@ -11,3 +11,5 @@ native/
 dist/
 *.sqlite*
 .tools/
+__pycache__/
+*.pyc

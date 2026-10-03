@@ -61,3 +61,5 @@ npm run smoke:oc
 動画生成はFFMPEG_PATH（Linuxコンテナは/usr/bin/ffmpeg）を使う。名称・素材は同じ公開commitへ固定した同梱snapshotで、npm run snapshot:searchから更新する。[共通Media Worker](crates/kbc-core/docs/MEDIA.md) と [公開素材の生成確認](experiments/commands/docs/MEDIA_VERIFICATION.md) に関数・上限・再実行手順を記録した。
 
 既存の非公開GitHubデータrepoから旧権限・OC設定を取り込み、永続Volumeなしで認証・Coreを退避・復元する。[保存・復旧の限界](docs/operations/GITHUB_RECOVERY.md)。旧ログは軽量形式へ変換する方針へ更新。[ログ設計](docs/decisions/OC_LOG_STORAGE_V2.md)。
+
+本環境でPUSH受信と既存GitHubへの状態退避を確認した。ログはOC / トークの階層で発言・名前・参加退出を分け、同じ追記先を4MiBまで更新する。[新しい保存形式](docs/decisions/OC_LOG_STORAGE_V2.md)、[変換Workflow](scripts/logs/docs/MIGRATION.md)。

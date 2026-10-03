@@ -31,7 +31,7 @@ npm start
 
 `storage/auth.json`と`storage/core.sqlite`は同じ運用単位で保管し、公開Gitへ置かない。旧認証のreqseq・refresh情報を保持する。Coreファイルを別アカウントへ使うとOwnerMismatchで停止する。結果不明はSQLiteのactionsに残し、勝手に再投稿しない。
 
-Protocol v5のNativeとAdapterを同時に更新する。重複IDの保持上限は`CORE_MAX_RETAINED_EVENTS=131072`が既定で、8,192〜524,288へ設定できる。SQLiteの64MiB page上限は別に効く。毎分metricsのretainedEvents / maxRetainedEvents、queued / preparingMedia / claimed / querying / sending / unknown / completedActions / activeSessionsと、receiverのpendingChats / chatFailuresを観測する。
+Protocol v6のNativeとAdapterを同時に更新する。重複IDの保持上限は`CORE_MAX_RETAINED_EVENTS=131072`が既定で、8,192〜524,288へ設定できる。SQLiteの64MiB page上限は別に効く。毎分metricsのretainedEvents / maxRetainedEvents、queued / preparingMedia / claimed / querying / sending / unknown / completedActions / activeSessionsと、receiverのpendingChats / chatFailuresを観測する。
 
 Mediaの成果はCore DBの隣の`media/`に置く。未解決8件まで、成果は合計最大64MiBで、生成中の素材・FFmpeg一時ファイル分も必要。DBを保管・復元する場合は未解決成果も同じ保存単位にする。プロセス再起動では生成途中を再準備し、送信途中はunknownとして保持する。成果消失は配送直前に再実行案内へ変えるため、unknownを解決する際に保存ファイルだけで送信成否を判断しない。[Mediaの保存・復旧](../../crates/kbc-core/docs/MEDIA.md)を参照。
 
@@ -60,3 +60,9 @@ Northflankは永続Volumeなし。追加料金を使わず、既存の非公開G
 追加のnpm run smoke:ocはLINEへ接続しない。少数OCではBotの管理者削除・membership API権限、入退室の実PUSH種別、同時入力、API回数とquota下のCPU/RSSを測定する。GitHub保存復元はオフライン検証済み。本番配備結果は後続記録。[OCの操作と制限](../../crates/kbc-core/src/oc/docs/OC.md)。
 
 GitHub指定時はBOT_PERMISSIONS_PATH / LEGACY_OC_SETTINGS_PATHの未指定pathをstorage/permissions.json / storage/legacy-oc-settings.jsonとして旧データから配置する。旧OC設定3件・通知設定5トークの取り込みを実データで確認済み。`npm run smoke:persistence` は外部通信なしの復元検証。
+
+## 2026-10-03の本環境起動
+
+75a5dd7 / civil-noise-5798を既存サービスへ配備した。既存0.2vCPU・512MB、1 instance、永続Volume追加なし、CDはOFF。旧認証からlogin、PUSH sign-on、health 200 / receiving、Coreの暗号化GitHub退避成功を確認。最初の観測でAPI requests 4 / errors 0 / rateLimits 0、RSS約119MiB。Northflank表示のCPU <1% / memory 140.51MB・restart 0。長期負荷と実Command配送の検証完了とは扱わない。
+
+新形式ログは `OC_LOGS_ENABLED=1` で有効化する。まず非公開データrepoの変換Workflowを実行し、完了後に新版を配備する。配備は旧instanceを0にして停止を確認してから切り替え、同じアカウントの新旧プロセスを並行稼働させない。Core snapshotが復元した期限済みの副作用は照合待ち。`npm run smoke:logs`は追記・容量切替・manifest失敗後の再開・競合・改名・複数kick・分割ページのcheckpointを外部通信なしで確認する。
