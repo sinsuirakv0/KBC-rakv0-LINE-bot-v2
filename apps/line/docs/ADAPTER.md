@@ -66,10 +66,12 @@ ApiScheduler.runはenqueue時のSendAttemptを保持し、pumpが別RPCの完了
 
 ## 投稿から独立した参加・退出の取得（v7）
 
-`Receiver.run`はPUSH loopと補助取得loopを並行して監視する。`getJoinedSquareChats`は起動時と10分ごと、100件×最大21ページ・2,048トークまで。通知設定のあるトークと有効な参加監視の本OCは3秒、その他はログ回収のため60秒を取得完了後の目安にする。初回を分散し、設定変更は次のloopで反映する。新しい参加トークの発見は最大10分待ち得る。
+`Receiver.run`はPUSH loopと補助取得loopを並行して監視する。`joinedChatPage`は起動時と10分ごと、snapshotのイベント100件×最大21ページ・2,048トークまで。通知設定のあるトークと有効な参加監視の本OCは3秒、その他はログ回収のため60秒を取得完了後の目安にする。初回を分散し、設定変更は次のloopで反映する。新しい参加トークの発見は最大10分待ち得る。
 
 `drainChat`は同じトークの取得Promiseを共有し、PUSH補完と定期取得がcursorを並行更新しない。全トーク合計2取得、1回4ページ・各100件、保存済みcontinuationから続ける。定期取得は期限の古い順。新着メッセージやPUSH hintなしでも取得・受付・通知配送が動く。参加者一覧の常時取得はしない。
 
 失敗は対象トークだけ2秒〜15分のbackoff、一覧取得失敗は60秒後に再試行し、以前の対象を残す。Core保存失敗は全体停止。全通信は既存ApiSchedulerの2並列・250ms間隔・制限時cooldownを共有する。API回数は増えるため、3秒を全OCで保証せず、OC数・混雑・制限応答で周期を見直す。`pollingChats / priorityChats / pollCycles / pollPages / pollFailures / discoveryFailures / maxPollDelayMs`をhealthへ出す。pollCyclesは完了した周期、pollPagesは定期取得が開始したページで、別経路への合流はAPI回数に加算しない。
 
 normalizeEventsのsourceはpush / chat / pollを区別する。MemberChangedにはeventTypeとreceivedAtMsも付け、ログのextraへ残す。イベント作成時刻と取得時刻を比較できるが、サーバーで発生してから保持されるまでの時間を保証しない。通常応答はrelatedMessageIdなし、副官部屋で原因投稿を残す一斉参加の監視などは同じOCのサブトークからreplyする。[ID取得と参照の範囲](../../../crates/kbc-core/src/oc/docs/ID.md)。
+
+2026-10-04の実API照合: getJoinedSquareChatsはNOT_IMPLEMENTEDを返した。LINEJS 3.4.2のClient.fetchJoinedSquareChatsと同じく、fetchMyEventsの初期snapshotからnotifiedCreateSquareChatMember.chatを抽出するjoinedChatPageへ変更した。初回の空syncTokenから、syncToken・continuationToken・subscriptionIdを有限な一覧用cursor（base64url JSON / 2,048byte）で継続する。PUSH側のcheckpoint、SDK poll.sync、通常Commandの受付へこの一覧snapshotを渡さない。getJoinedSquareChatsへの再要求は廃止し、通知設定済みトークは一覧失敗時も独立取得する。snapshot一覧はOC設定のトーク選択・BOT管理者の!id talk ocでも共有する。

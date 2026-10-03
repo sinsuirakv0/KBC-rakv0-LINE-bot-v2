@@ -12,6 +12,7 @@ import { BaseClient } from "@evex/linejs/base";
 import { LINEStruct } from "@evex/linejs/thrift";
 import { TCompactProtocol } from "thrift";
 import { Receiver } from "./adapter/receiver.js";
+import { joinedChatPage } from "./adapter/square.js";
 
 const directory = await mkdtemp(join(tmpdir(), "kbc-line-smoke-"));
 const config: CoreConfig = { databasePath: join(directory, "core.sqlite"), ownerId: "test-account" };
@@ -172,7 +173,6 @@ const replayConfig = { databasePath: join(directory, "receiver.sqlite"), ownerId
 let replayCore = createCore(replayConfig);
 const replayController = new AbortController();
 const client = new BaseClient({ device: "DESKTOPWIN" });
-client.square.getJoinedSquareChats = async () => ({ chats: [] }) as unknown as Awaited<ReturnType<typeof client.square.getJoinedSquareChats>>;
 const push = client.push;
 let finishRead!: () => void;
 let reading: Promise<void>;
@@ -201,6 +201,7 @@ const page = (events: unknown[], syncToken: string, continuationToken = "") => (
 const hint = () => push.onPushResponse({ serviceType: 3 } as Parameters<typeof push.onPushResponse>[0]);
 let accountCalls = 0;
 client.square.fetchMyEvents = async options => {
+  if (options.syncToken === "") return page([], "directory");
   accountCalls++;
   if (accountCalls === 1) {
     hint(); hint();
@@ -270,10 +271,25 @@ replayCore = createCore({ databasePath: join(directory, "poll.sqlite"), ownerId:
 const pollDb = new DatabaseSync(join(directory, "poll.sqlite"));
 pollDb.prepare("INSERT INTO oc_notifications VALUES(?,?,?)").run(polledChat, polledSquare, JSON.stringify({ join: { text: "参加通知", mention: false, show_id: false } }));
 const pollController = new AbortController();
-client.square.getJoinedSquareChats = async () => ({ chats: [{ squareChatMid: polledChat }] }) as unknown as Awaited<ReturnType<typeof client.square.getJoinedSquareChats>>;
-client.square.fetchMyEvents = async () => page([{ type: "NOTIFICATION_MESSAGE", payload: { notificationMessage: {
+let directoryCalls = 0;
+client.square.fetchMyEvents = async options => {
+  directoryCalls++;
+  if (options.syncToken === "") return page([{ payload: { notifiedCreateSquareChatMember: {
+    chat: { squareChatMid: polledChat, squareMid: polledSquare },
+  } } }], "directory", "directory-next");
+  assert.equal(options.syncToken, "directory"); assert.equal(options.continuationToken, "directory-next");
+  return page([], "directory-done");
+};
+const firstDirectoryPage = await joinedChatPage(client);
+assert.equal(firstDirectoryPage.chats[0].squareChatMid, polledChat);
+assert.equal((await joinedChatPage(client, firstDirectoryPage.continuationToken)).continuationToken, undefined);
+assert.equal(directoryCalls, 2);
+client.square.fetchMyEvents = async options => {
+  if (options.syncToken === "") throw new Error("DirectoryUnavailable");
+  return page([{ type: "NOTIFICATION_MESSAGE", payload: { notificationMessage: {
   squareChatMid: polledChat, requiredToFetchChatEvents: true,
 } } }], "poll-account");
+};
 let activeChatFetches = 0, maximumChatFetches = 0;
 const pollEventAt = Date.now() + 100;
 (client.request as unknown as { request: (...args: unknown[]) => Promise<AccountPage> }).request = async () => {
@@ -293,5 +309,6 @@ try {
   assert.equal(JSON.parse(replayCore.checkpoint(`chat:${polledChat}`)!).syncToken, "poll-chat");
   assert.equal(pollDb.prepare("SELECT count(*) AS count FROM oc_presence").get()?.count, 1);
   assert.equal(polling.metrics.priorityChats, 1);
+  assert.equal(polling.metrics.discoveryFailures, 1);
 } finally { pollController.abort(); await pollRun; replayCore.shutdown(); pollDb.close(); }
 console.log(JSON.stringify({ smoke: "passed", network: false, cases: ["two-distinct-ids", "dedup", "batch-rollback", "claimed-restart", "sending-restart", "explicit-unknown-resolution", "autonomous-notification", "owner-check", "bounded-api-refresh", "completed-capacity", "unresolved-capacity-rollback", "pre-send-storage-failure", "post-send-unknown", "push-sign-on", "continuation-dirty-hint", "chat-failure-isolation", "durable-chat-retry"] }));

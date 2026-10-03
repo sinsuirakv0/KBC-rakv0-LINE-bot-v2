@@ -6,7 +6,7 @@ import { PROTOCOL_VERSION, type NativeCore, type ReceivedBatch } from "../protoc
 import type { CoreEvent } from "../protocol/generated/CoreEvent.js";
 import { ApiScheduler, errorCode } from "./api.js";
 import { normalizeEvents } from "./events.js";
-import type { SquareDirectory } from "./square.js";
+import { joinedChatPage, type SquareDirectory } from "./square.js";
 
 type AccountPage = Awaited<ReturnType<BaseClient["square"]["fetchMyEvents"]>>;
 type ChatPage = Awaited<ReturnType<BaseClient["square"]["fetchSquareChatEvents"]>>;
@@ -163,13 +163,17 @@ export class Receiver {
       let priority: Set<string>;
       try { priority = new Set(this.core.priorityChats()); }
       catch (error) { throw Object.assign(new Error(errorCode(error)), { name: "CoreStoreError" }); }
+      for (const id of priority) if (!targets.has(id)) {
+        if (targets.size >= 2048) throw Object.assign(new Error("PollingChatCapacity"), { name: "CoreStoreError" });
+        targets.set(id, { nextAtMs: now, attempts: 0, intervalMs: 3000 });
+      }
       if (now >= discoverAt) {
         try {
           const joined = new Set<string>();
           let continuationToken: string | undefined;
           for (let page = 0; page < 21; page++) {
             this.signal.throwIfAborted();
-            const response = await this.client.square.getJoinedSquareChats({ request: { limit: 100, continuationToken } });
+            const response = await joinedChatPage(this.client, continuationToken);
             if (!Array.isArray(response.chats) || response.chats.length > 100) throw new Error("InvalidJoinedChats");
             for (const chat of response.chats) {
               const id = chat.squareChatMid;
@@ -181,7 +185,8 @@ export class Receiver {
             if (response.continuationToken === continuationToken || page === 20) throw new Error("JoinedChatPageLimit");
             continuationToken = response.continuationToken;
           }
-          for (const id of targets.keys()) if (!joined.has(id)) targets.delete(id);
+          if (new Set([...joined, ...priority]).size > 2048) throw new Error("PollingChatCapacity");
+          for (const id of targets.keys()) if (!joined.has(id) && !priority.has(id)) targets.delete(id);
           for (const id of joined) if (!targets.has(id)) {
             const intervalMs = priority.has(id) ? 3000 : 60_000;
             targets.set(id, { nextAtMs: Date.now() + Math.floor(Math.random() * intervalMs), attempts: 0, intervalMs });

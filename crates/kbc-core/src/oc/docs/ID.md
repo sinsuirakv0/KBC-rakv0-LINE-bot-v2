@@ -2,7 +2,7 @@
 
 2026-10-03。実装・オフライン検証済み。本番確認は配備後に記録する。旧LINE src/commands/id.tsを参照し、照会を共通OcRequest / Jobへ移した。通常のprefixは!、o.も受け付ける。
 
-!idは自分、メンション・p MID指定は対象、talkは現在トーク・親OC、ocは親OC MIDを表示する。talk ocはBOT admin以上の参加中OC一覧。1ページ30件、続きは--cursor。OC管理者権限だけでは全参加OC一覧を許可しない。同じOC以外のmember照会結果は表示しない。
+!idは自分、メンション・p MID指定は対象、talkは現在トーク・親OC、ocは親OC MIDを表示する。talk ocはBOT admin以上の参加中OC一覧。snapshotのイベント1ページ30件から参加トークを表示し、続きは--cursor。OC管理者権限だけでは全参加OC一覧を許可しない。同じOC以外のmember照会結果は表示しない。
 
 名前検索は同じOCの保存済み名前と現在のLINE member directoryを照合する。NFKC・小文字・空白除去・部分一致と順序を保った文字一致を使う。oldはLEFT / KICK_OUT / BANNED / JOINEDを調べ、退会済みも表示する。状態ごとに20件×最大4ページ、表示20人まで。上限では絞り込みを案内し、全参加者の無制限な取得を持ち込まない。末尾logは状態数・ページ数・表示件数だけを表示し、生のSDK例外や巨大なdebug payloadを出さない。旧log allの過去履歴一括取得は利用者指定で後回し。現在の定期取得・ログ保存とは別扱い。
 
@@ -19,3 +19,5 @@ message_refsは本文なし、最大8,192件。参照可能なのは48時間以�
 | SquareDirectory.execute | SDK呼出とplain DTO変換だけ。共通API枠・cooldown・timeoutを共有 |
 
 Protocol v7でmembers・joinedChatsのread DTOを追加し、NativeとAdapterを同時更新する。未完了の旧v6 Jobには新しい任意状態をdefaultで補い、旧OcChatに親OCフィールドがない場合も復元可能にした。既存Smokeで通常応答が非リプライであることと、別サブトークの入力をreplyまたはID引数で参照できることを確認する。
+
+参加一覧のSDK入出力はjoinedChatPageを共有する。getJoinedSquareChatsが本環境でNOT_IMPLEMENTEDとなったため、LINEJS自身と同じfetchMyEventsの一覧snapshotへ変更した。通常受信のcheckpointは上書きしない。[取得の関数・上限](../../../../../apps/line/docs/ADAPTER.md)。

@@ -171,3 +171,7 @@ PUSHでも `fetchMyEvents(limit: 100)` を使い、SDKが永続受付より先�
 機密ストレージの直近ログをローカルだけで照合した。参加時刻から次の投稿まで約471秒の例があり、別の例は約15秒、退出は約7秒だった。旧ログには取得時刻がないため、これだけで後続投稿が受信を起こしたと断定しない。型とLINEJS 3.4.2のトーク取得を基に、投稿から独立した補助取得を追加した。[Adapterの周期と共通cursor](../../apps/line/docs/ADAPTER.md)。模擬PUSH補完とpollを重ねても同chatの実取得は1件、投稿なしでmember状態・通知Action・checkpointが保存されることを既存smokeで確認する。
 
 本番ログにはSendBoundaryNotReachedによる再起動があった。ApiSchedulerの待機RPCを別RPCの完了Contextから起動すると送信者のAsyncLocalStorageが失われる経路を実SDKの模擬transportで再現した。enqueue時のSendAttemptを保持し、pumpでそのScopeへ戻して実行する修正ccbfcc3を行った。修正前は通信後例外をqueuedへ誤分類し、修正後はsending記録とunknown確定を確認した。motionのOOMによる再起動と混同しない。[メモリ実験](../../experiments/motion-memory/docs/MEMORY.md)。
+
+## 15. 参加トーク一覧の実API差（2026-10-04）
+
+6537914の起動直後、getJoinedSquareChatsがNOT_IMPLEMENTEDで失敗し、補助取得の対象が0だった。PUSHと保存復元は継続していた。採用SDKのClient.fetchJoinedSquareChatsはfetchMyEvents({limit:200})からnotifiedCreateSquareChatMember.chatを抽出している。これを上限・継続ページ付きのjoinedChatPageとして共有し、受信checkpointを変更せず一覧だけを読む。通知設定済みトークの取得は一覧成功に依存させない。既存smokeでsnapshotの次ページにsyncToken・continuationTokenが渡ることと、一覧API失敗時の通知取得を確認する。実APIでの対象件数と補助取得は配備後に記録する。

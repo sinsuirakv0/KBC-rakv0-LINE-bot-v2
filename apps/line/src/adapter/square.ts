@@ -6,6 +6,35 @@ import type { OcChat } from "../protocol/generated/OcChat.js";
 
 type ChatInfo = Awaited<ReturnType<BaseClient["square"]["getSquareChat"]>>;
 type Member = Awaited<ReturnType<BaseClient["square"]["getSquareMember"]>>["squareMember"];
+type DirectoryCursor = { syncToken: string; continuationToken: string; subscriptionId?: number };
+// LINEJS自身の参加トーク列挙と同じ初期snapshotを使う。通常受信のcheckpointは変更しない。
+export async function joinedChatPage(client: BaseClient, token?: string, limit = 100): Promise<{ chats: ChatInfo["squareChat"][]; continuationToken?: string }> {
+  let cursor: DirectoryCursor | undefined;
+  if (token) {
+    if (token.length > 2048) throw new Error("DirectoryCursorLimit");
+    cursor = JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as DirectoryCursor;
+    if (!cursor || typeof cursor.syncToken !== "string" || cursor.syncToken.length > 512
+        || typeof cursor.continuationToken !== "string" || !cursor.continuationToken || cursor.continuationToken.length > 1024
+        || (cursor.subscriptionId !== undefined && (!Number.isSafeInteger(cursor.subscriptionId) || cursor.subscriptionId <= 0))) throw new Error("InvalidDirectoryCursor");
+  }
+  const response = await client.square.fetchMyEvents({ syncToken: cursor?.syncToken ?? "", continuationToken: cursor?.continuationToken,
+    subscriptionId: cursor?.subscriptionId, limit });
+  if (!Array.isArray(response.events) || response.events.length > limit || typeof response.syncToken !== "string" || response.syncToken.length > 512) throw new Error("InvalidDirectoryPage");
+  const chats = response.events.flatMap(event => {
+    const chat = event.payload?.notifiedCreateSquareChatMember?.chat;
+    if (!chat) return [];
+    if (!/^m[0-9a-f]{8,63}$/i.test(chat.squareChatMid) || !/^s[0-9a-f]{8,63}$/i.test(chat.squareMid)) throw new Error("InvalidDirectoryChat");
+    return [chat];
+  });
+  let continuationToken: string | undefined;
+  if (response.continuationToken) {
+    const subscriptionId = response.subscription?.subscriptionId == null ? cursor?.subscriptionId : Number(response.subscription.subscriptionId);
+    if (subscriptionId !== undefined && (!Number.isSafeInteger(subscriptionId) || subscriptionId <= 0)) throw new Error("InvalidDirectorySubscription");
+    continuationToken = Buffer.from(JSON.stringify({ syncToken: response.syncToken, continuationToken: response.continuationToken, subscriptionId })).toString("base64url");
+    if (continuationToken.length > 2048) throw new Error("DirectoryCursorLimit");
+  }
+  return { chats, continuationToken };
+}
 const displayName = (value: string) => Array.from(value.replace(/[\r\n]/g, " ")).slice(0, 80).join("");
 export function memberDto(member: Member): OcMember {
   if (!member || [member.squareMemberMid, member.squareMid].some(id => typeof id !== "string" || !id || id.length > 256)
@@ -59,7 +88,7 @@ export class SquareDirectory {
       // SDK未実装・一部ページ失敗でも現在トークを候補として残す。常時巡回には使わない。
       try {
         for (let page = 0; page < 4; page++) {
-          const response = await this.client.square.getJoinedSquareChats({ request: { limit: 100, continuationToken } });
+          const response = await joinedChatPage(this.client, continuationToken);
           for (const chat of response.chats ?? []) add(chat);
           if (!response.continuationToken || response.continuationToken === continuationToken) break;
           continuationToken = response.continuationToken;
@@ -71,7 +100,7 @@ export class SquareDirectory {
       } catch { /* 本OCの手動選択を保持する。 */ }
       result.chats = [...chats.values()].sort((a, b) => Number(b.isMain) - Number(a.isMain) || a.name.localeCompare(b.name));
     } else if (request.type === "joinedChats") {
-      const response = await this.client.square.getJoinedSquareChats({ request: { limit: 30, continuationToken: request.continuationToken ?? undefined } });
+      const response = await joinedChatPage(this.client, request.continuationToken ?? undefined, 30);
       if (!Array.isArray(response.chats) || response.chats.length > 30) throw new Error("InvalidJoinedChatPage");
       result.chats = response.chats.map(chat => {
         if (!chat.squareChatMid || !chat.squareMid) throw new Error("InvalidJoinedChat");
