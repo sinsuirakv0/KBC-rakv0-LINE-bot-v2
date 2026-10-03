@@ -16,9 +16,13 @@ const directory = await mkdtemp(join(tmpdir(), "kbc-oc-smoke-"));
 const mid = (prefix: string, digit: string) => prefix + digit.repeat(32);
 const square = mid("s", "1"), chat = mid("m", "1"), sub = mid("m", "2");
 const admin = mid("p", "1"), co = mid("p", "2"), mod = mid("p", "3"), user = mid("p", "4"), bot = mid("p", "5");
+const owner = mid("p", "9");
 const roles = new Map([[admin, "ADMIN"], [co, "CO_ADMIN"], [mod, "MEMBER"], [user, "MEMBER"], [bot, "CO_ADMIN"]]);
 const states = new Map<string, string>();
-await writeFile(join(directory, "permissions.json"), JSON.stringify({ version: 1, roles: [{ chatMid: square, userMid: mod, chatType: "SQUARE", role: "mod" }] }));
+await writeFile(join(directory, "permissions.json"), JSON.stringify({ version: 1, roles: [
+  { chatMid: square, userMid: mod, chatType: "SQUARE", role: "mod" },
+  { chatMid: square, userMid: owner, chatType: "SQUARE", role: "admin" },
+] }));
 const config = { databasePath: join(directory, "core.sqlite"), ownerId: "fixture-account", permissionsPath: join(directory, "permissions.json") };
 let core = createCore(config);
 const db = new DatabaseSync(config.databasePath);
@@ -43,7 +47,9 @@ client.square.destroyMessage = async options => gate.run("destroyMessage", async
   gate.beforeFetch(); deleted.push(options.messageId); return {} as Awaited<ReturnType<typeof client.square.destroyMessage>>;
 });
 let promptSequence = 0;
-client.square.sendMessage = async () => gate.run("sendMessage", async () => {
+const replySends: Array<{ chat: string; message: string; text: string | undefined }> = [];
+client.square.sendMessage = async options => gate.run("sendMessage", async () => {
+  if (options.relatedMessageId) replySends.push({ chat: options.squareChatMid, message: options.relatedMessageId, text: options.text });
   gate.beforeFetch(); return { createdSquareMessage: { message: { id: `bot-${++promptSequence}` } } } as Awaited<ReturnType<typeof client.square.sendMessage>>;
 });
 const service = new SquareDirectory(client);
@@ -77,6 +83,32 @@ async function signal(id: string, state: string, scope = "square", targetChat = 
     displayName: "参加者🙂", state, scope, memberCreatedAtMs: at, createdAtMs: at });
 }
 try {
+  // BOT管理者だけが、任意のメッセージIDへ本文を崩さず1件送信できる。
+  const replyMessage = "123456789012345678";
+  for (const actor of [admin, mod]) {
+    await message(`!test reply ${replyMessage} 未許可`, actor);
+    assert(texts(await drain()).includes("BOT管理者専用"));
+    assert.equal(replySends.length, 0);
+  }
+  const replyText = "返信テスト🙂\n次の行  二つの空白";
+  await message(`!test reply ${replyMessage} ${replyText}`, owner);
+  assert.equal((await drain()).filter(action => action.type === "sendMessage").length, 1);
+  assert.deepEqual(replySends.at(-1), { chat, message: replyMessage, text: replyText });
+  await message(`o.test reply ${replyMessage} --to ${sub} サブトークへ返信`, owner); await drain();
+  assert.equal(replySends.at(-1)?.chat, sub);
+  const otherChat = mid("m", "a");
+  await message(`!test reply ${replyMessage} --to ${otherChat} 別OCでの表示確認`, owner); await drain();
+  assert.deepEqual(replySends.at(-1), { chat: otherChat, message: replyMessage, text: "別OCでの表示確認" });
+  const beforeInvalid = replySends.length;
+  await message(`!test reply ${chat} MIDを誤指定`, owner); assert(texts(await drain()).includes("メッセージID"));
+  await message(`!test reply ${replyMessage} --to ${square} OCのMIDを誤指定`, owner); assert(texts(await drain()).includes("トークMID"));
+  await message(`!test reply ${replyMessage} ${"🙂".repeat(751)}`, owner); assert(texts(await drain()).includes("1,500"));
+  assert.equal(replySends.length, beforeInvalid);
+  await message(`!test reply ${replyMessage} -- --toから始まる本文`, owner); await drain();
+  assert.equal(replySends.at(-1)?.text, "--toから始まる本文");
+  await message("!test reply help", user);
+  const testHelp = await drain(); assert(texts(testHelp).includes("BOT管理者専用"));
+  assert(testHelp.every(action => action.type === "sendMessage"));
   // 旧kicktestは案内だけ。通常応答は返信先を付けず、サブトークの受信済みIDを参照する。
   await message(`!oc kicktest ${user}`, mod); const kickTest = await drain();
   assert(!kickTest.some(action => action.type === "ocApi" && action.request.type === "membership"));

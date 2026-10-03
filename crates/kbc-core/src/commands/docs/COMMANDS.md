@@ -23,6 +23,7 @@
 | !ut 0 motion mp4 f w 0~~5 a 0~~5 | 歩行6＋攻撃6FrameをMP4生成 |
 | !tut 0 motion gif a | 敵の攻撃全FrameをGIF生成 |
 | !test-notify 5 | 別の入力なしで期限通知が配送される確認 |
+| !test reply メッセージID [--to トークMID] 本文 | BOT管理者限定のリプライ送信テスト。別OCも試せる |
 
 prefixは `!` を既定とし、`o.` も受け付ける。コマンド名はASCII大文字小文字を区別しない。`unit / enemy / stage` は別名。検索引数は16語・512byteまで。通常はDiscordと同じNFKC・小文字・かな・長音・波線の正規化。空白区切りの語は一つの名称内でAND照合する。形態名と別称を連結して語を跨がせない。utの通常検索は正式形態名を優先し、その後に別称を調べる。
 
@@ -60,3 +61,5 @@ Bridgeの非同期受付は最大4受付・実処理1件。外部素材の取得
 !ocの公開helpはContentCatalogを使う。管理入力・本人リプライ・審議・自動処理は [OC管理](../../oc/docs/OC.md) へ渡し、共通のsplit_responses・Outbox・prompt清掃を使う。OC照会は通常返信の配送枠を使わず、権限免除された投稿のCommandPlanは既存Runtime::apply_commandへ戻す。!コマンドの先頭語はURLとして誤検出しない。
 
 通常応答・一覧・生成受付は入力へ自動replyせず普通に送信する。番号を入力する側は最新promptへのリプライを使う。!idのhelpは同じContentCatalog、取得・検索・同OCサブトークの返信情報は既存OC照会経路を使う。[ID仕様と関数](../../oc/docs/ID.md)。
+
+利用者指定の実リプライ送信は!test replyへ追加した。本文は改行・空白を保って最大1,500 UTF-16単位、送信先にはmで始まるトークMIDを指定する。BOT adminだけが実行でき、既存Context照会・Outbox・SendMessageを共有する。通常の!replyコマンドや旧testの他機能は追加していない。[仕様・関数・試験範囲](../../oc/docs/TEST_REPLY.md)。

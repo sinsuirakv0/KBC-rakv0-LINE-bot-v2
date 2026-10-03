@@ -21,3 +21,5 @@ message_refsは本文なし、最大8,192件。参照可能なのは48時間以�
 Protocol v7でmembers・joinedChatsのread DTOを追加し、NativeとAdapterを同時更新する。未完了の旧v6 Jobには新しい任意状態をdefaultで補い、旧OcChatに親OCフィールドがない場合も復元可能にした。既存Smokeで通常応答が非リプライであることと、別サブトークの入力をreplyまたはID引数で参照できることを確認する。
 
 参加一覧のSDK入出力はjoinedChatPageを共有する。getJoinedSquareChatsが本環境でNOT_IMPLEMENTEDとなったため、LINEJS自身と同じfetchMyEventsの一覧snapshotへ変更した。通常受信のcheckpointは上書きしない。[取得の関数・上限](../../../../../apps/line/docs/ADAPTER.md)。
+
+!id replyは情報取得。取得したIDでBOTから実際に返信する試験はBOT管理者専用の [!test reply](TEST_REPLY.md) を使う。送信先MIDと返信先メッセージIDを分け、別OCの参照可否も試せる。

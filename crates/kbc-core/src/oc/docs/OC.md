@@ -84,3 +84,5 @@ SQLiteのoc_settings / oc_notifications / oc_sessions / oc_members / oc_presence
 手動kickは直接BANNED、結果に名前・MID・理由、副官ログに実行者・実行トークを含める。通信後の不明結果は成功と書かない。muteは期限・残り時間を表示し、警告はmention付き、60秒抑制、実送信ID確定後15秒で共通DeleteActionにより管理者削除する。左記の警告削除は独立したTimerを増やさない。oc_historyへ名前・実行者名・理由の列を追加し、旧DBは起動時に不足列だけ追加する。
 
 leftmessageと処分審議の旧aliasを復元した。BANNED解除は引き続き依頼記録だけ。[旧コード・GPT調査との照合](../../../../../docs/research/OC_LEGACY_COMPATIBILITY_2026_10_03.md)、[!idの関数・範囲](ID.md)。smoke:ocでkicktest非処分、通常送信、同OCのサブトーク参照・名前検索、mute警告清掃、BANNED非退出通知、再参加者非処分を既存シナリオへ追加して検証する。
+
+2026-10-04、BOT管理者限定の [!test reply](TEST_REPLY.md) を同じContext照会とOutboxへ接続した。text_actionのTextDeliveryは任意のrelated_message_idを受け取り、通常応答では省略、副官通知では原因投稿ID、送信テストでは指定したIDを使う。新しいProtocol・Queue・通信経路は追加しない。

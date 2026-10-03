@@ -24,6 +24,7 @@ impl ContentCatalog {
                 key.as_str(),
                 "oc" | "oc-admin"
                     | "id"
+                    | "test"
                     | "help"
                     | "ut"
                     | "tut"
@@ -42,6 +43,7 @@ impl ContentCatalog {
             "oc",
             "oc-admin",
             "id",
+            "test",
             "ut",
             "tut",
             "st",
@@ -63,7 +65,7 @@ impl ContentCatalog {
             return None;
         }
         if name == "help" {
-            let mut names = vec!["help", "oc", "id", "ut", "tut", "st", "test-notify"];
+            let mut names = vec!["help", "oc", "id", "test", "ut", "tut", "st", "test-notify"];
             names.extend(self.responses.keys().map(String::as_str));
             names.sort_unstable();
             return Some(format!(

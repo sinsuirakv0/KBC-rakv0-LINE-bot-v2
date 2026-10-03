@@ -363,12 +363,13 @@ pub fn case(
         &room,
         text,
         TextDelivery {
-            reply_to_source: job.input.name == "moderate"
+            related_message_id: (job.input.name == "moderate"
                 && job
                     .input
                     .args
                     .first()
-                    .is_some_and(|reason| reason == "cohort"),
+                    .is_some_and(|reason| reason == "cohort"))
+            .then(|| identity(&job.event).2.to_owned()),
             ..Default::default()
         },
         now,

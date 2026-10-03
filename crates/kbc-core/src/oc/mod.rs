@@ -3,6 +3,7 @@ mod id;
 mod legacy;
 mod moderation;
 mod policy;
+mod test_reply;
 pub use legacy::import_legacy;
 
 use crate::{Result, Runtime};
@@ -215,7 +216,7 @@ struct TextDelivery {
     mention: Option<MessageMention>,
     replace: Option<String>,
     prompt: bool,
-    reply_to_source: bool,
+    related_message_id: Option<String>,
 }
 fn text_action(
     tx: &Transaction<'_>,
@@ -230,9 +231,9 @@ fn text_action(
         mention,
         replace,
         prompt,
-        reply_to_source,
+        related_message_id,
     } = delivery;
-    let (root, _, message, _, _) = identity(event);
+    let (root, _, _, _, _) = identity(event);
     let responses = crate::commands::split_responses(vec![(text, now, None)])?;
     let mut first = String::new();
     for (index, (text, _, _)) in responses.into_iter().enumerate() {
@@ -244,11 +245,7 @@ fn text_action(
             action_id: id.clone(),
             event_id: root.into(),
             chat_id: chat.into(),
-            related_message_id: if reply_to_source {
-                message.into()
-            } else {
-                String::new()
-            },
+            related_message_id: related_message_id.clone().unwrap_or_default(),
             text,
             image_url: None,
             attachment: None,
@@ -409,7 +406,10 @@ pub fn ingest(
     if moderation::mute(runtime, tx, event, now)? {
         return Ok(true);
     }
-    let input = if let Some(input) = commands::parse(text).or_else(|| id::parse(text)) {
+    let input = if let Some(input) = commands::parse(text)
+        .or_else(|| id::parse(text))
+        .or_else(|| test_reply::parse(text))
+    {
         Some(input)
     } else if let Some(prompt) = reply_to_message_id {
         let session:Option<String>=tx.query_row("SELECT id FROM oc_sessions WHERE chat=?1 AND owner=?2 AND prompt=?3 AND expires>?4",params![identity(event).1,actor,prompt,now],|r|r.get(0)).optional()?;
@@ -572,6 +572,8 @@ pub fn complete(
             }
             if job.input.name == "id" {
                 id::execute(runtime, tx, &mut job, now)
+            } else if job.input.name == "test-reply" {
+                test_reply::execute(runtime, tx, &job, now)
             } else if job.input.name == "moderate" {
                 moderation::execute(runtime, tx, &mut job, now)
             } else {
