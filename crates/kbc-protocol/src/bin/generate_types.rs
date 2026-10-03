@@ -16,6 +16,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     ActionResult::export_all(&config)?;
     BatchReceipt::export_all(&config)?;
     CoreStats::export_all(&config)?;
+    PendingLog::export_all(&config)?;
     fs::write(
         output.join("version.ts"),
         format!("export const PROTOCOL_VERSION = {PROTOCOL_VERSION} as const;\n"),

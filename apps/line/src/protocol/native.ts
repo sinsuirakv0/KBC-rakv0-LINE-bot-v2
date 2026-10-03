@@ -6,6 +6,7 @@ import type { CoreAction } from "./generated/CoreAction.js";
 import type { ActionResult } from "./generated/ActionResult.js";
 import type { CoreStats } from "./generated/CoreStats.js";
 import { PROTOCOL_VERSION } from "./generated/version.js";
+import type { PendingLog } from "./generated/PendingLog.js";
 
 export { PROTOCOL_VERSION };
 export type { CoreConfig, ReceivedBatch, BatchReceipt, CoreAction, ActionResult, CoreStats };
@@ -27,6 +28,8 @@ export interface NativeCore {
   shutdown(): void;
   persistenceRevision(): string;
   snapshotDatabase(path: string): Promise<void>;
+  pendingLogs(): PendingLog[];
+  acknowledgeLogs(sequences: number[]): void;
 }
 
 export function createCore(config: CoreConfig): NativeCore {
@@ -51,5 +54,7 @@ export function createCore(config: CoreConfig): NativeCore {
     shutdown: () => handle.shutdown(),
     persistenceRevision: () => handle.persistenceRevision(),
     snapshotDatabase: path => handle.snapshotDatabase(path),
+    pendingLogs: () => handle.pendingLogs(),
+    acknowledgeLogs: sequences => handle.acknowledgeLogs(JSON.stringify(sequences)),
   };
 }

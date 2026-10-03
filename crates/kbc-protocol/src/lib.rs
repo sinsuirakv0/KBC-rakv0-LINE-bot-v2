@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
 
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -29,6 +29,9 @@ pub struct CoreConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub restored_from_backup: Option<bool>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub logs_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
@@ -63,6 +66,12 @@ pub enum CoreEvent {
         content_type: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
+        sender_name: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        metadata_json: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         media_group_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
@@ -87,6 +96,14 @@ pub enum CoreEvent {
         #[ts(type = "number")]
         created_at_ms: i64,
     },
+}
+
+#[derive(Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingLog {
+    pub sequence: u32,
+    pub stream: String,
+    pub row: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, TS)]
@@ -302,4 +319,6 @@ pub struct CoreStats {
     pub active_sessions: u32,
     pub preparing_media: u32,
     pub querying_actions: u32,
+    pub pending_logs: u32,
+    pub pending_log_bytes: u32,
 }

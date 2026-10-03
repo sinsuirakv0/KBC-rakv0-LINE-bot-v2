@@ -13,6 +13,7 @@ use tokio::sync::Notify;
 
 mod assets;
 mod commands;
+mod logs;
 mod media;
 mod motion;
 mod oc;
@@ -39,6 +40,7 @@ pub struct Runtime {
     ffmpeg_path: Option<std::path::PathBuf>,
     cancel: tokio_util::sync::CancellationToken,
     media_worker_active: AtomicBool,
+    logs_enabled: bool,
 }
 
 fn now_ms() -> i64 {
@@ -113,6 +115,7 @@ impl Runtime {
             [&config.owner_id],
         )?;
         oc::initialize(&db)?;
+        logs::initialize(&db)?;
         oc::import_legacy(&mut db, config.legacy_oc_settings_path.as_deref())?;
         // 遠隔退避以後に送信された可能性がある。期限済みの副作用は照合まで再実行しない。
         if config.restored_from_backup.unwrap_or(false) {
@@ -153,6 +156,7 @@ impl Runtime {
             ffmpeg_path: config.ffmpeg_path.map(Into::into),
             cancel: tokio_util::sync::CancellationToken::new(),
             media_worker_active: AtomicBool::new(false),
+            logs_enabled: config.logs_enabled.unwrap_or(false),
         })
     }
 
@@ -184,6 +188,17 @@ impl Runtime {
             .map_err(|_| "DatabaseLock")?
             .execute("VACUUM INTO ?1", [path])?;
         Ok(())
+    }
+
+    pub fn pending_logs(&self) -> Result<Vec<PendingLog>> {
+        logs::pending(&*self.database.lock().map_err(|_| "DatabaseLock")?)
+    }
+
+    pub fn acknowledge_logs(&self, sequences: Vec<u32>) -> Result<()> {
+        logs::acknowledge(
+            &mut *self.database.lock().map_err(|_| "DatabaseLock")?,
+            sequences,
+        )
     }
 
     pub fn submit_batch(&self, batch: ReceivedBatch) -> Result<BatchReceipt> {
@@ -305,6 +320,9 @@ impl Runtime {
             {
                 continue;
             }
+            if self.logs_enabled {
+                logs::ingest(&tx, &event)?;
+            }
             if !oc::ingest(self, &tx, &event, &plan, now)? {
                 self.apply_command(&tx, &event, plan, now)?;
             }
@@ -314,6 +332,9 @@ impl Runtime {
             [first_row],
             |r| r.get(0),
         )?;
+        if self.logs_enabled {
+            logs::check_capacity(&tx)?;
+        }
         let event_count: i64 = tx.query_row("SELECT count(*) FROM events", [], |row| row.get(0))?;
         let action_count: i64 = tx.query_row(
             "SELECT count(*) FROM actions WHERE status IN ('queued','preparing','claimed','querying','sending','unknown')",
@@ -653,6 +674,12 @@ impl Runtime {
                 |row| row.get(0),
             )?,
             preparing_media: count("preparing")?,
+            pending_logs: db.query_row("SELECT count(*) FROM log_pending", [], |r| r.get(0))?,
+            pending_log_bytes: db.query_row(
+                "SELECT COALESCE(sum(bytes),0) FROM log_pending",
+                [],
+                |r| r.get(0),
+            )?,
         })
     }
 

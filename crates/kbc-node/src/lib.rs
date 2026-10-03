@@ -121,6 +121,19 @@ impl NativeCore {
     }
 
     #[napi]
+    pub fn pending_logs(&self) -> Result<Value> {
+        convert(serde_json::to_value(convert(self.runtime.pending_logs())?))
+    }
+
+    #[napi]
+    pub fn acknowledge_logs(&self, sequences: String) -> Result<()> {
+        convert(
+            self.runtime
+                .acknowledge_logs(convert(serde_json::from_str(&sequences))?),
+        )
+    }
+
+    #[napi]
     pub async fn snapshot_database(&self, path: String) -> Result<()> {
         let runtime = self.runtime.clone();
         convert(convert(
