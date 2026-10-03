@@ -21,5 +21,6 @@ for kind, baseline in (("mp4", 110), ("gif", 110), ("png", 110), ("mp4", 420)):
     Path("motion-memory-results.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     subprocess.run(["docker", "rm", name], check=True, capture_output=True)
 if any(result["exitCode"] != result["expectedExitCode"] or result["oomKilled"]
-       or result["baselineMiB"] == 420 and "MediaMemoryBudgetExceeded" not in result["stderr"] for result in results):
+       or result["baselineMiB"] == 420 and ("MediaMemoryBudgetExceeded" not in result["stderr"]
+          or not result["measurement"].get("responsiveAfterFailure")) for result in results):
     raise SystemExit(1)

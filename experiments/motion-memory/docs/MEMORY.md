@@ -15,3 +15,5 @@ run.mjsは共通WorkerへCommandを投入し、成果・生成時間・Node maxR
 対策はFFmpeg入力decodeも1threadに限定し、Rendererを成果照合より前にdropする。Media共通Contextのcheck_memoryはLinux cgroup使用量（子FFmpeg・file cache込み）を読み、コンテナ上限から64MiBを残した予算を確認する。Sprite展開前に展開・cut合計byteも加えて確認し、動画は16Frameごとに観測する。超過では生成だけを失敗案内にする。急激な増加を原子的に防ぐ硬い予約ではなく、入力の絶対上限・単一Workerと組み合わせる。非Linuxや制限値を取得できない環境では既存の入力上限を維持する。
 
 追加の420MiB常駐近似では、OOMを起こさずMediaMemoryBudgetExceededで生成を中止できることを確認する。これは正常生成の成功とは別の検証で、expectedExitCode=1を記録する。
+
+[対策後の実験37128169462](https://github.com/sinsuirakv0/KBC-rakv0-LINE-bot-v2/actions/runs/37128169462) で通常3形式は成功。MP4 cgroup peak154.0MiB、GIF 193.1MiB、PNG 142.5MiB。420MiB常駐近似では0.88秒で予算超過を検知して生成を拒否し、cgroup peak462.3MiB / OOMKilled=false。最初の390MiB条件は予算未満の433.9MiBで正常生成できたため、期待した拒否条件を超える420MiBへ修正した。単一素材・短時間・Bot常駐近似であり、長期運用の保証や本番症状の原因確定とは扱わない。後続実験では中止後のping処理も確認する。

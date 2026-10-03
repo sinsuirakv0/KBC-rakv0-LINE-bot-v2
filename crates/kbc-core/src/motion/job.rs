@@ -167,8 +167,13 @@ impl MotionJob {
                 total_started.elapsed().as_millis(),
             );
         }
-        context.check_memory(0).map_err(|error| MotionError::render(error.to_string()))?;
-        eprintln!("Motion memory observed: container_peak_sample_bytes={}", context.memory_peak_bytes());
+        context
+            .check_memory(0)
+            .map_err(|error| MotionError::render(error.to_string()))?;
+        eprintln!(
+            "Motion memory observed: container_peak_sample_bytes={}",
+            context.memory_peak_bytes()
+        );
         Ok(TaskArtifact::new(
             output,
             format!("{}.{}", self.plan.filename_stem, extension),
@@ -462,7 +467,9 @@ fn render_frame(
         return Err(MotionError::render("motion rendering was cancelled"));
     }
     if index.is_multiple_of(PROGRESS_FRAME_INTERVAL) {
-        context.check_memory(0).map_err(|error| MotionError::render(error.to_string()))?;
+        context
+            .check_memory(0)
+            .map_err(|error| MotionError::render(error.to_string()))?;
     }
     let render_started = Instant::now();
     let reused = prepared.render_rgba_frame(index)?;

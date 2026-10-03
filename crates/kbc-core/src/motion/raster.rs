@@ -18,7 +18,11 @@ pub(super) struct SpriteSheet {
 }
 
 impl SpriteSheet {
-    pub(super) fn decode(data: &[u8], cuts: &[Cut], context: &crate::media::RenderContext) -> Result<Self, MotionError> {
+    pub(super) fn decode(
+        data: &[u8],
+        cuts: &[Cut],
+        context: &crate::media::RenderContext,
+    ) -> Result<Self, MotionError> {
         // 圧縮byte数とは別に、展開と切り抜きの合計を512MiB環境向けに制限する。
         let dimensions = data
             .get(16..24)
@@ -36,7 +40,10 @@ impl SpriteSheet {
         {
             return Err(MotionError::invalid("sprite memory limit exceeded"));
         }
-        context.check_memory((u64::from(width) * u64::from(height) + cut_pixels.unwrap_or_default()) * 4)
+        context
+            .check_memory(
+                (u64::from(width) * u64::from(height) + cut_pixels.unwrap_or_default()) * 4,
+            )
             .map_err(|error| MotionError::render(error.to_string()))?;
         let sprite = Pixmap::decode_png(data)
             .map_err(|error| MotionError::invalid(format!("sprite PNG decode failed: {error}")))?;

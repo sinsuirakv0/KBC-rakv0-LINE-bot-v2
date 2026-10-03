@@ -78,14 +78,25 @@ impl RenderContext {
     }
     pub fn check_memory(&self, additional_bytes: u64) -> Result<()> {
         // 子プロセスも含むコンテナ使用量で判定し、受信・保存用に64MiBを残す。
-        let paths = [("/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory.max"),
-            ("/sys/fs/cgroup/memory/memory.usage_in_bytes", "/sys/fs/cgroup/memory/memory.limit_in_bytes")];
+        let paths = [
+            ("/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory.max"),
+            (
+                "/sys/fs/cgroup/memory/memory.usage_in_bytes",
+                "/sys/fs/cgroup/memory/memory.limit_in_bytes",
+            ),
+        ];
         for (current_path, limit_path) in paths {
-            let current = std::fs::read_to_string(current_path).ok().and_then(|s| s.trim().parse::<u64>().ok());
-            let limit = std::fs::read_to_string(limit_path).ok().and_then(|s| s.trim().parse::<u64>().ok());
+            let current = std::fs::read_to_string(current_path)
+                .ok()
+                .and_then(|s| s.trim().parse::<u64>().ok());
+            let limit = std::fs::read_to_string(limit_path)
+                .ok()
+                .and_then(|s| s.trim().parse::<u64>().ok());
             if let (Some(current), Some(limit)) = (current, limit) {
-                self.memory_peak.fetch_max(current, std::sync::atomic::Ordering::Relaxed);
-                if current.saturating_add(additional_bytes) > limit.saturating_sub(64 * 1024 * 1024) {
+                self.memory_peak
+                    .fetch_max(current, std::sync::atomic::Ordering::Relaxed);
+                if current.saturating_add(additional_bytes) > limit.saturating_sub(64 * 1024 * 1024)
+                {
                     return Err("MediaMemoryBudgetExceeded".into());
                 }
                 break;
@@ -292,7 +303,11 @@ impl Runtime {
                     .await
                     .map_err(|error| {
                         eprintln!("Motion failed: {error}");
-                        error.public_message().to_owned()
+                        if error.to_string() == "MediaMemoryBudgetExceeded" {
+                            error.to_string()
+                        } else {
+                            error.public_message().to_owned()
+                        }
                     })?;
                 let duration_ms = artifact.duration_ms;
                 Ok(MediaOutput::Attachment {
@@ -377,7 +392,7 @@ impl Runtime {
             }
             Err(error) => {
                 eprintln!("Media preparation failed: {error}");
-                text=if error.to_string()=="MissingFfmpeg" { "動画生成用のFFmpegが設定されていません。" } else if error.to_string()=="NoAvailableFiles" { "利用できる関連ファイルが見つかりませんでした。" } else if error.to_string()=="SearchDataChanged" { "検索データが更新されました。もう一度コマンドを実行してください。" } else { "素材の取得・生成に失敗しました。検索条件やFrame範囲を確認して再度お試しください。" }.into();
+                text=if error.to_string()=="MediaMemoryBudgetExceeded" { "生成用のメモリが不足しているため、生成を中止しました。少し待つか、Frame範囲を短くしてお試しください。" } else if error.to_string()=="MissingFfmpeg" { "動画生成用のFFmpegが設定されていません。" } else if error.to_string()=="NoAvailableFiles" { "利用できる関連ファイルが見つかりませんでした。" } else if error.to_string()=="SearchDataChanged" { "検索データが更新されました。もう一度コマンドを実行してください。" } else { "素材の取得・生成に失敗しました。検索条件やFrame範囲を確認して再度お試しください。" }.into();
             }
         }
         if is_prompt && !file_list_ready {
