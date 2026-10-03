@@ -124,8 +124,9 @@ export class Receiver {
           subscriptionId: checkpoint.subscriptionId, direction: "FORWARD", limit: 100, fetchType: "DEFAULT",
         } }), "fetchSquareChatEvents", this.client.square.protocolType, true, this.client.square.requestPath);
       if (typeof response.syncToken !== "string") throw new Error("InvalidChatCheckpoint");
-      const subscriptionId = Number(response.subscription.subscriptionId);
-      if (!Number.isSafeInteger(subscriptionId) || subscriptionId <= 0) throw new Error("InvalidSubscription");
+      // トーク補完では購読情報が省略される応答も受け付け、accountのPUSH購読と混同しない。
+      const subscriptionId = response.subscription?.subscriptionId == null ? checkpoint.subscriptionId : Number(response.subscription.subscriptionId);
+      if (subscriptionId !== undefined && (!Number.isSafeInteger(subscriptionId) || subscriptionId <= 0)) throw new Error("InvalidSubscription");
       checkpoint = { originMs, syncToken: response.syncToken, continuationToken: response.continuationToken || undefined,
         subscriptionId };
       await this.accept(stream, checkpoint, response.events);

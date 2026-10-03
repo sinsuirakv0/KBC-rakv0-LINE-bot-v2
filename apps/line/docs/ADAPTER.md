@@ -57,3 +57,5 @@ context / member / chatsはnextQueryActionから1本の照会loopで取得する
 mainはGitHubPersistence.restore / restoreSettingsの後にAuthStorageとCoreを開く。beforePersistがsequence予約とtoken退避を通信前に確定する。Coreのsnapshotは起動・毎分の変更時・正常終了で暗号化保存する。全て既存の非公開データrepoを使う。[関数と障害時の契約](../../../docs/operations/GITHUB_RECOVERY.md)。
 
 受信metadataとsenderDisplayNameをProtocol v6へ正規化し、Profile更新をNAME、複数kickeeを個別Eventへ変換する。展開後のページは100件・256KiBに分割し、最後まで古いcheckpointを保つ。LogSyncは同じ追記先を4MiBまで5分ごとに更新する。競合はblob SHAで確認し、再取得してmergeする。`OC_LOGS_ENABLED=1`は旧データ変換後に設定する。[ログの契約](../../../crates/kbc-core/docs/LOGS.md)。
+
+トーク補完のdrainChatはsubscription省略時に以前のトーク購読IDを保持し、未取得なら省略する。SDKのSquareChat.listenもトーク補完で購読IDを要求していない。返値にIDがある場合は正のsafe integerを検査する。accountのPUSH sign-on・lease検査は別で、省略可能にはしない。Smokeでは購読情報なしの初回・継続ページを受付し、checkpointと重複照合を確認する。

@@ -211,7 +211,9 @@ let brokenRecovered = false;
     return page([recovered], "broken-c1");
   }
   chatCalls++;
-  return page([message(chatCalls === 1 ? "a" : "d")], `chat-${chatCalls}`, chatCalls === 1 ? "chat-next" : "");
+  const response = page([message(chatCalls === 1 ? "a" : "d")], `chat-${chatCalls}`, chatCalls === 1 ? "chat-next" : "");
+  delete (response as Partial<AccountPage>).subscription;
+  return response;
 };
 const receiver = new Receiver(client, replayCore, new ApiScheduler(replayController.signal, 2, 1), replayController.signal);
 const receiving = receiver.run();
@@ -224,6 +226,7 @@ try {
   assert.equal(replayCore.stats().queuedActions, 4);
   assert.equal(receiver.metrics.duplicates, 1);
   assert.equal(chatCalls, 2);
+  assert.equal(JSON.parse(replayCore.checkpoint("chat:chat")!).subscriptionId, undefined);
   assert.equal(brokenCalls, 1);
   assert.deepEqual(JSON.parse(replayCore.checkpoint("account")!).pendingChats, ["broken"]);
 } finally { replayController.abort(); await receiving; replayCore.shutdown(); }
