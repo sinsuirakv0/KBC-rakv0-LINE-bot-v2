@@ -1,5 +1,6 @@
 ﻿import type { BaseClient } from "@evex/linejs/base";
 import type { OcRequest } from "../protocol/generated/OcRequest.js";
+import { LINEStruct } from "@evex/linejs/thrift";
 import type { OcResult } from "../protocol/generated/OcResult.js";
 import type { OcMember } from "../protocol/generated/OcMember.js";
 import type { OcChat } from "../protocol/generated/OcChat.js";
@@ -66,7 +67,32 @@ export class SquareDirectory {
   }
   async execute(chatId: string, request: OcRequest): Promise<OcResult> {
     const result: OcResult = { chats: [], members: [] };
-    if (request.type === "context") {
+    if (request.type === "reactions") {
+      if (!["NICE", "LOVE"].includes(request.reactionType) || !request.messageId || !request.memberId) throw new Error("InvalidReactionRequest");
+      let continuationToken: string | undefined;
+      // 3.4.2はThrift定義だけを持つ。共通request経路で必要な一覧だけ最大400件確認する。
+      for (let page = 0; page < 4; page++) {
+        const response = await this.client.request.request(LINEStruct.SquareService_getMessageReactions_args({ request: {
+          squareChatMid: chatId, messageId: request.messageId, type: request.reactionType === "NICE" ? "NICE" : "LOVE",
+          limit: 100, continuationToken,
+        } }), "getMessageReactions", this.client.square.protocolType, true, this.client.square.requestPath) as {
+          reactions?: { type: string | number; reactor?: { squareMemberMid: string }; createdAt: unknown; updatedAt: unknown }[];
+          continuationToken?: string;
+        };
+        if (!Array.isArray(response.reactions) || response.reactions.length > 100) throw new Error("InvalidReactionResponse");
+        const own = response.reactions.find(reaction => reaction.reactor?.squareMemberMid === request.memberId);
+        if (own) {
+          const reactionType = ({ "2": "NICE", NICE: "NICE", "3": "LOVE", LOVE: "LOVE" } as Record<string, string>)[String(own.type)];
+          const updatedAtMs = Number(own.updatedAt ?? own.createdAt);
+          if (!reactionType || !Number.isSafeInteger(updatedAtMs) || updatedAtMs <= 0) throw new Error("InvalidReactionResponse");
+          result.reaction = { memberId: request.memberId, reactionType, updatedAtMs };
+          break;
+        }
+        if (!response.continuationToken) break;
+        if (typeof response.continuationToken !== "string" || response.continuationToken.length > 2048 || response.continuationToken === continuationToken) throw new Error("InvalidReactionCursor");
+        continuationToken = response.continuationToken;
+      }
+    } else if (request.type === "context") {
       const chat = await this.chat(chatId);
       const actor = await this.client.square.getSquareMember({ squareMemberMid: request.memberId });
       const botMemberId = chat.squareChatMember.squareMemberMid;

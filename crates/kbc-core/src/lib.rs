@@ -115,6 +115,7 @@ impl Runtime {
             [&config.owner_id],
         )?;
         oc::initialize(&db)?;
+        commands::sessions::initialize(&db)?;
         logs::initialize(&db)?;
         oc::import_legacy(&mut db, config.legacy_oc_settings_path.as_deref())?;
         // 遠隔退避以後に送信された可能性がある。期限済みの副作用は照合まで再実行しない。
@@ -227,6 +228,21 @@ impl Runtime {
             bytes += serde_json::to_string(event)?.len();
             if bytes > 256 * 1024 {
                 return Err("BatchByteLimit".into());
+            }
+            if let CoreEvent::ReactionNotified {
+                event_id,
+                chat_id,
+                message_id,
+                reaction_type,
+                created_at_ms,
+            } = event
+                && ([event_id, chat_id, message_id]
+                    .iter()
+                    .any(|id| id.is_empty() || id.len() > 256)
+                    || !matches!(reaction_type.as_str(), "NICE" | "LOVE")
+                    || *created_at_ms < 0)
+            {
+                return Err("InvalidReactionEvent".into());
             }
             let CoreEvent::MessageReceived {
                 event_id,
@@ -367,14 +383,39 @@ impl Runtime {
         plan: commands::CommandPlan,
         now: i64,
     ) -> Result<()> {
-        let CoreEvent::MessageReceived {
+        let (event_id, chat_id, _, _, _) = oc::identity(event);
+        let (responses, replacement) =
+            commands::sessions::apply(tx, event, plan, &self.search, now)?;
+        self.enqueue_responses(tx, event_id, chat_id, responses, replacement, now)
+    }
+
+    fn complete_search_reaction(
+        &self,
+        tx: &rusqlite::Transaction<'_>,
+        action: &CoreAction,
+        result: &ActionResult,
+        now: i64,
+    ) -> Result<()> {
+        let CoreAction::OcApi {
             event_id, chat_id, ..
-        } = event
+        } = action
         else {
             return Ok(());
         };
-        let (mut responses, replacement) =
-            commands::sessions::apply(tx, event, plan, &self.search, now)?;
+        let (responses, replacement) =
+            commands::sessions::complete_reaction(tx, action, result, &self.search, now)?;
+        self.enqueue_responses(tx, event_id, chat_id, responses, replacement, now)
+    }
+
+    fn enqueue_responses(
+        &self,
+        tx: &rusqlite::Transaction<'_>,
+        event_id: &str,
+        chat_id: &str,
+        mut responses: Vec<commands::sessions::Response>,
+        replacement: Option<String>,
+        now: i64,
+    ) -> Result<()> {
         if responses.iter().any(|(_, _, media)| media.is_some()) {
             let count: i64 = tx.query_row("SELECT count(*) FROM actions WHERE status IN ('queued','preparing','claimed','querying','sending','unknown') AND (json_extract(payload,'$.type')='prepareMedia' OR json_extract(payload,'$.attachment') IS NOT NULL)", [], |row|row.get(0))?;
             if count >= media::MAX_MEDIA_JOBS {
@@ -402,8 +443,8 @@ impl Runtime {
             let action = if let Some(request) = media {
                 CoreAction::PrepareMedia {
                     action_id: id.clone(),
-                    event_id: event_id.clone(),
-                    chat_id: chat_id.clone(),
+                    event_id: event_id.into(),
+                    chat_id: chat_id.into(),
                     related_message_id: String::new(),
                     request: serde_json::to_string(&media::MediaJob {
                         catalog_revision: self.search.revision.clone(),
@@ -416,8 +457,8 @@ impl Runtime {
             } else {
                 CoreAction::SendMessage {
                     action_id: id.clone(),
-                    event_id: event_id.clone(),
-                    chat_id: chat_id.clone(),
+                    event_id: event_id.into(),
+                    chat_id: chat_id.into(),
                     related_message_id: String::new(),
                     text: body,
                     image_url: None,
@@ -466,7 +507,7 @@ impl Runtime {
                     "SELECT a.id,a.payload,a.due FROM actions a WHERE a.status='queued'
                     AND json_extract(a.payload,'$.type')<>'prepareMedia'
                     AND ?1=COALESCE(json_extract(a.payload,'$.type')='ocApi'
-                        AND json_extract(a.payload,'$.request.type') IN ('context','member','chats','members','joinedChats','inspect'),0)
+                        AND json_extract(a.payload,'$.request.type') IN ('context','member','chats','members','joinedChats','inspect','reactions'),0)
                     AND (?1=1 OR NOT EXISTS (SELECT 1 FROM actions b WHERE b.chat=a.chat AND b.status IN ('claimed','sending')))
                     ORDER BY a.due,a.rowid LIMIT 1", [query],
                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).optional()?;
@@ -579,16 +620,17 @@ impl Runtime {
             params![result.action_id, status, result.code, now_ms()],
         )?;
         if matches!(result.status, DeliveryStatus::Sent) {
-            let waiting: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM sessions WHERE action=?1 AND expires>?2)",
-                params![result.action_id, now_ms()],
-                |row| row.get(0),
-            )?;
-            if waiting && result.message_id.is_none() {
-                return Err("MissingPromptMessageId".into());
-            }
-            tx.execute(
-                "UPDATE sessions SET prompt=?2,expires=?3 WHERE action=?1 AND expires>?4",
+            if matches!(completed, CoreAction::SendMessage { .. }) {
+                let waiting: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sessions WHERE action=?1 AND expires>?2)",
+                    params![result.action_id, now_ms()],
+                    |row| row.get(0),
+                )?;
+                if waiting && result.message_id.is_none() {
+                    return Err("MissingPromptMessageId".into());
+                }
+                tx.execute(
+                "UPDATE sessions SET prompt=?2,expires=?3,payload=COALESCE(pending_payload,payload),pending_payload=NULL WHERE action=?1 AND expires>?4",
                 params![
                     result.action_id,
                     result.message_id,
@@ -596,6 +638,7 @@ impl Runtime {
                     now_ms()
                 ],
             )?;
+            }
             if let CoreAction::SendMessage {
                 event_id,
                 chat_id,
@@ -629,7 +672,11 @@ impl Runtime {
                 )?;
             }
         } else if matches!(result.status, DeliveryStatus::Failed) {
-            tx.execute("DELETE FROM sessions WHERE action=?1", [&result.action_id])?;
+            tx.execute("DELETE FROM sessions WHERE action=?1 AND (prompt IS NULL OR pending_payload IS NULL)", [&result.action_id])?;
+            tx.execute(
+                "UPDATE sessions SET pending_payload=NULL WHERE action=?1",
+                [&result.action_id],
+            )?;
         }
         oc::complete(
             self,

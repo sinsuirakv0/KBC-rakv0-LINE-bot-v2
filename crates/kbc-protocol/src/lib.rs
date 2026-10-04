@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTOCOL_VERSION: u32 = 10;
+pub const PROTOCOL_VERSION: u32 = 11;
 
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +41,14 @@ pub struct CoreConfig {
     rename_all_fields = "camelCase"
 )]
 pub enum CoreEvent {
+    ReactionNotified {
+        event_id: String,
+        chat_id: String,
+        message_id: String,
+        reaction_type: String,
+        #[ts(type = "number")]
+        created_at_ms: i64,
+    },
     MessageReceived {
         event_id: String,
         chat_id: String,
@@ -230,6 +238,11 @@ pub struct ActionResult {
     rename_all_fields = "camelCase"
 )]
 pub enum OcRequest {
+    Reactions {
+        message_id: String,
+        member_id: String,
+        reaction_type: String,
+    },
     Context {
         member_id: String,
         authority: bool,
@@ -288,6 +301,7 @@ impl OcRequest {
         matches!(
             self,
             Self::Context { .. }
+                | Self::Reactions { .. }
                 | Self::Member { .. }
                 | Self::Inspect { .. }
                 | Self::Chats { .. }
@@ -331,6 +345,9 @@ pub struct OcChat {
 pub struct OcResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
+    pub reaction: Option<OcReaction>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub message_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -348,6 +365,15 @@ pub struct OcResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub continuation_token: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct OcReaction {
+    pub member_id: String,
+    pub reaction_type: String,
+    #[ts(type = "number")]
+    pub updated_at_ms: i64,
 }
 
 #[derive(Debug, Serialize, TS)]

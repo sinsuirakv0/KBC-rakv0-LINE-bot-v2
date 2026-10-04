@@ -36,7 +36,11 @@ motionはpng/mp4/gif、f/c/s/u（utだけ）、a=攻撃・w=歩行・i=待機・
 
 通常1〜3件の詳細は1返信にまとめ、4件以上を8候補ずつ表示する。origin/file/motionの複数一致では先頭を勝手に選ばず本人の選択を待つ。最大512候補を保持し、総件数と絞り込み案内を出す。プレーンテキスト・空行・URLを使い、改行優先で1,500 UTF-16単位・1入力8 Actionまで分割する。
 
-一覧への番号リプライだけを処理する。1〜8=選択、9=次、0=前、終了/取消/cancel=受付終了。同じ本人・トーク・最新の実送信prompt ID・期限内のSessionへ限定する。別人、別トーク、古いprompt、通常会話の数字は無視する。Sessionは128件、1本人×1トーク1件、送信完了から10分。SQLiteに候補の索引・検索条件・file選択段階を残し、同じsnapshotなら再起動して操作を続けられる。
+一覧への番号リプライは1〜8=選択、終了/取消/cancel=受付終了。ページ移動は一覧メッセージへの👍（NICE）=次、❤️（LOVE）=前という実リアクションで行い、9/0で移動しない。同じ本人・トーク・最新の実送信prompt ID・期限内のSessionへ限定する。別人、別トーク、古いprompt、通常会話の数字は無視する。Sessionは128件、1本人×1トーク1件、送信完了から10分。SQLiteに候補の索引・検索条件・file選択段階を残し、同じsnapshotなら再起動して操作を続けられる。
+
+リアクション通知には実行者MIDがないため、稼働中の一覧・移動可能な方向だけ既存照会WorkerでgetMessageReactionsを取得し、検索者のMID・種類・時刻を照合する。表示名で本人と判断しない。最大4ページ×100件。同じ一覧の照会・配送中の連打はまとめ、常時ポーリングを増やさない。API失敗時は旧一覧を残して付け直しを案内する。[LINEJS仕様・追加APIと未確認点](../../../../../apps/line/docs/REACTIONS_AND_STICKERS.md)。
+
+変更先はsessions.pending_payloadへ保存し、新一覧の送信成功後だけpayloadとpromptを入れ替える。切替中の番号には待機案内を返し、別ページの項目を選ばない。確定失敗は旧一覧を復帰し、unknownは照合まで切替待ちを保持する。一覧の各候補表示は96 UTF-16単位までに縮め、操作案内を同じ1,500単位以内の投稿へ収める。
 
 編集の代替は新しい返信成功後の旧候補の管理者削除（square.destroyMessage）。送信完了時に10分後の清掃を登録し、操作時は同じ削除Actionを前倒しする。削除失敗で新promptを巻き戻さない。任意清掃を追加できないほどOutboxが満杯なら清掃だけを省略する。管理者権限のないOCでは一覧が残る場合がある。
 
@@ -52,6 +56,7 @@ motionはpng/mp4/gif、f/c/s/u（utだけ）、a=攻撃・w=歩行・i=待機・
 | SearchCatalog::detail/page | ヒット形態・ダミー別称・ID解決によるURLと、検索/ファイルページをLINE向け整形 |
 | origin_path/file_options/motion_plan | 共有形態IDと素材path・描画条件を解決。通信は行わない |
 | sessions::apply/selected | 本人・トーク・prompt・期限を照合。選択・ページ更新・MediaRequestを受付transactionで保存 |
+| sessions::request_reaction/complete_reaction | 現在の一覧だけ照会を登録し、検索者のリアクションを検証して未確定ページを保存。Runtime::complete_actionが送信成功後に確定 |
 | Runtime::submit_batch | 検索をDB lockの外で計算し、重複排除・Session・軽量Action・MediaRequest・checkpointを同時commit |
 | split_responses | LINEの文字数で分割。媒体のbyteをJSONへ入れない |
 

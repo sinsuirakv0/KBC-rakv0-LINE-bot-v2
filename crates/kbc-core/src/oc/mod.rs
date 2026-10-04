@@ -175,6 +175,13 @@ pub fn priority_chats(db: &Connection) -> Result<Vec<String>> {
 }
 pub(super) fn identity(event: &CoreEvent) -> (&str, &str, &str, &str, i64) {
     match event {
+        CoreEvent::ReactionNotified {
+            event_id,
+            chat_id,
+            message_id,
+            created_at_ms,
+            ..
+        } => (event_id, chat_id, message_id, "", *created_at_ms),
         CoreEvent::MessageReceived {
             event_id,
             chat_id,
@@ -200,6 +207,7 @@ pub(super) fn identity(event: &CoreEvent) -> (&str, &str, &str, &str, i64) {
 }
 fn square(event: &CoreEvent) -> Option<&str> {
     match event {
+        CoreEvent::ReactionNotified { .. } => None,
         CoreEvent::MessageReceived { square_id, .. } => square_id.as_deref(),
         CoreEvent::MemberChanged { square_id, .. } => Some(square_id),
     }
@@ -388,6 +396,9 @@ pub fn ingest(
     now: i64,
 ) -> Result<bool> {
     tx.execute("DELETE FROM oc_sessions WHERE expires<=?1", [now])?;
+    if matches!(event, CoreEvent::ReactionNotified { .. }) {
+        return Ok(false);
+    }
     if matches!(event, CoreEvent::MemberChanged { .. }) {
         moderation::member_event(runtime, tx, event, now)?;
         return Ok(true);
@@ -527,6 +538,9 @@ pub fn complete(
             .is_some_and(|value| serde_json::to_vec(value).map_or(true, |v| v.len() > 32 * 1024))
     {
         return Err("OcResultLimit".into());
+    }
+    if matches!(api, OcRequest::Reactions { .. }) {
+        return runtime.complete_search_reaction(tx, action, result, now);
     }
     let mut job: Job = serde_json::from_str(continuation)?;
     if job.input.name == "test" && matches!(job.phase, Phase::Mutation) {

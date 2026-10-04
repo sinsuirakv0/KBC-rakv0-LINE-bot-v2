@@ -7,7 +7,7 @@ export async function deliverAction(client: BaseClient, core: NativeCore, gate: 
   if (action.type === "prepareMedia") throw new Error("InternalActionReachedAdapter");
   if (action.type === "ocApi") {
     const service = directory ?? new SquareDirectory(client);
-    const read = ["context", "member", "chats", "members", "joinedChats", "inspect"].includes(action.request.type);
+    const read = ["context", "member", "chats", "members", "joinedChats", "inspect", "reactions"].includes(action.request.type);
     if (read) {
       core.markSending(action.actionId);
       let result;

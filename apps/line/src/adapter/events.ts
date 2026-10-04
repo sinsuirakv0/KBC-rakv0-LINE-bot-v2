@@ -12,6 +12,15 @@ const sequence = (value: unknown): number | undefined => { const number = timest
 
 export async function normalizeEvent(event: Event, directory?: SquareDirectory, baselineBeforeMs = 0, source = "push"): Promise<CoreEvent | null> {
   const payload = event.payload;
+  if (["47", "NOTIFICATION_MESSAGE_REACTION"].includes(String(event.type))) {
+    const reaction = payload?.notificationMessageReaction;
+    const created = timestamp(event.createdTime);
+    const reactionType = ({ "2": "NICE", NICE: "NICE", "3": "LOVE", LOVE: "LOVE" } as Record<string, string>)[String(reaction?.type)];
+    if (!reaction?.squareChatMid || !reaction.messageId || !created || created < baselineBeforeMs || !reactionType) return null;
+    // 通知の表示名で本人を判定せず、Coreが必要な一覧のreactor MIDを照会する。
+    return { type: "reactionNotified", eventId: `reaction:${reaction.squareChatMid}:${reaction.messageId}:${reactionType}:${created}`,
+      chatId: reaction.squareChatMid, messageId: reaction.messageId, reactionType, createdAtMs: created };
+  }
   const message = (payload?.notificationMessage ?? payload?.receiveMessage)?.squareMessage?.message;
   if (message) {
     const created = timestamp(message.createdTime);
@@ -86,7 +95,7 @@ export async function normalizeEvents(event: Event, directory?: SquareDirectory,
         notifiedUpdateSquareMember: { squareMid: string(member.squareMid), squareMemberMid: string(member.squareMemberMid),
           squareMember: { ...member, membershipState: "KICK_OUT" } },
       } } as unknown as Event, directory, baselineBeforeMs, source);
-      if (converted) result.push({ ...converted, chatId: string(payload.squareChatMid) || converted.chatId,
+      if (converted?.type === "memberChanged") result.push({ ...converted, chatId: string(payload.squareChatMid) || converted.chatId,
         metadataJson: JSON.stringify({ source, eventType: String(event.type), receivedAtMs: Date.now() }) });
     }
     return result;

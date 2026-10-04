@@ -424,14 +424,49 @@ impl SearchCatalog {
             } else {
                 self.entry_label(s, i)
             };
-            lines.push(format!("{}．{name}", i - start + 1));
+            let mut short = String::new();
+            let mut width = 0;
+            for ch in name.chars() {
+                if width + ch.len_utf16() > 96 {
+                    short.push('…');
+                    break;
+                }
+                short.push(ch);
+                width += ch.len_utf16();
+            }
+            lines.push(format!("{}．{short}", i - start + 1));
         }
         if s.files.is_none() && s.total > count {
             lines.push(format!(
                 "\n先頭{count}件を表示。検索語を追加すると絞れます。"
             ));
         }
-        lines.push(if interactive{format!("\nこの一覧にリプライ\n1〜{}：{}{}{}\n終了：受付を終える\n検索した本人のみ・10分間\n一覧は操作後・10分経過で削除",end-start,if s.files.is_some(){"ファイル"}else{"詳細"},if end<count{"　9：次へ"}else{""},if start>0{"　0：前へ"}else{""})}else{"\nIDを指定してもう一度検索してください。".into()});
+        if interactive {
+            lines.push(format!(
+                "\nこの一覧へ番号をリプライ\n1〜{}：{}",
+                end - start,
+                if s.files.is_some() {
+                    "ファイル"
+                } else {
+                    "詳細"
+                }
+            ));
+            let mut moves = Vec::new();
+            if end < count {
+                moves.push("👍（いいね）：次へ");
+            }
+            if start > 0 {
+                moves.push("❤️（ハート）：前へ");
+            }
+            if !moves.is_empty() {
+                lines.push(format!("リアクション：{}", moves.join("　")));
+            }
+            lines.push(
+                "終了：受付を終える\n検索した本人のみ・10分間\n一覧は操作後・10分経過で削除".into(),
+            );
+        } else {
+            lines.push("\nIDを指定してもう一度検索してください。".into());
+        }
         lines.join("\n")
     }
 }

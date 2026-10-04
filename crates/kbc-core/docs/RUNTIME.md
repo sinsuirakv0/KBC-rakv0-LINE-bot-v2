@@ -64,3 +64,5 @@ Protocol v8はInspect（読み取り）・Roles / Post / Delete（変更）とOc
 Protocol v9はProfile変更要求を追加する。BOT管理者の!bot nameは既存Context / Member照会・変更配送・oc_historyを共有し、専用Queueや定期処理は持たない。[Botの表示名更新](../src/oc/docs/BOT.md)。
 
 Protocol v10はOcResultのrawMemberNameを追加し、Bot名の完全一致判定へ未加工のLINEプロフィール名を使う。表示用DTOの短縮・改行整形とAPI確認を分ける。Bot固有の20文字・改行・制御文字制限は利用者指定で撤廃し、共通の入力・結果byte上限を維持する。
+
+Protocol v11はReactionNotified / Reactions / OcReactionを追加する。Reactionsは既存のnext_query_actionへ渡し、OC管理・モデレーション・メッセージログの入力とは区別する。sessions.pending_payloadを起動時に追加し、照会と変更先を保持する。complete_search_reactionは共通enqueue_responsesでページ投稿を作り、complete_actionはSendMessage成功時だけpending_payloadを確定する。未知の送信結果を自動再送しない。[ページ操作の関数・検証](../src/commands/docs/COMMANDS.md)。

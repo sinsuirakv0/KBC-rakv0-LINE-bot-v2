@@ -28,6 +28,7 @@ fn append(tx: &Transaction<'_>, id: &str, stream: &str, mut row: Vec<Value>) -> 
 }
 pub fn ingest(tx: &Transaction<'_>, event: &CoreEvent) -> Result<()> {
     match event {
+        CoreEvent::ReactionNotified { .. } => {}
         CoreEvent::MessageReceived {
             event_id,
             chat_id,
