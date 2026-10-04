@@ -32,7 +32,7 @@ const messagePath = join(directory, "content/messages/moderation.txt");
 await writeFile(messagePath, (await readFile(messagePath, "utf8")).replace('moderation.mute_01 = "', 'moderation.mute_01 = "🙂 ご案内\\n'));
 const commonPath = join(directory, "content/messages/common.txt");
 await writeFile(commonPath, (await readFile(commonPath, "utf8")).replace('この操作はBOT管理者専用です。', '共通案内: BOT管理者専用です。'));
-const config = { databasePath: join(directory, "core.sqlite"), ownerId: "fixture-account", permissionsPath: join(directory, "permissions.json"), contentDirectory: join(directory, "content") };
+const config = { databasePath: join(directory, "core.sqlite"), ownerId: "fixture-account", permissionsPath: join(directory, "permissions.json"), contentDirectory: join(directory, "content"), logsEnabled: true };
 let core = createCore(config);
 const db = new DatabaseSync(config.databasePath);
 const controller = new AbortController(), gate = new ApiScheduler(controller.signal, 2, 1);
@@ -42,7 +42,12 @@ const member = (id: string) => ({ squareMemberMid: id, squareMid: [labBot, labUs
 let failMutation = false;
 client.square.getSquareChat = async ({ squareChatMid }) => ({ squareChat: { squareChatMid, squareMid: squareChatMid === labChat ? labSquare : square, name: "検証", type: "SQUARE_DEFAULT" },
   squareChatMember: { squareMemberMid: squareChatMid === labChat ? labBot : bot } }) as Awaited<ReturnType<typeof client.square.getSquareChat>>;
-client.square.getSquareMember = async ({ squareMemberMid }) => ({ squareMember: member(squareMemberMid) }) as Awaited<ReturnType<typeof client.square.getSquareMember>>;
+const memberLookups: string[] = [], failedNameLookups = new Set<string>();
+client.square.getSquareMember = async ({ squareMemberMid }) => {
+  memberLookups.push(squareMemberMid);
+  if (failedNameLookups.has(squareMemberMid)) throw new Error("NameLookupUnavailable");
+  return { squareMember: member(squareMemberMid) } as Awaited<ReturnType<typeof client.square.getSquareMember>>;
+};
 client.square.searchSquareMembers = async () => ({ members: [member(user)] }) as Awaited<ReturnType<typeof client.square.searchSquareMembers>>;
 client.square.updateSquareMember = async options => gate.run("updateSquareMember", async () => {
   const updated = options?.request?.squareMember; assert(updated?.squareMemberMid);
@@ -124,6 +129,7 @@ async function drain() {
 }
 const texts = (values: CoreAction[]) => values.filter(a => a.type === "sendMessage").map(a => a.text).join("\n");
 const settings = () => JSON.parse((db.prepare("SELECT payload FROM oc_settings WHERE square=?").get(square) as { payload: string }).payload);
+const currentPrompt = () => (db.prepare("SELECT prompt FROM oc_sessions WHERE chat=? AND owner=?").get(chat, admin) as { prompt: string }).prompt;
 async function signal(id: string, state: string, scope = "square", targetChat = chat, at = Date.now()) {
   return submitEvent({ type: "memberChanged", eventId: `member-${sequence}`, squareId: square, chatId: targetChat, memberId: id,
     displayName: "参加者🙂", state, scope, memberCreatedAtMs: at, createdAtMs: at });
@@ -395,5 +401,37 @@ try {
   const media = await normalizeEvent({ type: "RECEIVE_MESSAGE", payload: { receiveMessage: { squareMessage: { message: {
     id: "media-fixture", to: chat, from: user, createdTime: BigInt(Date.now()), contentType: "IMAGE", contentMetadata: { GSEQ: "999999999999", GTOTAL: "7" } } } } } } as unknown as Parameters<typeof normalizeEvent>[0], service);
   assert(media?.type === "messageReceived" && media.text === "" && media.mediaGroupSequence === undefined);
+  // 名前を含む退出DTOを保持し、他トークの観測・不足時の照会も通常配送と分離する。
+  await message("!oc watch early off"); await drain();
+  await message("!oc watch cohort off"); await drain();
+  await message("!oc join set <name>さん、<name>さん歓迎"); await drain();
+  await message("1", admin, currentPrompt()); await drain();
+  await message("!oc leave set <name>さん退出"); await drain();
+  await message("1", admin, currentPrompt()); await drain();
+  const supplied = "p" + "0".repeat(31) + "1", cached = "p" + "0".repeat(31) + "2";
+  const lookedUp = "p" + "0".repeat(31) + "3", unresolved = "p" + "0".repeat(31) + "4";
+  const leave = await normalizeEvent({ type: "NOTIFIED_LEAVE_SQUARE_CHAT", createdTime: BigInt(Date.now()), payload: {
+    notifiedLeaveSquareChat: { squareChatMid: chat, squareMemberMid: supplied,
+      squareMember: { ...member(supplied), displayName: "イベント退出名" } } } } as unknown as Parameters<typeof normalizeEvent>[0], service);
+  assert(leave?.type === "memberChanged" && leave.displayName === "イベント退出名");
+  await submitEvent(leave); const suppliedNotice = await drain(); assert(texts(suppliedNotice).includes("イベント退出名さん退出"));
+  assert(!memberLookups.includes(supplied));
+  await message("通常会話", cached, undefined, sub, { senderName: "サブトークの名前" }); await drain();
+  async function unnamed(id: string, state: string) {
+    await submitEvent({ type: "memberChanged", eventId: `unnamed-${sequence}`, squareId: square, chatId: chat,
+      memberId: id, displayName: "", scope: "chat", state, createdAtMs: Date.now() });
+  }
+  await unnamed(cached, "LEFT"); assert(texts(await drain()).includes("サブトークの名前さん退出"));
+  assert(!memberLookups.includes(cached));
+  names.set(lookedUp, "照会した参加名"); await unnamed(lookedUp, "JOINED");
+  // 照会前の名前を未取得のまま保存し、再起動後も補完を継続する。
+  core.shutdown(); core = createCore(config);
+  assert(texts(await drain()).includes("照会した参加名さん、照会した参加名さん歓迎"));
+  assert.equal(memberLookups.filter(id => id === lookedUp).length, 1);
+  failedNameLookups.add(unresolved); await unnamed(unresolved, "LEFT");
+  const fallbackNotice = texts(await drain()); assert(fallbackNotice.includes(`未取得 (${unresolved})`));
+  assert(!fallbackNotice.includes("メンバーさん"));
+  assert.equal(memberLookups.filter(id => id === unresolved).length, 1);
+  assert.equal((await drain()).length, 0);
   console.log(JSON.stringify({ ok: true, scenarios: ["permissions-session-query-restart-unknown", "mute-url-media", "push-notification-oc-leave"] }));
 } finally { controller.abort(); core.shutdown(); db.close(); }

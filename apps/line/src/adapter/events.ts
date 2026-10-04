@@ -64,7 +64,8 @@ export async function normalizeEvent(event: Event, directory?: SquareDirectory, 
   } else if (["2", "NOTIFIED_JOIN_SQUARE_CHAT"].includes(type)) {
     const update = record(raw.notifiedJoinSquareChat); member = record(update.joinedMember); chatId = string(update.squareChatMid); state = "JOINED";
   } else if (["4", "NOTIFIED_LEAVE_SQUARE_CHAT"].includes(type)) {
-    const update = record(raw.notifiedLeaveSquareChat); memberId = string(update.squareMemberMid); chatId = string(update.squareChatMid); state = "LEFT";
+    const update = record(raw.notifiedLeaveSquareChat); member = record(update.squareMember);
+    memberId = string(update.squareMemberMid); chatId = string(update.squareChatMid); state = "LEFT";
   } else if (["14", "NOTIFIED_UPDATE_SQUARE_CHAT_MEMBER"].includes(type)) {
     const update = record(raw.notifiedUpdateSquareChatMember), chatMember = record(update.squareChatMember);
     memberId = string(chatMember.squareMemberMid); chatId = string(update.squareChatMid) || string(chatMember.squareChatMid);

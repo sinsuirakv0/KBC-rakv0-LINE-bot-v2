@@ -63,6 +63,7 @@ enum Phase {
     Chats,
     Id,
     TestInspect,
+    MemberNotice,
 }
 #[derive(Serialize, Deserialize)]
 struct Job {
@@ -104,6 +105,7 @@ pub fn initialize(db: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS oc_members(square TEXT NOT NULL,member TEXT NOT NULL,name TEXT NOT NULL,joined INTEGER NOT NULL,first INTEGER NOT NULL,visits INTEGER NOT NULL,state TEXT NOT NULL,last INTEGER NOT NULL,cohort INTEGER NOT NULL DEFAULT 0,suspicious INTEGER NOT NULL DEFAULT 0,messages INTEGER NOT NULL DEFAULT 0,last_text TEXT NOT NULL DEFAULT '',PRIMARY KEY(square,member));
         CREATE INDEX IF NOT EXISTS oc_members_last ON oc_members(last);
         CREATE TABLE IF NOT EXISTS oc_presence(square TEXT NOT NULL,chat TEXT NOT NULL,member TEXT NOT NULL,state TEXT NOT NULL,at INTEGER NOT NULL,name TEXT NOT NULL,PRIMARY KEY(square,chat,member));
+        CREATE INDEX IF NOT EXISTS oc_presence_member ON oc_presence(square,member,at DESC);
         CREATE TABLE IF NOT EXISTS oc_media(square TEXT NOT NULL,member TEXT NOT NULL,message TEXT NOT NULL,chat TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(chat,message));
         CREATE INDEX IF NOT EXISTS oc_media_member ON oc_media(square,member,at);
         CREATE TABLE IF NOT EXISTS oc_notices(id TEXT PRIMARY KEY,at INTEGER NOT NULL);
@@ -347,8 +349,15 @@ fn request(
     job.phase = phase;
     job.step += 1;
     let (event, chat, _, _, _) = identity(&job.event);
+    // 同じ退出イベントの処分照会と名前照会を別のActionとして保存する。
+    let scope = if matches!(job.phase, Phase::MemberNotice) {
+        "member-name"
+    } else {
+        "api"
+    };
+    let action_id = format!("{event}:oc:{scope}:{}", job.step);
     let action = CoreAction::OcApi {
-        action_id: format!("{event}:oc:api:{}", job.step),
+        action_id: action_id.clone(),
         event_id: event.into(),
         chat_id: chat.into(),
         request,
@@ -359,10 +368,7 @@ fn request(
     if read {
         tx.execute(
             "UPDATE actions SET due=?2 WHERE id=?1",
-            params![
-                format!("{event}:oc:api:{}", job.step),
-                identity(&job.event).4.min(now)
-            ],
+            params![action_id, identity(&job.event).4.min(now)],
         )?;
     }
     Ok(())
@@ -559,6 +565,9 @@ pub fn complete(
         return Ok(());
     }
     let mut job: Job = serde_json::from_str(continuation)?;
+    if matches!(job.phase, Phase::MemberNotice) {
+        return moderation::complete_notice(runtime, tx, &job, result, now);
+    }
     if job.input.name == "test" && matches!(job.phase, Phase::Mutation) {
         return test::mutated(message_catalog, tx, &job, action, result, resolving, now);
     }
@@ -642,6 +651,7 @@ pub fn complete(
         Phase::Report => moderation::after_report(message_catalog, tx, &mut job, result, now),
         Phase::Id => id::complete(message_catalog, tx, &mut job, result, now),
         Phase::TestInspect => unreachable!(),
+        Phase::MemberNotice => unreachable!(),
     }
 }
 fn sent_prompt(

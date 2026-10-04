@@ -482,15 +482,13 @@ pub fn member_event(
     {
         return Ok(());
     }
-    let name = if display_name.is_empty() {
-        previous
-            .as_ref()
-            .map(|(_, _, name)| name.clone())
-            .filter(|name| !name.is_empty())
-            .unwrap_or(message!(message_catalog, "common.member").into())
+    let known_name = if display_name.is_empty() {
+        member_name(tx, square_id, member_id)?
     } else {
-        display_name.clone()
+        Some(display_name.clone())
     };
+    // 代替ラベルは観測済みの名前として保存しない。
+    let name = known_name.clone().unwrap_or_default();
     tx.execute("INSERT INTO oc_presence VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(square,chat,member) DO UPDATE SET state=excluded.state,at=excluded.at,name=excluded.name",params![square_id,presence_chat,member_id,state,created_at_ms,name])?;
     tx.execute("DELETE FROM oc_presence WHERE rowid IN (SELECT rowid FROM oc_presence ORDER BY at DESC,rowid DESC LIMIT -1 OFFSET 8192)",[])?;
     let destination = if scope == "square" {
@@ -513,49 +511,33 @@ pub fn member_event(
                 now,
             )?
         {
-            let mut text = template.text.replace("<name>", &name);
-            if template.show_id {
-                use base64::Engine;
-                use sha1::Digest;
-                let digest = sha1::Sha1::digest(format!("{square_id}:{member_id}").as_bytes());
-                let id = base64::engine::general_purpose::URL_SAFE_NO_PAD
-                    .encode(digest)
-                    .chars()
-                    .filter(|c| c.is_ascii_alphanumeric())
-                    .take(6)
-                    .collect::<String>()
-                    .to_ascii_lowercase();
-                text = message!(
+            if let Some(name) = known_name.as_deref() {
+                send_notice(
                     message_catalog,
-                    "moderation.notification_id",
-                    id = id,
-                    text = text
-                );
-            }
-            let label = format!("@{name}");
-            let mention = if template.mention {
-                text = message!(
-                    message_catalog,
-                    "moderation.notification_mention",
-                    mention = label,
-                    text = text
-                );
-                mention_span(&text, &label, member_id)
+                    tx,
+                    event,
+                    destination,
+                    &template,
+                    name,
+                    now,
+                )?;
+            } else if template.mention || template.text.contains("<name>") {
+                let mut job = signal_job(event, &value, square_id, "", "member-notice");
+                job.event = event.clone();
+                job.input.body = destination.into();
+                job.deferred = Some(serde_json::to_string(&template)?);
+                request(
+                    tx,
+                    &mut job,
+                    OcRequest::Member {
+                        member_id: member_id.clone(),
+                    },
+                    Phase::MemberNotice,
+                    now,
+                )?;
             } else {
-                None
-            };
-            text_action(
-                tx,
-                event,
-                "member-notify",
-                destination,
-                text,
-                TextDelivery {
-                    mention,
-                    ..Default::default()
-                },
-                now,
-            )?;
+                send_notice(message_catalog, tx, event, destination, &template, "", now)?;
+            }
         }
     }
     if !(value.left || value.danger || value.cohort) {
@@ -639,6 +621,136 @@ pub fn member_event(
     }
     Ok(())
 }
+
+// 名前の観測はOC単位で共有し、別トークの入退室にも使う。
+fn member_name(tx: &Transaction<'_>, square: &str, member: &str) -> Result<Option<String>> {
+    Ok(tx.query_row("SELECT name FROM (
+        SELECT name,at FROM log_members WHERE square=?1 AND member=?2 AND name<>''
+        UNION ALL SELECT name,at FROM oc_presence WHERE square=?1 AND member=?2 AND name<>'' AND name<>'メンバー'
+        ) ORDER BY at DESC LIMIT 1",params![square,member],|row|row.get(0)).optional()?)
+}
+pub fn complete_notice(
+    runtime: &Runtime,
+    tx: &Transaction<'_>,
+    job: &Job,
+    result: &ActionResult,
+    now: i64,
+) -> Result<()> {
+    let message_catalog = &runtime.content.messages;
+    let CoreEvent::MemberChanged {
+        square_id,
+        member_id,
+        created_at_ms,
+        ..
+    } = &job.event
+    else {
+        return Err("InvalidMemberNotice".into());
+    };
+    let member = result
+        .oc_result
+        .as_ref()
+        .and_then(|value| value.member.as_ref())
+        .filter(|member| {
+            matches!(result.status, DeliveryStatus::Sent)
+                && member.square_id == *square_id
+                && member.member_id == *member_id
+                && !member.name.is_empty()
+        });
+    let name = if let Some(member) = member {
+        tx.execute(
+            "UPDATE oc_presence SET name=?3 WHERE square=?1 AND member=?2 AND name='' AND at<=?4",
+            params![square_id, member_id, member.name, created_at_ms],
+        )?;
+        tx.execute(
+            "UPDATE oc_members SET name=?3 WHERE square=?1 AND member=?2 AND name='' AND last<=?4",
+            params![square_id, member_id, member.name, created_at_ms],
+        )?;
+        member.name.clone()
+    } else {
+        member_name(tx, square_id, member_id)?.unwrap_or_else(|| {
+            message!(
+                message_catalog,
+                "moderation.member_name_unknown",
+                member = member_id,
+                status = message!(message_catalog, "common.unavailable")
+            )
+        })
+    };
+    let template: Template =
+        serde_json::from_str(job.deferred.as_deref().ok_or("MissingMemberNotice")?)?;
+    send_notice(
+        message_catalog,
+        tx,
+        &job.event,
+        &job.input.body,
+        &template,
+        &name,
+        now,
+    )
+}
+fn send_notice(
+    message_catalog: &crate::messages::Messages,
+    tx: &Transaction<'_>,
+    event: &CoreEvent,
+    destination: &str,
+    template: &Template,
+    name: &str,
+    now: i64,
+) -> Result<()> {
+    let CoreEvent::MemberChanged {
+        square_id,
+        member_id,
+        ..
+    } = event
+    else {
+        return Err("InvalidMemberNotice".into());
+    };
+    let mut text = template.text.replace("<name>", name);
+    if template.show_id {
+        use base64::Engine;
+        use sha1::Digest;
+        let digest = sha1::Sha1::digest(format!("{square_id}:{member_id}").as_bytes());
+        let id = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(digest)
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .take(6)
+            .collect::<String>()
+            .to_ascii_lowercase();
+        text = message!(
+            message_catalog,
+            "moderation.notification_id",
+            id = id,
+            text = text
+        );
+    }
+    let label = format!("@{name}");
+    let mention = if template.mention {
+        text = message!(
+            message_catalog,
+            "moderation.notification_mention",
+            mention = label,
+            text = text
+        );
+        mention_span(&text, &label, member_id)
+    } else {
+        None
+    };
+    text_action(
+        tx,
+        event,
+        "member-notify",
+        destination,
+        text,
+        TextDelivery {
+            mention,
+            ..Default::default()
+        },
+        now,
+    )?;
+    Ok(())
+}
+
 fn signal_job(
     event: &CoreEvent,
     value: &Settings,

@@ -15,3 +15,4 @@ moderation.member_event_01 = "2分以内に初参加者3人以上。30分の監�
 moderation.mute_01 = "{mention}\n現在ミュートされています。期限まで待つか、手動解除をお待ちください。\n残り時間: {arg1}"
 moderation.notification_id = "ID: {id}\n{text}"
 moderation.notification_mention = "{mention}\n{text}"
+moderation.member_name_unknown = "{status} ({member})"

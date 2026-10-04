@@ -4,6 +4,8 @@
 
 ## 関数と処理経路
 
+2026-10-04、NOTIFIED_LEAVE_SQUARE_CHATのsquareMember.displayNameを正規化DTOへ保持する修正を追加した。採用SDKのSquareEventNotifiedLeaveSquareChatのThrift項目でsquareMemberを確認。名前がない場合の観測名参照と通知対象だけの追加照会は[Core](../../../crates/kbc-core/src/oc/docs/OC.md)で行い、Adapterの受信中に名前APIを追加しない。
+
 `main → AuthStorage.load → SDK login → createCore → Receiver.run + 2本の配送loop + 1本の照会loop`。
 
 | 関数・状態 | 働き・相互関係 |

@@ -65,6 +65,7 @@ URLはNFKCで抽出し、同じorigin（scheme・host・port）のHTTPSだけを
 | request / complete | OcRequestとJobを既存Outboxへ保存。結果登録と後続Action・設定を同一transactionで確定 |
 | commands::target / mutation | 現在の対象MID・OC・役割・revisionを照合し、処分結果を履歴へ記録。複数対象は直列 |
 | moderation::candidate / execute | 安価な候補と現在roleを分離。処分候補以外の通常Commandは既存apply_commandへ渡す |
+| moderation::member_name / complete_notice / send_notice | OC単位の観測名を参照。不足する通知対象だけ既存Member照会を依頼し、再起動後も同じ通知本文を生成 |
 | moderation::member_event / confirm_left | トーク状態・参加回数・初参加・一斉参加を保存し、退会照会後に処分を判断 |
 | SquareDirectory.chat / execute | OC対応だけを有限cache、roleは現在照会。SDK返値を検査し、BigInt revisionを文字列DTOへ変換 |
 | normalizeEvent / Receiver.accept | テキスト・媒体・参加退出を正規化し、Core commit後にcursorを確定。baselineより古い履歴ではOC追加取得を省く |
@@ -94,3 +95,11 @@ leftmessageと処分審議の旧aliasを復元した。BANNED解除は引き続�
 利用者向けの権限案内・設定表示・通知・履歴ラベルは[Messages](../../../docs/MESSAGES.md)を共有する。表示の変更は保存状態やコマンドの判定語へ適用しない。入退室のOC別本文は既存設定を維持し、共通のメンション・ID付加部分は文面カタログを使う。mention_spanは編集後の本文からUTF-16位置を求める。
 
 通常の管理機能の権限区分・対象保護を維持し、!testの複数OC許可登録とメンション・管理操作を別に追加した。BOT adminだけが管理下の検証対象OCを登録し、実行元と対象の双方を照合する。実APIでの権限不足の結果も記録する。[検証OCの操作と関数](TEST_OC.md)。
+
+## 参加・退出通知の名前補完（2026-10-04）
+
+LINEJS 3.4.2のSquareEventNotifiedLeaveSquareChatはsquareMemberを持つ場合がある。Adapterがこの項目を読まず、Coreも同じトークのpresenceだけから名前を探していたため、<name>が「メンバー」になっていた。退出のsquareMember.displayNameを保持し、名前のない参加・退出は同じOCのlog_membersとoc_presenceの観測済み名を参照する。他のOCの名前は使わない。
+
+名前・メンションが必要な通知対象で、観測名もない場合だけ、既存OutboxのMember照会を1件追加する。処分用の照会とAction IDを分け、通知のための取得を受信transactionで待たない。未知の名前をpresenceへ代替ラベルで保存しない。照会したMID・OCを検査し、失敗時は「未取得 (pMID)」で送る。成功した名前は状態や時刻を変えず不足名だけ補う。既存90秒の重複通知抑制・API枠・Queue上限を使う。
+
+SDKの名前付き退出、サブトークの投稿で観測した名の再利用、未知参加者の1回照会・再起動、照会失敗時のMID付き案内をOC Smokeで確認した。build・型検査・Clippyと受信基盤のSmokeも通過した。名前のない参加・退出のSDK応答や、退会後に照会できる範囲は実OCでの確認事項として残る。

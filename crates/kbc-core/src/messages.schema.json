@@ -545,5 +545,9 @@
     "name",
     "target",
     "detail"
+  ],
+  "moderation.member_name_unknown": [
+    "member",
+    "status"
   ]
 }

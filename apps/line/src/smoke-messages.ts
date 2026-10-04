@@ -28,17 +28,17 @@ async function replace(key: string, body: string) {
   await writeFile(path, original.replace(new RegExp(`^${key.replaceAll(".", "\\.")} = .*$`, "m"), `${key} = ${JSON.stringify(body)}`));
 }
 try {
-  await submit("!test-notify 1");
+  await submit("!test-notify 60");
   await replace("search.prepare_04", "🙂 {seconds}秒待ってください。{{固定}}");
   core.shutdown(); core = createCore(config);
-  assert.equal(await take(), "1秒後に通知を送ります。");
-  await submit("o.test-notify 1");
-  assert.equal(await take(), "🙂 1秒待ってください。{固定}");
+  assert.equal(await take(), "60秒後に通知を送ります。");
+  await submit("o.test-notify 60");
+  assert.equal(await take(), "🙂 60秒待ってください。{固定}");
   const other = createCore({ ...config, databasePath: join(directory, "other.sqlite"), contentDirectory: "content" });
   try {
     await other.submitBatchAsync({ protocolVersion: PROTOCOL_VERSION, streamKey: "other", checkpoint: "1", baselineBeforeMs: null,
-      events: [{ type: "messageReceived", eventId: "other", chatId: "other", messageId: "1", text: "!test-notify 1", createdAtMs: Date.now() }] });
-    const action = await other.nextAction(); assert(action?.type === "sendMessage" && action.text === "1秒後に通知を送ります。");
+      events: [{ type: "messageReceived", eventId: "other", chatId: "other", messageId: "1", text: "!test-notify 60", createdAtMs: Date.now() }] });
+    const action = await other.nextAction(); assert(action?.type === "sendMessage" && action.text === "60秒後に通知を送ります。");
   } finally { other.shutdown(); }
   core.shutdown();
   for (const [body, code] of [[original + "\nunknown.key = test", "UnknownMessageKey"],
