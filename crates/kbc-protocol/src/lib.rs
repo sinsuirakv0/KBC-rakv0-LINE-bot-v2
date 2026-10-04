@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTOCOL_VERSION: u32 = 11;
+pub const PROTOCOL_VERSION: u32 = 12;
 
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -146,6 +146,9 @@ pub enum CoreAction {
         mention: Option<MessageMention>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
+        emojis: Option<Vec<MessageEmoji>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         image_url: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
@@ -188,6 +191,15 @@ pub enum CoreAction {
         #[ts(type = "number")]
         created_at_ms: i64,
     },
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageEmoji {
+    pub product_id: String,
+    pub emoji_id: String,
+    pub start: u32,
+    pub end: u32,
 }
 
 #[derive(Debug, Deserialize, Serialize, TS)]

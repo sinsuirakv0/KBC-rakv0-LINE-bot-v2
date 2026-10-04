@@ -404,6 +404,7 @@ impl Runtime {
             event_id,
             chat_id,
             related_message_id,
+            emojis: None,
             text,
             image_url: None,
             attachment,

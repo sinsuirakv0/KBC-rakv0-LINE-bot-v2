@@ -5,9 +5,18 @@ import type { OcResult } from "../protocol/generated/OcResult.js";
 import type { OcMember } from "../protocol/generated/OcMember.js";
 import type { OcChat } from "../protocol/generated/OcChat.js";
 import type { MessageMention } from "../protocol/generated/MessageMention.js";
+import type { MessageEmoji } from "../protocol/generated/MessageEmoji.js";
 
 export function mentionMetadata(mention?: MessageMention | null): Record<string, string> | undefined {
   return mention ? { MENTION: JSON.stringify({ MENTIONEES: [{ S: String(mention.start), E: String(mention.end), M: mention.memberId }] }) } : undefined;
+}
+export function messageMetadata(mention?: MessageMention | null, emojis?: MessageEmoji[] | null): Record<string, string> | undefined {
+  const metadata = mentionMetadata(mention) ?? {};
+  if (emojis?.length) {
+    metadata.REPLACE = JSON.stringify({ sticon: { resources: emojis.map(item => ({ S: item.start, E: item.end,
+      productId: item.productId, sticonId: item.emojiId, version: 1, resourceType: "STATIC" })) } });
+  }
+  return Object.keys(metadata).length ? metadata : undefined;
 }
 
 type ChatInfo = Awaited<ReturnType<BaseClient["square"]["getSquareChat"]>>;

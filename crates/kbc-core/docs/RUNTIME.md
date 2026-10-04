@@ -33,7 +33,7 @@ txtと同梱検索を受付でAction化する。検索の走査は不変snapshot
 
 ## Bridge
 
-`kbc-protocol`のRust型から`apps/line/src/protocol/generated/`を生成する。本人・返信先・送信ID・画像URLとOC操作を追加したLINE専用Protocol v10。NativeとAdapterを同時に更新し、旧Adapterと混在させない。`kbc-node`は変換とRuntime呼出だけを行う。
+`kbc-protocol`のRust型から`apps/line/src/protocol/generated/`を生成する。本人・返信先・送信ID・画像URLとOC操作を追加したLINE専用Protocol v12。NativeとAdapterを同時に更新し、旧Adapterと混在させない。`kbc-node`は変換とRuntime呼出だけを行う。
 
 JSからNativeへの設定・Batch・結果は型付きDTOをJSON文字列化して渡す。N-APIのserde Value変換では整数の時刻がf64として入ってi64の復元に失敗したため、この小さな境界では整数表現を保つ。出力はplain DTO。大きな画像・SDKオブジェクトをこの経路へ渡さない。
 
@@ -66,3 +66,5 @@ Protocol v9はProfile変更要求を追加する。BOT管理者の!bot nameは�
 Protocol v10はOcResultのrawMemberNameを追加し、Bot名の完全一致判定へ未加工のLINEプロフィール名を使う。表示用DTOの短縮・改行整形とAPI確認を分ける。Bot固有の20文字・改行・制御文字制限は利用者指定で撤廃し、共通の入力・結果byte上限を維持する。
 
 Protocol v11はReactionNotified / Reactions / OcReactionを追加する。Reactionsは既存のnext_query_actionへ渡し、OC管理・モデレーション・メッセージログの入力とは区別する。sessions.pending_payloadを起動時に追加し、照会と変更先を保持する。complete_search_reactionは共通enqueue_responsesでページ投稿を作り、complete_actionはSendMessage成功時だけpending_payloadを確定する。未知の送信結果を自動再送しない。[ページ操作の関数・検証](../src/commands/docs/COMMANDS.md)。
+
+Protocol v12はSendMessageに任意のMessageEmojiを追加し、通常配送でLINE標準絵文字を付ける。旧保存Actionの未指定値はdefaultで復元し、新旧Native / Adapterは混在させない。message_refsはスタンプとLINE絵文字の必要なIDだけを保持し、既存の件数・期間・DB byte上限とsnapshotを共有する。[IDの関数と上限](../src/oc/docs/ID.md)。

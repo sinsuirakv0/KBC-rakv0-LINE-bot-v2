@@ -460,6 +460,7 @@ impl Runtime {
                     event_id: event_id.into(),
                     chat_id: chat_id.into(),
                     related_message_id: String::new(),
+                    emojis: commands::message_emojis(&body),
                     text: body,
                     image_url: None,
                     attachment: None,

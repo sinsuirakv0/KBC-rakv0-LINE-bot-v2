@@ -11,6 +11,10 @@
 !id reply: リプライ先のmessage IDなど
 !id message <message ID> [--chat m...]: IDを直接指定して参照
 !id reply <message ID> [--chat m...]: 同じく直接指定
+!id sticker / !id stamp: リプライ先のスタンプのセットID・スタンプID
+!id emoji: リプライ先のLINE絵文字のセットID・絵文字ID（先頭20個）
+!id emoji にLINE絵文字を添えても取得できます。
+sticker / emojiにも <message ID> [--chat m...] を指定できます。
 リプライ用のrelatedMessageId・service・relationを表示します。
 元トーク・送信者は同じOCの受信済み情報（直近48時間・8,192件まで）から取得します。未観測の所属は推測しません。
 別OCへのリプライは未確認です。

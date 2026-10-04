@@ -7,7 +7,7 @@ import { BaseClient } from "@evex/linejs/base";
 import { ApiScheduler } from "./adapter/api.js";
 import { deliverAction } from "./adapter/delivery.js";
 import { normalizeEvent } from "./adapter/events.js";
-import { SquareDirectory } from "./adapter/square.js";
+import { SquareDirectory, messageMetadata } from "./adapter/square.js";
 import { createCore, PROTOCOL_VERSION, type CoreAction } from "./protocol/native.js";
 
 const directory = await mkdtemp(join(tmpdir(), "kbc-command-smoke-"));
@@ -65,13 +65,19 @@ try {
 
   // 本人・トーク・送信済みpromptに結び付け、再起動とページ更新後も誤選択しない。
   await submit("o.ut ねこ"); const firstPage = await take(); assert(firstPage.text.includes("👍（いいね）：次へ") && !firstPage.text.includes("9：次へ")); sent(firstPage, "prompt-one");
+  assert(firstPage.text.includes("一覧を長押し"));
+  assert.equal(firstPage.emojis?.[0]?.emojiId, "143");
+  const pageMetadata = JSON.parse(messageMetadata(undefined, firstPage.emojis)!.REPLACE).sticon.resources;
+  assert.equal(firstPage.text.slice(pageMetadata[0].S, pageMetadata[0].E), "👍");
+  assert.equal(pageMetadata[0].productId, "670e0cce840a8236ddd4ee4c");
   assert.equal((await submit("1", "bob", "prompt-one")).actionsCreated, 0);
   assert.equal((await submit("1", "alice", "prompt-one", "other-chat")).actionsCreated, 0);
   assert.equal((await submit("1")).actionsCreated, 0);
   core.shutdown();
   db.exec("ALTER TABLE sessions DROP COLUMN pending_payload");
   core = createCore(config);
-  await submit("9", "alice", "prompt-one"); action = await take(); assert(action.text.includes("ページ移動は👍")); sent(action);
+  await submit("9", "alice", "prompt-one"); action = await take(); assert(action.text.includes("長押し")); sent(action);
+  assert.equal((await submit("👍", "alice", "prompt-one")).actionsCreated, 0);
   assert.equal((await notifyReaction("prompt-one", "LOVE")).actionsCreated, 0);
   assert.equal((await notifyReaction("prompt-one", "NICE", "other-chat")).actionsCreated, 0);
   const reactionController = new AbortController(), reactionGate = new ApiScheduler(reactionController.signal, 2, 1);
@@ -90,6 +96,7 @@ try {
   await notifyReaction("prompt-one", "NICE"); query = await core.nextQueryAction(); assert(query);
   await deliverAction(reactionClient, core, reactionGate, query, reactionDirectory);
   const secondPage = await take(); assert(secondPage.text.includes("9〜16") && secondPage.text.includes("❤️（ハート）：前へ"));
+  assert(secondPage.emojis?.some(item => item.emojiId === "165" && secondPage.text.slice(item.start, item.end) === "❤️"));
   assert.equal((JSON.parse((db.prepare("SELECT payload FROM sessions").get() as { payload: string }).payload)).page, 0);
   await submit("1", "alice", "prompt-one");
   const oldCleanupId = `cleanup:${JSON.stringify(["chat", "prompt-one"])}`;

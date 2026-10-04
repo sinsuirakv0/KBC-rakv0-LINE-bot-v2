@@ -459,7 +459,10 @@ impl SearchCatalog {
                 moves.push("❤️（ハート）：前へ");
             }
             if !moves.is_empty() {
-                lines.push(format!("リアクション：{}", moves.join("　")));
+                lines.push(format!(
+                    "一覧を長押ししてリアクションを付ける\n{}",
+                    moves.join("　")
+                ));
             }
             lines.push(
                 "終了：受付を終える\n検索した本人のみ・10分間\n一覧は操作後・10分経過で削除".into(),

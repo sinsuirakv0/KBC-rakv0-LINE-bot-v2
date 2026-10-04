@@ -260,6 +260,7 @@ fn text_action(
             event_id: root.into(),
             chat_id: chat.into(),
             related_message_id: related_message_id.clone().unwrap_or_default(),
+            emojis: crate::commands::message_emojis(&text),
             text,
             image_url: None,
             attachment: None,

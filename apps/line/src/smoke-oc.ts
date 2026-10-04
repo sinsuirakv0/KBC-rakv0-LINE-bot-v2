@@ -73,9 +73,15 @@ client.square.destroyMessage = async options => gate.run("destroyMessage", async
 let promptSequence = 0;
 const replySends: Array<{ chat: string; message: string; text: string | undefined }> = [];
 const mentionSends: Array<{ chat: string; text: string | undefined; metadata: string }> = [];
+const emojiSends: string[] = [];
 client.square.sendMessage = async options => gate.run("sendMessage", async () => {
   if (options.relatedMessageId) replySends.push({ chat: options.squareChatMid, message: options.relatedMessageId, text: options.text });
   if (options.contentMetadata?.MENTION) mentionSends.push({ chat: options.squareChatMid, text: options.text, metadata: options.contentMetadata.MENTION });
+  if (options.contentMetadata?.REPLACE) {
+    const resources = JSON.parse(options.contentMetadata.REPLACE).sticon.resources;
+    for (const item of resources) assert(["👍", "❤️"].includes(options.text!.slice(item.S, item.E)));
+    emojiSends.push(options.contentMetadata.REPLACE);
+  }
   gate.beforeFetch(); return { createdSquareMessage: { message: { id: `bot-${++promptSequence}` } } } as Awaited<ReturnType<typeof client.square.sendMessage>>;
 });
 const service = new SquareDirectory(client);
@@ -225,6 +231,31 @@ try {
   await message("!id reply", user, sourceId); const reference = await drain();
   assert(texts(reference).includes(`relatedMessageId: ${sourceId}`) && texts(reference).includes(`元トークMID: ${sub}`));
   await message(`!id message ${sourceId} --chat ${sub}`, user); assert(texts(await drain()).includes("参加者🙂"));
+  // 装飾のIDだけを有限保存し、同じOCの受信済み投稿・再起動・不正metadataを確認する。
+  const stickerId = await message("", user, undefined, sub, { contentType: "STICKER", metadataJson: JSON.stringify({ contentMetadata: { STKPKGID: "1", STKID: "7", STKVER: "1", STKOPT: "A" } }) }); await drain();
+  core.shutdown(); core = createCore(config);
+  await message("!id sticker", user, stickerId); const stickerInfo = texts(await drain());
+  assert(stickerInfo.includes("STKPKGID): 1") && stickerInfo.includes("STKID): 7") && stickerInfo.includes("STKOPT): A"));
+  await message(`!id stamp ${stickerId} --chat ${sub}`, user); assert(texts(await drain()).includes("STKID): 7"));
+  await message(`!id sticker ${stickerId}`, labUser, undefined, labChat, { squareId: labSquare }); assert(texts(await drain()).includes("未観測"));
+  const emojiMetadata = { contentMetadata: { REPLACE: JSON.stringify({ sticon: { resources: [
+    { S: 2, E: 4, productId: "670e0cce840a8236ddd4ee4c", sticonId: "143", version: 1, resourceType: "STATIC" },
+    { S: 4, E: 6, productId: "670e0cce840a8236ddd4ee4c", sticonId: "165", version: 1, resourceType: "STATIC" },
+  ] } }) } };
+  const emojiMessage = await message("🙂👍❤️", user, undefined, sub, { metadataJson: JSON.stringify(emojiMetadata) }); await drain();
+  await message("!id emoji", user, emojiMessage); const emojiInfo = texts(await drain());
+  assert(emojiInfo.includes("sticonId): 143") && emojiInfo.includes("sticonId): 165") && emojiInfo.includes("2〜4"));
+  await message("o.id emoji 👍", user, undefined, chat, { metadataJson: JSON.stringify(emojiMetadata) }); assert(texts(await drain()).includes("sticonId): 143"));
+  const badEmoji = await message("文字", user, undefined, chat, { metadataJson: '{"contentMetadata":{"REPLACE":"{broken"}}' }); await drain();
+  await message("!id emoji", user, badEmoji); assert(texts(await drain()).includes("ID情報がありません"));
+  await message("!id emoji 未観測", user); assert(texts(await drain()).includes("未観測"));
+  const manyEmoji = { contentMetadata: { REPLACE: JSON.stringify({ sticon: { resources: Array.from({ length: 21 }, (_, index) => ({ productId: "pack", sticonId: String(index + 1) })) } }) } };
+  const manyId = await message("絵文字", user, undefined, chat, { metadataJson: JSON.stringify(manyEmoji) }); await drain();
+  await message(`!id emoji ${manyId}`, user); const boundedInfo = texts(await drain());
+  assert(boundedInfo.includes("先頭20個") && boundedInfo.includes("sticonId): 20") && !boundedInfo.includes("sticonId): 21"));
+  await message("!ut help", user); await drain(); assert.equal(emojiSends.length, 1);
+  assert.deepEqual(JSON.parse(emojiSends[0]!).sticon.resources.map((item: { sticonId: string }) => item.sticonId), ["143", "165"]);
+  await message("!id reply", user, sourceId); assert(texts(await drain()).includes(`元トークMID: ${sub}`));
   await message("!id 参加者", user); assert(texts(await drain()).includes(user));
   // 旧権限区分、本人への番号返信、照会待ちの通常配送と再起動。
   await message(`o.oc kick ${user}`, admin); assert(texts(await drain()).includes("実行権限"));

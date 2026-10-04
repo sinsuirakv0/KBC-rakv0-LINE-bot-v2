@@ -1,10 +1,14 @@
 ﻿# OCのリアクションとスタンプ
 
-2026-10-04。LINEJS 3.4.2（npm revision 11）と同梱linejs-typesを確認。npmの最新公開版も3.4.2。以下は実装確認とオフライン検証であり、実OCの通知到達・スタンプ送信成功は未確認。
+2026-10-04。LINEJS 3.4.2（npm revision 11）と同梱linejs-typesを確認。npmの最新公開版も3.4.2。以下は実装確認とオフライン検証。15:54 JSTの本環境healthでNOTIFICATION_MESSAGE_REACTIONを1件観測したが、検索promptへの操作との対応・照会APIの成功・本文絵文字の実表示・スタンプ送信成功は未確認。
 
 ## ページ操作
 
 利用者指定で検索一覧の👍（いいね）を次ページ、❤️（ハート）を前ページにした。項目選択は番号リプライ。ut / tut / stと関連ファイル選択が同じSessionを使う。OCでは標準以外の絵文字リアクションを使えないという[公式の制約](https://help.line.me/line/?contentId=20020725&lang=ja)がある。
+
+案内は「一覧を長押ししてリアクションを付ける」と明示する。本文への絵文字リプライはページ操作として処理しない。2026-10-04に[公式のLINE絵文字一覧](https://developers.line.biz/ja/docs/messaging-api/emoji-list/)を展開し、標準セット670e0cce840a8236ddd4ee4cの143（いいね）・165（ハート）の画像を目視照合した。これらを本文の案内に使う。本文に置く絵文字は操作ボタンではなく、長押しメニューのリアクションを示す画像である。
+
+Protocol v12のSendMessage.emojis / MessageEmojiはproductId・emojiIdとUTF-16開始終了位置だけを渡す。commands::message_emojisは分割後の案内の該当部分を最大20個装飾する。AdapterのmessageMetadataはmentionMetadataを維持し、SDK EmojiMetaと同じREPLACE.sticon.resources（S / E / productId / sticonId / version=1 / resourceType=STATIC）へ変換する。常時APIを増やさない。Squareの実送信での表示は未確認で、公式Messaging APIのemojisフィールドをSquareへ直接渡さない。
 
 3.4.2のSquareEventType 47（NOTIFICATION_MESSAGE_REACTION）はnotificationMessageReactionにトークMID・messageId・type・reactorNameを持つが、reactor MIDは持たない。NICE=2、LOVE=3、UNDO=1。通知の表示名を本人確認に使わない。normalizeEventはNICE / LOVEだけをProtocol v11のReactionNotifiedに変換し、時刻・トーク・メッセージ・種類で重複照合する。取り消しとその他の種類はページを変えない。baseline以前の通知も使わない。
 
@@ -16,12 +20,16 @@ Coreのrequest_reactionは期限内の最新promptを検索し、移動できる
 
 smoke:commandsは本SDKのThrift引数を通した照会、別人・別トーク・旧prompt・連打、切替中の番号、確定失敗後の復帰、再起動、ページ選択を通信なしで確認する。実通知47の到達と実getMessageReactionsの返値は、配備後に利用者の少数OC操作で確認する。
 
+v12のオフライン検証では、案内のUTF-16範囲・通常配送がSDKへ渡すREPLACE・絵文字リプライの無視を確認。smoke:ocでsticker / stamp・複数emoji・本文に添えるemoji・明示message ID・同OCサブトーク・別OC参照拒否・不正JSON・20個上限・再起動後の保持を既存経路に追加した。型検査・Native build・3種類のSmokeを通過した。模擬SDK送信を実LINE表示の成功として扱わない。
+
 ## スタンプ
 
-LINEJSのStickerMetadataはSTKPKGID（セットID）、STKID（スタンプID）、STKVER（version）、STKTXT（代替文）、任意のSTKOPTを定義している。受信したcontentType=STICKERのcontentMetadataに入る。現在のnormalizeEventはこれらをmetadataJsonへ保存し、既存トークログも保持する。既存!idはスタンプ専用IDの整形表示をまだ持たない。
+LINEJSのStickerMetadataはSTKPKGID（セットID）、STKID（スタンプID）、STKVER（version）、STKTXT（代替文）、任意のSTKOPTを定義している。受信したcontentType=STICKERのcontentMetadataに入る。normalizeEventはmetadataJsonへ保存し、既存トークログも保持する。!id sticker / stampへ専用表示を追加した。[参照範囲・関数・上限](../../../crates/kbc-core/src/oc/docs/ID.md)。
+
+LINE絵文字はcontentMetadata.REPLACEのJSON内にsticon.resourcesがあり、productIdがセットID、sticonIdが絵文字ID。SDK collectEmojiURLs / getTextDecorationsも同じ項目を読む。!id emojiは先頭20個まで表示し、壊れたREPLACEや対象外の情報は表示に使わない。IDの受信保存は新規投稿から開始し、既存本文ログの全件走査や過去API取得は行わない。
 
 SquareService.sendMessageはcontentType / contentMetadataを指定できるため、STICKER形式と該当metadataを渡す送信経路は存在する。画像をダウンロードして添付する方式とは異なる。SquareMessage.getStickerURLはSTKIDとSTKOPTから静止PNGまたはアニメーションPNGのURLを組み立てるが、画像の取得成功はアカウントによるスタンプ送信可否を保証しない。
 
-このBotはLINEJSのSquare（通常LINEアカウント）を使う。公式Messaging APIの[packageId / stickerId仕様](https://developers.line.biz/en/docs/messaging-api/sticker-list/)はIDの概念を説明する一次資料だが、公式アカウントAPIの送信可能リストをSquareへそのまま適用しない。IDさえあれば購入・所有・公開状態を問わず何でも送れるという根拠はない。実装する場合は受信済みmetadataを確認し、Botアカウントが利用可能な少数のスタンプで検証する。今回のスタンプ作業は調査と資料化のみ。
+このBotはLINEJSのSquare（通常LINEアカウント）を使う。公式Messaging APIの[packageId / stickerId仕様](https://developers.line.biz/en/docs/messaging-api/sticker-list/)はIDの概念を説明する一次資料だが、公式アカウントAPIの送信可能リストをSquareへそのまま適用しない。IDさえあれば購入・所有・公開状態を問わず何でも送れるという根拠はない。送信機能を実装する場合は受信済みmetadataを確認し、Botアカウントが利用可能な少数のスタンプで検証する。今回の追加はID取得と案内の標準絵文字であり、任意スタンプの送信コマンドは追加していない。
 
 参照: [LINEJS SquareService実装](https://github.com/evex-dev/linejs/blob/ef6c3d9f70dd41fa51053615d47f071f58cf8db3/packages/linejs/base/service/square/mod.ts)、[SquareMessage実装](https://github.com/evex-dev/linejs/blob/ef6c3d9f70dd41fa51053615d47f071f58cf8db3/packages/linejs/client/features/message/square.ts)。実際の採用版はlockとnode_modulesの3.4.2配布物で照合した。

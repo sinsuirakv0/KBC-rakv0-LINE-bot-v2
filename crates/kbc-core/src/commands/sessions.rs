@@ -311,7 +311,7 @@ fn apply_inner(
             if (input.len() == 1 && input.bytes().all(|byte| byte.is_ascii_digit()))
                 || matches!(input, "次" | "前")
             {
-                return Ok(vec![("選択はこの一覧への番号リプライ、ページ移動は👍で次・❤️で前、終了で受付を終えます。".into(), now, None)]);
+                return Ok(vec![("項目選択はこの一覧への番号リプライです。ページ移動は一覧を長押しし、👍（いいね）で次・❤️（ハート）で前のリアクションを付けてください。終了で受付を終えます。".into(), now, None)]);
             }
             Ok(Vec::new())
         }

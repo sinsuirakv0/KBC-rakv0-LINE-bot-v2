@@ -16,6 +16,7 @@ message_refsは本文なし、最大8,192件。参照可能なのは48時間以�
 | parse / execute | 入力・権限・表示範囲をRustで判断。OC contextと共通requestを使用 |
 | next_member / search_page / complete | Member・Members・JoinedChatsを既存照会Workerへ渡し、有限ページと結果を永続Jobで継続 |
 | message_info | 同じOCと任意chatに絞った索引照会。受信済みID・未観測を区別 |
+| decorations / decoration_info / message_reference | スタンプ・LINE絵文字の必要項目を有限保存し、共通範囲の索引から専用ID表示を生成 |
 | SquareDirectory.execute | SDK呼出とplain DTO変換だけ。共通API枠・cooldown・timeoutを共有 |
 
 Protocol v7でmembers・joinedChatsのread DTOを追加し、NativeとAdapterを同時更新する。未完了の旧v6 Jobには新しい任意状態をdefaultで補い、旧OcChatに親OCフィールドがない場合も復元可能にした。既存Smokeで通常応答が非リプライであることと、別サブトークの入力をreplyまたはID引数で参照できることを確認する。
@@ -23,3 +24,9 @@ Protocol v7でmembers・joinedChatsのread DTOを追加し、NativeとAdapterを
 参加一覧のSDK入出力はjoinedChatPageを共有する。getJoinedSquareChatsが本環境でNOT_IMPLEMENTEDとなったため、LINEJS自身と同じfetchMyEventsの一覧snapshotへ変更した。通常受信のcheckpointは上書きしない。[取得の関数・上限](../../../../../apps/line/docs/ADAPTER.md)。
 
 !id replyは情報取得。取得したIDでBOTから実際に返信する試験はBOT管理者専用の [!test reply](TEST_REPLY.md) を使う。--chatには元メッセージがあるトークMIDを指定し、投稿先は実行トークに固定する。別OCの投稿の参照可否も試せる。
+
+## スタンプ・LINE絵文字のID
+
+!id sticker（stampも可）は対象スタンプへのリプライでSTKPKGID・STKID・STKVER・STKOPTを表示する。!id emojiは対象投稿へのリプライ、またはコマンド本文に添えたLINE絵文字からproductId・sticonId・version・resourceType・UTF-16位置を表示する。sticker / emojiもmessage IDと--chatを受け付け、同じOCの観測済み情報だけを参照する。Unicode絵文字にLINEのセットIDを割り当てない。
+
+remember → decorationsが受信contentMetadataのSTK項目とREPLACE.sticon.resourcesからIDに必要な項目だけをmessage_refsへ保存する。本文・REPLACE全文は複製しない。各IDは64byte、REPLACE解析は32KiB、絵文字は先頭20個まで。message_referenceはmessage / reply / sticker / emojiのOC・トーク・48時間境界を共有し、decoration_infoが通常投稿として整形する。既存保存データの追加項目はdefaultで復元できるが、旧受信分の装飾情報はさかのぼって再取得しない。新たに投稿してから参照する。専用API・巡回・常駐索引は追加しない。

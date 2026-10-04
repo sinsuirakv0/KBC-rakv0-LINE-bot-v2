@@ -1,7 +1,7 @@
 ﻿import type { BaseClient } from "@evex/linejs/base";
 import type { CoreAction, NativeCore } from "../protocol/native.js";
 import { ApiScheduler, errorCode, type SendAttempt } from "./api.js";
-import { SquareDirectory, mentionMetadata } from "./square.js";
+import { SquareDirectory, messageMetadata } from "./square.js";
 
 export async function deliverAction(client: BaseClient, core: NativeCore, gate: ApiScheduler, action: CoreAction, directory?: SquareDirectory): Promise<{ status: "sent" | "failed" | "unknown" | "queued"; code: string }> {
   if (action.type === "prepareMedia") throw new Error("InternalActionReachedAdapter");
@@ -67,7 +67,7 @@ export async function deliverAction(client: BaseClient, core: NativeCore, gate: 
       } else {
         const sent = await gate.withSendAttempt(attempt, () => client.square.sendMessage({ squareChatMid: action.chatId,
           relatedMessageId: action.relatedMessageId || undefined, text: action.text,
-          contentMetadata: mentionMetadata(action.mention) }));
+          contentMetadata: messageMetadata(action.mention, action.emojis) }));
         messageId = sent.createdSquareMessage?.message?.id;
         if (!messageId) throw new Error("MissingSentMessageId");
       }

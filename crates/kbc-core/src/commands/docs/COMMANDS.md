@@ -40,6 +40,8 @@ motionはpng/mp4/gif、f/c/s/u（utだけ）、a=攻撃・w=歩行・i=待機・
 
 リアクション通知には実行者MIDがないため、稼働中の一覧・移動可能な方向だけ既存照会WorkerでgetMessageReactionsを取得し、検索者のMID・種類・時刻を照合する。表示名で本人と判断しない。最大4ページ×100件。同じ一覧の照会・配送中の連打はまとめ、常時ポーリングを増やさない。API失敗時は旧一覧を残して付け直しを案内する。[LINEJS仕様・追加APIと未確認点](../../../../../apps/line/docs/REACTIONS_AND_STICKERS.md)。
 
+案内は一覧の長押し操作を明示し、👍 / ❤️の部分には標準LINE絵文字を埋め込む。commands::message_emojisが分割後の本文のUTF-16位置をProtocol v12のMessageEmojiへ渡し、AdapterがREPLACEを付ける。絵文字を返信してもページを変えない。本文画像と実リアクションは別のデータである。[採用ID・SDK構造と実表示の未確認点](../../../../../apps/line/docs/REACTIONS_AND_STICKERS.md)。
+
 変更先はsessions.pending_payloadへ保存し、新一覧の送信成功後だけpayloadとpromptを入れ替える。切替中の番号には待機案内を返し、別ページの項目を選ばない。確定失敗は旧一覧を復帰し、unknownは照合まで切替待ちを保持する。一覧の各候補表示は96 UTF-16単位までに縮め、操作案内を同じ1,500単位以内の投稿へ収める。
 
 編集の代替は新しい返信成功後の旧候補の管理者削除（square.destroyMessage）。送信完了時に10分後の清掃を登録し、操作時は同じ削除Actionを前倒しする。削除失敗で新promptを巻き戻さない。任意清掃を追加できないほどOutboxが満杯なら清掃だけを省略する。管理者権限のないOCでは一覧が残る場合がある。

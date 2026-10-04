@@ -22,6 +22,75 @@ struct MessageRef {
     related_message_id: Option<String>,
     related_service: Option<String>,
     relation: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sticker: Option<StickerRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    emojis: Vec<EmojiRef>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    emoji_overflow: bool,
+}
+#[derive(Serialize, Deserialize)]
+struct StickerRef {
+    package_id: String,
+    sticker_id: String,
+    version: Option<String>,
+    option: Option<String>,
+}
+#[derive(Serialize, Deserialize)]
+struct EmojiRef {
+    product_id: String,
+    emoji_id: String,
+    version: Option<String>,
+    resource_type: Option<String>,
+    start: Option<u32>,
+    end: Option<u32>,
+}
+fn metadata_id(value: &serde_json::Value) -> Option<String> {
+    let text = value
+        .as_str()
+        .map(str::to_owned)
+        .or_else(|| value.as_u64().map(|n| n.to_string()))?;
+    (!text.is_empty()
+        && text.len() <= 64
+        && text.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_'))
+    .then_some(text)
+}
+fn decorations(metadata: &serde_json::Value) -> (Option<StickerRef>, Vec<EmojiRef>, bool) {
+    let content = &metadata["contentMetadata"];
+    let sticker = metadata_id(&content["STKPKGID"])
+        .zip(metadata_id(&content["STKID"]))
+        .map(|(package_id, sticker_id)| StickerRef {
+            package_id,
+            sticker_id,
+            version: metadata_id(&content["STKVER"]),
+            option: metadata_id(&content["STKOPT"]),
+        });
+    let replace: serde_json::Value = content["REPLACE"]
+        .as_str()
+        .filter(|s| s.len() <= 32768)
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default();
+    let resources = replace["sticon"]["resources"].as_array();
+    let emojis = resources
+        .into_iter()
+        .flatten()
+        .take(20)
+        .filter_map(|value| {
+            Some(EmojiRef {
+                product_id: metadata_id(&value["productId"])?,
+                emoji_id: metadata_id(&value["sticonId"])?,
+                version: metadata_id(&value["version"]),
+                resource_type: metadata_id(&value["resourceType"]),
+                start: value["S"].as_u64().and_then(|n| n.try_into().ok()),
+                end: value["E"].as_u64().and_then(|n| n.try_into().ok()),
+            })
+        })
+        .collect();
+    (
+        sticker,
+        emojis,
+        resources.is_some_and(|values| values.len() > 20),
+    )
 }
 pub fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS message_refs(chat TEXT,message TEXT,square TEXT,payload TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(chat,message));
@@ -48,6 +117,7 @@ pub fn remember(tx: &Transaction<'_>, event: &CoreEvent) -> Result<()> {
         .as_deref()
         .and_then(|text| serde_json::from_str(text).ok())
         .unwrap_or_default();
+    let (sticker, emojis, emoji_overflow) = decorations(&metadata);
     let value = MessageRef {
         message_id: message_id.clone(),
         chat_id: chat_id.clone(),
@@ -72,6 +142,9 @@ pub fn remember(tx: &Transaction<'_>, event: &CoreEvent) -> Result<()> {
                 .take(32)
                 .collect()
         }),
+        sticker,
+        emojis,
+        emoji_overflow,
     };
     if tx.query_row("SELECT count(*) FROM message_refs", [], |row| {
         row.get::<_, i64>(0)
@@ -139,6 +212,9 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
     let mode = args.first().map(String::as_str).unwrap_or("");
     if matches!(mode, "message" | "msg" | "reply" | "metadata") {
         return message_info(tx, job, mode == "reply", now);
+    }
+    if matches!(mode, "sticker" | "stamp" | "emoji") {
+        return decoration_info(tx, job, mode == "emoji", now);
     }
     if mode == "oc" {
         return reply(tx, job, format!("OC ID\nMID: {}", context.square_id), now);
@@ -388,6 +464,92 @@ pub fn complete(
     }
     reply(tx, job, text, now)
 }
+fn message_reference(
+    tx: &Transaction<'_>,
+    job: &Job,
+    target: &str,
+    now: i64,
+) -> Result<Option<MessageRef>> {
+    let chat = job
+        .input
+        .args
+        .iter()
+        .position(|arg| arg == "--chat")
+        .and_then(|index| job.input.args.get(index + 1));
+    let square = &job.context.as_ref().ok_or("MissingIdContext")?.square_id;
+    let payload: Option<String> = tx.query_row("SELECT payload FROM message_refs WHERE square=?1 AND message=?2 AND (?3 IS NULL OR chat=?3) AND at>?4 ORDER BY at DESC LIMIT 1",
+        params![square,target,chat,now - 48 * 3600000], |row| row.get(0)).optional()?;
+    payload
+        .map(|value| serde_json::from_str(&value).map_err(Into::into))
+        .transpose()
+}
+fn decoration_info(tx: &Transaction<'_>, job: &Job, emoji: bool, now: i64) -> Result<()> {
+    let CoreEvent::MessageReceived {
+        reply_to_message_id,
+        ..
+    } = &job.event
+    else {
+        return Ok(());
+    };
+    let current_id = identity(&job.event).2;
+    let current = message_reference(tx, job, current_id, now)?;
+    let inline = emoji
+        && current
+            .as_ref()
+            .is_some_and(|value| !value.emojis.is_empty());
+    let explicit = job.input.args.get(1).filter(|arg| !arg.starts_with("--"));
+    let target = if inline {
+        current_id
+    } else {
+        explicit
+            .map(String::as_str)
+            .or(reply_to_message_id.as_deref())
+            .unwrap_or(current_id)
+    };
+    if target.len() > 256 {
+        return reply(tx, job, "message IDが長すぎます。", now);
+    }
+    let value = if target == current_id {
+        current
+    } else {
+        message_reference(tx, job, target, now)?
+    };
+    let Some(value) = value else {
+        return reply(
+            tx,
+            job,
+            "対象を未観測です。Botが受信したスタンプ・LINE絵文字の投稿へリプライしてください（直近48時間・8,192件まで）。",
+            now,
+        );
+    };
+    let text = if emoji {
+        if value.emojis.is_empty() {
+            "LINE絵文字のID情報がありません。LINE絵文字を含む投稿へ !id emoji とリプライするか、!id emoji にLINE絵文字を添えてください。Unicode絵文字にはLINEのセットID・絵文字IDがありません。".into()
+        } else {
+            let mut lines = vec![format!("LINE絵文字ID\nmessage ID: {target}")];
+            for (index, item) in value.emojis.iter().enumerate() {
+                lines.push(format!("{}\nセットID (productId): {}\n絵文字ID (sticonId): {}\nversion: {}\n種類: {}\n位置 (UTF-16): {}〜{}", index + 1,
+                    item.product_id, item.emoji_id, item.version.as_deref().unwrap_or("未取得"), item.resource_type.as_deref().unwrap_or("未取得"),
+                    item.start.map_or("未取得".into(), |n| n.to_string()), item.end.map_or("未取得".into(), |n| n.to_string())));
+            }
+            if value.emoji_overflow {
+                lines.push("一度に表示・保持するのは先頭20個までです。".into());
+            }
+            lines.join("\n\n")
+        }
+    } else if let Some(item) = value.sticker {
+        format!(
+            "スタンプID\nセットID (STKPKGID): {}\nスタンプID (STKID): {}\nversion (STKVER): {}\nオプション (STKOPT): {}\nmessage ID: {target}",
+            item.package_id,
+            item.sticker_id,
+            item.version.as_deref().unwrap_or("未取得"),
+            item.option.as_deref().unwrap_or("なし")
+        )
+    } else {
+        "スタンプのID情報がありません。スタンプの投稿へ !id sticker とリプライしてください。".into()
+    };
+    reply(tx, job, text, now)
+}
 fn message_info(tx: &Transaction<'_>, job: &Job, use_reply: bool, now: i64) -> Result<()> {
     let CoreEvent::MessageReceived {
         reply_to_message_id,
@@ -413,23 +575,13 @@ fn message_info(tx: &Transaction<'_>, job: &Job, use_reply: bool, now: i64) -> R
     if target.len() > 256 {
         return reply(tx, job, "message IDが長すぎます。", now);
     }
-    let chat = job
-        .input
-        .args
-        .iter()
-        .position(|arg| arg == "--chat")
-        .and_then(|index| job.input.args.get(index + 1));
-    let square = &job.context.as_ref().ok_or("MissingIdContext")?.square_id;
-    let payload: Option<String> = tx.query_row("SELECT payload FROM message_refs WHERE square=?1 AND message=?2 AND (?3 IS NULL OR chat=?3) AND at>?4 ORDER BY at DESC LIMIT 1",
-        params![square,target,chat,now - 48 * 3600000], |row| row.get(0)).optional()?;
     let mut lines = vec![
         format!("メッセージ情報\nmessage ID: {target}"),
         format!(
             "リプライ指定\nrelatedMessageId: {target}\nrelatedMessageServiceCode: SQUARE\nmessageRelationType: REPLY"
         ),
     ];
-    if let Some(payload) = payload {
-        let value: MessageRef = serde_json::from_str(&payload)?;
+    if let Some(value) = message_reference(tx, job, target, now)? {
         lines.push(format!(
             "元トークMID: {}\nOC MID: {}\n送信者MID: {}\n送信者名: {}\n送信時刻(ms): {}",
             value.chat_id,
