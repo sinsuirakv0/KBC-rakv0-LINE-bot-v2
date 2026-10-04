@@ -1,5 +1,15 @@
 ﻿BOT管理者専用テスト（o.testも利用可）
 
+スタンプ送信のテスト
+!test sticker <セットID> <スタンプID>
+!test sticker <セットID> <スタンプID> --version <数字> --option <STKOPT>
+versionは省略時1、STKOPTは省略可能です。
+!id stickerで対象スタンプのID・version・STKOPTを取得できます。
+送信先は実行トーク。allow登録・--applyは不要です。
+指定IDで送信を1回試し、API結果と送信メッセージIDを表示します。
+LINE側が受理するかと、端末で表示されるかは実環境で確認します。
+結果不明の自動再送はしません。
+
 検証OCの登録・解除（複数指定可）
 !test allow <sMID> <sMID> ...
 !test allow list

@@ -41,6 +41,8 @@ adminの移行元は対象OCのBot。Botが対象OCの管理人でない場合�
 
 !test replyの--chatは返信元トークを表す。今回の--target-chatと混同しない。replyの既存仕様・権限は変えず、allow・--applyも要求しない。[リプライ表示の実験](TEST_REPLY.md)。
 
+!test sticker <セットID> <スタンプID>は実行トークへのスタンプ送信試験。BOT管理者の共通Context・Mutation・結果履歴を使うが、allow登録・--applyは不要。[仕様・関数・検証範囲](TEST_STICKER.md)。
+
 ## SDKと結果
 
 2026-10-04のnpm再確認でも公開版はLINEJS 3.4.2。採用lockを維持する。SquareMemberAttribute.ROLEは6、役割はADMIN=1 / CO_ADMIN=2 / MEMBER=10。updateSquareMembersのupdatedAttrs=[ROLE]とmembersを使用し、squareMid・squareMemberMid・revision・roleだけを送る。SDK配布物の型・Thrift serializerで要求と返値を確認した。返されたmembersで対象・OC・役割を照合できなければ成功と推定しない。

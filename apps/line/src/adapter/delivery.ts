@@ -22,7 +22,7 @@ export async function deliverAction(client: BaseClient, core: NativeCore, gate: 
     }
     let storeError: unknown;
     const method: SendAttempt["method"] = action.request.type === "report" ? "reportSquareMessage" : action.request.type === "roles" ? "updateSquareMembers"
-      : action.request.type === "post" ? "sendMessage" : action.request.type === "delete" ? "destroyMessage" : "updateSquareMember";
+      : ["post", "sticker"].includes(action.request.type) ? "sendMessage" : action.request.type === "delete" ? "destroyMessage" : "updateSquareMember";
     const attempt: SendAttempt = { started: false, method, beforeSend: () => {
       if (Date.now() - action.createdAtMs > 30_000) throw new Error("OcActionExpired");
       try { core.markSending(action.actionId); } catch (error) { storeError = error; throw error; }

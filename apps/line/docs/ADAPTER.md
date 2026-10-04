@@ -44,11 +44,13 @@ LINEJSの最新公開版は2026-10-03のnpm再確認でも3.4.2。npm配布物re
 
 ## Commandの追加境界
 
-Protocol v12。通常返信の実送信IDをCoreへ渡し、候補promptへ結び付ける。管理者削除はsquare.destroyMessageへ渡し、新しい返信成功後に実行する。OCのメディアはoid省略のOBS reqseq upload自身が投稿し、空のIMAGE/VIDEOを先に送らない。画像・動画・GIF・ファイルの素材準備はRust共通Worker、BlobとLINEJS入出力はAdapterが扱う。uploadMediaも共通API枠・実fetch直前のsending記録を通し、HTTP statusを共通transportで検査する。動画durationはCoreの実Frame数から渡す。メディア自体はrelatedMessageId付き返信にならない。通信後の不明結果はunknownで自動再投稿しない。[Media Worker](../../../crates/kbc-core/docs/MEDIA.md) と [実素材実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) を参照。
+Protocol v13。通常返信の実送信IDをCoreへ渡し、候補promptへ結び付ける。管理者削除はsquare.destroyMessageへ渡し、新しい返信成功後に実行する。OCのメディアはoid省略のOBS reqseq upload自身が投稿し、空のIMAGE/VIDEOを先に送らない。画像・動画・GIF・ファイルの素材準備はRust共通Worker、BlobとLINEJS入出力はAdapterが扱う。uploadMediaも共通API枠・実fetch直前のsending記録を通し、HTTP statusを共通transportで検査する。動画durationはCoreの実Frame数から渡す。メディア自体はrelatedMessageId付き返信にならない。通信後の不明結果はunknownで自動再投稿しない。[Media Worker](../../../crates/kbc-core/docs/MEDIA.md) と [実素材実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) を参照。
 
 通知47のNICE / LOVEは既存ProtocolのReactionNotifiedへ正規化するが、ページ操作には使わない。利用者指定でリアクション方式を廃止し、一覧へのテキストリプライへ戻した。SquareDirectoryは旧snapshotのReactions要求を外部通信なしで完了し、getMessageReactionsを呼ばない。[旧案の調査・スタンプの仕様と未確認点](REACTIONS_AND_STICKERS.md)。
 
 messageMetadataは保存済みMessageEmojiをREPLACE.sticon.resourcesへ変換し、既存MENTIONと合わせてsendMessageへ渡す互換処理を維持する。現在の検索案内はテキストだけを使う。受信したSTKPKGID / STKID / REPLACEは既存metadataJsonに含まれ、Coreの!id sticker / emojiが必要項目だけ有限保存して参照する。履歴照会・巡回APIは増やさない。
+
+OcRequest::StickerはcontentType=STICKERとSTKPKGID / STKID / STKVER / STKTXT / 任意STKOPTをsendMessageへ渡す。送信先はActionの実行トークで、返値のmessage ID欠落は例外としてunknownへ残す。既存配送・30秒受付期限・sendMessageの実fetch境界を共有し、自動再送しない。[!test stickerの仕様・関数](../../../crates/kbc-core/src/oc/docs/TEST_STICKER.md)。
 
 ## OCイベント・管理API
 

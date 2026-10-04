@@ -40,7 +40,7 @@ pub fn parse(text: &str) -> Option<Input> {
     let operation = take_word(&mut input).to_ascii_lowercase();
     if !matches!(
         operation.as_str(),
-        "allow" | "mention" | "delete" | "kick" | "deputy" | "admin"
+        "allow" | "mention" | "delete" | "kick" | "deputy" | "admin" | "sticker"
     ) || input
         .split_whitespace()
         .next()
@@ -213,6 +213,9 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
     if job.input.args[0] == "allow" {
         return allow(tx, job, now);
     }
+    if job.input.args[0] == "sticker" {
+        return sticker(tx, job, now);
+    }
     let plan = match plan(job) {
         Ok(plan) => plan,
         Err(message) => return reply(tx, job, format!("{message}\n使い方: !test help"), now),
@@ -234,6 +237,60 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
     };
     job.test = Some(plan);
     request(tx, job, request_value, Phase::TestInspect, now)
+}
+
+fn sticker(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
+    let usage = "使い方: !test sticker <セットID> <スタンプID> [--version 数字] [--option STKOPT]";
+    let mut input = job.input.body.as_str();
+    let package_id = take_word(&mut input);
+    let sticker_id = take_word(&mut input);
+    let mut version = None;
+    let mut option = None;
+    while !input.is_empty() {
+        match take_word(&mut input) {
+            "--version" if version.is_none() => version = Some(take_word(&mut input)),
+            "--option" if option.is_none() => option = Some(take_word(&mut input)),
+            _ => return reply(tx, job, usage, now),
+        }
+    }
+    let version = version.unwrap_or("1");
+    if [package_id, sticker_id, version].iter().any(|value| {
+        value.is_empty() || value.len() > 64 || !value.bytes().all(|byte| byte.is_ascii_digit())
+    }) || option.is_some_and(|value| {
+        value.is_empty()
+            || value.len() > 64
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    }) {
+        return reply(
+            tx,
+            job,
+            format!(
+                "IDとversionは64桁以内の数字、STKOPTは64文字以内の英数字・_で指定してください。\n{usage}"
+            ),
+            now,
+        );
+    }
+    let api = OcRequest::Sticker {
+        package_id: package_id.into(),
+        sticker_id: sticker_id.into(),
+        version: version.into(),
+        option: option.map(String::from),
+    };
+    let chat = identity(&job.event).1.to_owned();
+    // 送信テストは実行トークだけを使い、管理操作のallow登録を要求しない。
+    job.test = Some(Plan {
+        operation: "sticker".into(),
+        chat,
+        members: vec![],
+        message: format!("セットID: {package_id} / スタンプID: {sticker_id} / version: {version}"),
+        text: String::new(),
+        apply: true,
+        context: job.context.clone(),
+    });
+    job.operation = "test-sticker".into();
+    request(tx, job, api, Phase::Mutation, now)
 }
 
 fn role(value: &str) -> &str {
@@ -502,11 +559,16 @@ pub fn mutated(
             .as_ref()
             .and_then(|value| value.message_id.as_deref())
             .map_or(String::new(), |id| format!("\n送信メッセージID: {id}"));
+        let ids = if test.operation == "sticker" {
+            format!("\n{}", test.message)
+        } else {
+            String::new()
+        };
         reply(
             tx,
             job,
             format!(
-                "【テスト結果】{}: {status}\n対象トーク: {}\nAPI: {}{message}{}",
+                "【テスト結果】{}: {status}\n対象トーク: {}{ids}\nAPI: {}{message}{}",
                 test.operation,
                 test.chat,
                 result.code,

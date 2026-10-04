@@ -74,7 +74,16 @@ let promptSequence = 0;
 const replySends: Array<{ chat: string; message: string; text: string | undefined }> = [];
 const mentionSends: Array<{ chat: string; text: string | undefined; metadata: string }> = [];
 const emojiSends: string[] = [];
+const stickerSends: Array<{ chat: string; metadata: Record<string, string> }> = [];
+let failSticker = false, missingStickerId = false;
 client.square.sendMessage = async options => gate.run("sendMessage", async () => {
+  gate.beforeFetch();
+  if (options.contentType === "STICKER") {
+    assert.equal(core.stats().sendingActions, 1); assert.equal(options.text, undefined); assert.equal(options.relatedMessageId, undefined);
+    stickerSends.push({ chat: options.squareChatMid, metadata: options.contentMetadata! });
+    if (failSticker) throw Object.assign(new Error("StickerRejected"), { data: { errorCode: "ILLEGAL_ARGUMENT" } });
+    if (missingStickerId) return {} as Awaited<ReturnType<typeof client.square.sendMessage>>;
+  }
   if (options.relatedMessageId) replySends.push({ chat: options.squareChatMid, message: options.relatedMessageId, text: options.text });
   if (options.contentMetadata?.MENTION) mentionSends.push({ chat: options.squareChatMid, text: options.text, metadata: options.contentMetadata.MENTION });
   if (options.contentMetadata?.REPLACE) {
@@ -82,7 +91,7 @@ client.square.sendMessage = async options => gate.run("sendMessage", async () =>
     for (const item of resources) assert(["👍", "❤️"].includes(options.text!.slice(item.S, item.E)));
     emojiSends.push(options.contentMetadata.REPLACE);
   }
-  gate.beforeFetch(); return { createdSquareMessage: { message: { id: `bot-${++promptSequence}` } } } as Awaited<ReturnType<typeof client.square.sendMessage>>;
+  return { createdSquareMessage: { message: { id: `bot-${++promptSequence}` } } } as Awaited<ReturnType<typeof client.square.sendMessage>>;
 });
 const service = new SquareDirectory(client);
 let sequence = 0;
@@ -138,6 +147,34 @@ try {
   const unknownProfile = db.prepare("SELECT id FROM actions WHERE status='unknown' AND json_extract(payload,'$.request.type')='profile'").get() as { id: string };
   core.resolveAction({ actionId: unknownProfile.id, status: "failed", code: "ConfirmedUnchangedInFixture" });
   assert.equal(core.stats().unknownActions, profileUnknown);
+  // スタンプは実行トーク限定。管理操作のallow未登録でもBOT管理者が1回試せる。
+  for (const actor of [admin, co, mod, user]) {
+    await message("!test sticker 1 7", actor); assert(texts(await drain()).includes("BOT管理者専用"));
+  }
+  for (const input of ["", "1", "x 7", "1 7 --version", "1 7 --option", "1 7 --version 2 --version 3", "1 7 --target-chat " + sub]) {
+    await message("!test sticker " + input, owner); assert(texts(await drain()).includes("使い方"));
+  }
+  assert.equal(stickerSends.length, 0);
+  await message("!test sticker 1 7", owner); const stickerResult = texts(await drain());
+  assert(stickerResult.includes("sticker: 成功") && stickerResult.includes("送信メッセージID"));
+  assert.deepEqual(stickerSends.at(-1), { chat, metadata: { STKPKGID: "1", STKID: "7", STKVER: "1", STKTXT: "[スタンプ]" } });
+  await message("o.test sticker 2 8 --option A --version 3", owner, undefined, sub);
+  const stickerContext = await core.nextQueryAction(); assert(stickerContext?.type === "ocApi" && stickerContext.request.type === "context");
+  await deliverAction(client, core, gate, stickerContext, service);
+  core.shutdown(); core = createCore(config); await drain();
+  assert.deepEqual(stickerSends.at(-1), { chat: sub, metadata: { STKPKGID: "2", STKID: "8", STKVER: "3", STKTXT: "[スタンプ]", STKOPT: "A" } });
+  const beforeStickerUnknown = core.stats().unknownActions;
+  failSticker = true; await message("!test sticker 1 7", owner); const rejectedSticker = texts(await drain()); failSticker = false;
+  assert(rejectedSticker.includes("結果不明") && rejectedSticker.includes("ILLEGAL_ARGUMENT"));
+  missingStickerId = true; await message("!test sticker 1 7", owner); const missingSticker = texts(await drain()); missingStickerId = false;
+  assert(missingSticker.includes("結果不明") && missingSticker.includes("MissingSentMessageId"));
+  assert.equal(core.stats().unknownActions, beforeStickerUnknown + 2);
+  const stickerCalls = stickerSends.length;
+  core.shutdown(); core = createCore(config); await drain(); assert.equal(stickerSends.length, stickerCalls);
+  const unknownStickers = db.prepare("SELECT id FROM actions WHERE status='unknown' AND json_extract(payload,'$.request.type')='sticker'").all() as { id: string }[];
+  for (const item of unknownStickers) core.resolveAction({ actionId: item.id, status: "failed", code: "ConfirmedUnsentInFixture" });
+  assert.equal(core.stats().unknownActions, beforeStickerUnknown);
+  await message("!test sticker help", user); assert(texts(await drain()).includes("スタンプ送信"));
   // 管理下の検証OCを複数登録し、確認だけでは変更せず、明示実行を既存配送へ渡す。
   await message(`!test allow ${square} ${labSquare}`, admin); assert(texts(await drain()).includes("BOT管理者専用"));
   await message(`!test admin ${labCo} --target-chat ${labSquare} --apply`, owner);

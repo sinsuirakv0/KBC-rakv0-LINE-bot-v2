@@ -29,4 +29,6 @@ Protocol v7でmembers・joinedChatsのread DTOを追加し、NativeとAdapterを
 
 !id sticker（stampも可）は対象スタンプへのリプライでSTKPKGID・STKID・STKVER・STKOPTを表示する。!id emojiは対象投稿へのリプライ、またはコマンド本文に添えたLINE絵文字からproductId・sticonId・version・resourceType・UTF-16位置を表示する。sticker / emojiもmessage IDと--chatを受け付け、同じOCの観測済み情報だけを参照する。Unicode絵文字にLINEのセットIDを割り当てない。
 
+取得したスタンプIDの送信試験はBOT管理者専用の[!test sticker](TEST_STICKER.md)を使う。LINE絵文字のproductId / sticonIdをSTKPKGID / STKIDと混同しない。
+
 remember → decorationsが受信contentMetadataのSTK項目とREPLACE.sticon.resourcesからIDに必要な項目だけをmessage_refsへ保存する。本文・REPLACE全文は複製しない。各IDは64byte、REPLACE解析は32KiB、絵文字は先頭20個まで。message_referenceはmessage / reply / sticker / emojiのOC・トーク・48時間境界を共有し、decoration_infoが通常投稿として整形する。既存保存データの追加項目はdefaultで復元できるが、旧受信分の装飾情報はさかのぼって再取得しない。新たに投稿してから参照する。専用API・巡回・常駐索引は追加しない。

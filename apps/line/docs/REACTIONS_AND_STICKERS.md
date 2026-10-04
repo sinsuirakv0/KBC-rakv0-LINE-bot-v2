@@ -38,6 +38,6 @@ LINE絵文字はcontentMetadata.REPLACEのJSON内にsticon.resourcesがあり、
 
 SquareService.sendMessageはcontentType / contentMetadataを指定できるため、STICKER形式と該当metadataを渡す送信経路は存在する。画像をダウンロードして添付する方式とは異なる。SquareMessage.getStickerURLはSTKIDとSTKOPTから静止PNGまたはアニメーションPNGのURLを組み立てるが、画像の取得成功はアカウントによるスタンプ送信可否を保証しない。
 
-このBotはLINEJSのSquare（通常LINEアカウント）を使う。公式Messaging APIの[packageId / stickerId仕様](https://developers.line.biz/en/docs/messaging-api/sticker-list/)はIDの概念を説明する一次資料だが、公式アカウントAPIの送信可能リストをSquareへそのまま適用しない。IDさえあれば購入・所有・公開状態を問わず何でも送れるという根拠はない。送信機能を実装する場合は受信済みmetadataを確認し、Botアカウントが利用可能な少数のスタンプで検証する。今回の追加はID取得と案内の標準絵文字であり、任意スタンプの送信コマンドは追加していない。
+このBotはLINEJSのSquare（通常LINEアカウント）を使う。公式Messaging APIの[packageId / stickerId仕様](https://developers.line.biz/en/docs/messaging-api/sticker-list/)はIDの概念を説明する一次資料だが、公式アカウントAPIの送信可能リストをSquareへそのまま適用しない。IDさえあれば購入・所有・公開状態を問わず何でも送れるという根拠はない。受信済みmetadataを参照して少数で試すため、BOT管理者専用の[!test sticker](../../../crates/kbc-core/src/oc/docs/TEST_STICKER.md)を追加した。STKPKGID / STKID / STKVER / STKTXT / 任意STKOPTを既存sendMessageへ渡す。所有条件・実APIの受理・端末表示は未確認で、本文の標準絵文字装飾は現在廃止している。
 
 参照: [LINEJS SquareService実装](https://github.com/evex-dev/linejs/blob/ef6c3d9f70dd41fa51053615d47f071f58cf8db3/packages/linejs/base/service/square/mod.ts)、[SquareMessage実装](https://github.com/evex-dev/linejs/blob/ef6c3d9f70dd41fa51053615d47f071f58cf8db3/packages/linejs/client/features/message/square.ts)。実際の採用版はlockとnode_modulesの3.4.2配布物で照合した。

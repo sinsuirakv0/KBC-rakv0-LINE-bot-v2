@@ -194,6 +194,14 @@ export class SquareDirectory {
         contentMetadata: mentionMetadata(request.mention) });
       result.messageId = sent.createdSquareMessage?.message?.id;
       if (!result.messageId) throw new Error("MissingSentMessageId");
+    } else if (request.type === "sticker") {
+      // 画像添付ではなくSTICKERのmetadataを渡す。送信可否はLINE側の応答で確認する。
+      const contentMetadata: Record<string, string> = { STKPKGID: request.packageId, STKID: request.stickerId,
+        STKVER: request.version, STKTXT: "[スタンプ]" };
+      if (request.option) contentMetadata.STKOPT = request.option;
+      const sent = await this.client.square.sendMessage({ squareChatMid: chatId, contentType: "STICKER", contentMetadata });
+      result.messageId = sent.createdSquareMessage?.message?.id;
+      if (!result.messageId) throw new Error("MissingSentMessageId");
     } else if (request.type === "delete") {
       await this.client.square.destroyMessage({ squareChatMid: request.chatId, messageId: request.messageId });
     } else if (request.type === "report") {

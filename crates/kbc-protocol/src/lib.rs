@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTOCOL_VERSION: u32 = 12;
+pub const PROTOCOL_VERSION: u32 = 13;
 
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -302,6 +302,12 @@ pub enum OcRequest {
         chat_id: String,
         text: String,
         mention: MessageMention,
+    },
+    Sticker {
+        package_id: String,
+        sticker_id: String,
+        version: String,
+        option: Option<String>,
     },
     Delete {
         chat_id: String,
