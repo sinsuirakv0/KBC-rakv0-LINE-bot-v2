@@ -112,3 +112,9 @@ f69a3bc / special-yam-6537のLinux build成功を確認し、旧instanceを0へ�
 新版の起動約160秒でhealth 200 / receiving、PUSH session / sign-on各1、11トークの定期取得・優先4、補完・定期取得・一覧取得の失敗0。API requests 199 / errors 0 / rateLimits 0、GitHub退避3回 / failures 0、RSS約128MiB。既存Core完了108件・unknown 8件を復元し、新規配送の失敗・unknownは0。NorthflankはRunning / 1 / 1・restart 0、CPU 0.0091vCPU（割当の約5%）、Memory 138.88MB。
 
 新しい検証OC許可は未登録で開始し、!test allow <sMID> <sMID> ... でBOT管理者が管理下のOCだけを登録する。確認表示だけでは変更せず、--apply付きで対象側の実APIを1回試す。Codexからメンション・削除・退会・役割変更の実LINEテスト操作は行っていない。実際の権限不足・別OC通知・役割変更の可否は後続の利用者試験で観測する。5種類のSmoke・build・Clippyはオフラインで通過済み。
+
+## 2026-10-04の検証OC登録・MID案内修正
+
+利用者の実ログで対象OCだけがallow登録済み、実行OCは未登録と確認した。また、--target-chatのsMID誤入力が登録判定に隠れていた。引数形式を先に確認し、未登録側のsMIDと登録コマンドを表示する修正を8703967 / graceful-bear-2760へ配備した。Linux buildは2分7秒で成功。旧instanceの0 / 0を確認してから配備・1 instanceへ戻し、v8・0.2vCPU / 512MB・Volumeなし・CD OFFを維持した。[原因と入力の使い分け](../../crates/kbc-core/src/oc/docs/TEST_OC.md)。
+
+起動約31秒でhealth 200 / receiving、PUSH session / sign-on各1、11トークの定期取得・優先4、Core完了124件・既存unknown 8件・受信保持1,530件を復元した。待機・実行中・新規配送の失敗とunknownは0。API requests 34 / errors 0 / rateLimits 0、GitHub退避1回 / failures 0、RSS約120MiB。この観測期間に新規メッセージはなく、実LINEのadmin実行成功や応答時間の測定とは扱わない。修正のbuild・smoke:oc・smoke:commands・ClippyとBOM / LF / 資料リンク確認は通過。実行OC・対象OCの許可要件やサーバーの権限判定は変更していない。
