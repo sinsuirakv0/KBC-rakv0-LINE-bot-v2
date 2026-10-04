@@ -102,3 +102,13 @@ a42937f / boiling-throne-4097へ、BOT管理者限定の!test replyを配備し�
 続く利用者の仕様訂正で、トークMIDは返信元メッセージがあるトークを表し、投稿先はコマンド実行トークと確定した。初版の--toによる送信先変更を廃止し、--chatによる返信元指定・受信済み情報との照合へ修正。3dd8c61 / capable-horn-3678のLinux build成功後、0 / 0の停止確認→配備→1 instanceへの起動で反映した。既存v7・0.2vCPU / 512MB・Volumeなし・CD OFFを維持する。
 
 切替直前の初版はbackup 31回 / failures 0、ログ同期6周期・26行 / failures 0、pendingLogs 0。修正版の起動約114秒でhealth 200 / receiving、PUSH session / sign-on各1、11トークの定期取得、優先4トーク、補完・定期取得の失敗0。API requests 146 / errors 0 / rateLimits 0、backup 2回 / failures 0、RSS約129MiB。完了87件・旧unknown 8件を復元し、新規配送の失敗・unknownは0。ログ2行は5分同期の待機中。Northflank表示はCPU 0.0081vCPU（割当の約4%）、Memory 141.37MB、restart 0。修正版の実LINEリプライ投稿・別OC表示は未確認。
+
+## 2026-10-04の検証OC操作配備
+
+f69a3bc / special-yam-6537のLinux build成功を確認し、旧instanceを0へ変更して0 / 0の停止確認後、新版の配備・1 instanceへの起動を行った。Protocol v8のNativeとAdapterを同時に更新した。既存0.2vCPU / 512MB、Volume追加なし、CD OFFを維持する。[複数OC登録・管理操作の入力と上限](../../crates/kbc-core/src/oc/docs/TEST_OC.md)。
+
+切替直前はhealth 200 / receiving、PUSH session 2、Core完了108件・旧unknown 8件、待機・実行中0。GitHub退避356回・最後の退避成功、累積failures 4。ログ同期72周期・70行・累積failures 1、pendingLogs 0。これらの累積失敗を新版で発生した値として扱わない。
+
+新版の起動約160秒でhealth 200 / receiving、PUSH session / sign-on各1、11トークの定期取得・優先4、補完・定期取得・一覧取得の失敗0。API requests 199 / errors 0 / rateLimits 0、GitHub退避3回 / failures 0、RSS約128MiB。既存Core完了108件・unknown 8件を復元し、新規配送の失敗・unknownは0。NorthflankはRunning / 1 / 1・restart 0、CPU 0.0091vCPU（割当の約5%）、Memory 138.88MB。
+
+新しい検証OC許可は未登録で開始し、!test allow <sMID> <sMID> ... でBOT管理者が管理下のOCだけを登録する。確認表示だけでは変更せず、--apply付きで対象側の実APIを1回試す。Codexからメンション・削除・退会・役割変更の実LINEテスト操作は行っていない。実際の権限不足・別OC通知・役割変更の可否は後続の利用者試験で観測する。5種類のSmoke・build・Clippyはオフラインで通過済み。
