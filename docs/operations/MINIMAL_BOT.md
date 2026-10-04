@@ -156,3 +156,13 @@ d99b74f / hearty-page-3421のLinux buildは2分10秒で成功。旧instanceを0�
 16:06 JST、起動約20秒でhealth 200 / receiving、PUSH session / sign-on各1、12トークの定期取得・優先4、補完・定期取得・一覧取得の失敗0。API requests 22 / errors 0 / rateLimits 0、GitHub退避1回 / failures 0、RSS約123MiB。Core完了193件・既存unknown 15件を復元し、待機・照会・送信中0、新規配送の失敗・unknown0を確認した。NorthflankはRunning / 1 / 1、起動約1分でrestart 0を確認。ログ1行は5分同期の待機中。実LINEの装飾表示・新しいIDコマンドの応答・ページ移動成功はこの初期観測では未確認。
 
 build、型検査、smoke / smoke:commands / smoke:oc、Clippyを通過した。装飾のUTF-16位置、mock送信metadata、IDの再起動復元・不正入力・20件上限・別OC参照拒否を既存Smokeで確認した。前版の実受信で通知47を1件観測したが、対象SessionがなくgetMessageReactionsは呼ばれておらず、ページ移動成功の証明とは扱わない。
+
+## 2026-10-04のリプライページ操作への切替
+
+利用者の実運用報告でリアクションによるページ移動を廃止し、最新指定の1ページ10件へ変更した。一覧への「次」「前」、または「3p」のリプライでページを移動し、1〜10は項目選択だけに使う。送信成功まで旧ページを保持する仕組み、スタンプ・LINE絵文字のID取得は維持する。表示件数の違う古い検索Sessionは起動時に失効するため、配備後は検索し直す。[現行仕様・関数・失敗時の扱い](../../crates/kbc-core/src/commands/docs/COMMANDS.md)。
+
+7df606b / tangible-grass-6261のLinux buildは2分19秒で成功。旧instanceを0にして0 / 0の停止を確認後、NativeとAdapterを同時に配備して1 instanceへ戻した。Protocol v12、0.2vCPU / 512MB、Volume追加なし、CD OFFを維持する。
+
+切替直前はCore完了199件・既存unknown 15件、待機・照会・送信中・pendingLogs 0。GitHub退避25回 / failures 0、ログ同期4周期・9行 / failures 0。16:34 JST、新版の起動約24秒でhealth 200 / receiving、PUSH session / sign-on各1、12トークの定期取得・優先4、補完・定期取得・一覧取得の失敗0。API requests 23 / errors 0 / rateLimits 0、GitHub退避1回 / failures 0、RSS約122MiB。Core完了199件・既存unknown 15件を復元し、待機・照会・送信中0、新規配送の失敗・unknown0を確認した。NorthflankはRunning / 1 / 1、起動約1分でrestart 0を確認。旧unknownは推測で再送しない。新起動後のログ同期周期と実OCのページ操作はこの初期観測では未確認。
+
+build、型検査、smoke / smoke:commands / smoke:oc、Clippyを通過した。既存Command Smokeで10番選択、次/前/指定ページ、ページ端・0p・overflow、同じページの投稿抑制、切替中の番号とページ操作、確定失敗・再起動復帰、旧8件Session失効を確認した。リアクション通知から追加Actionを作らず、旧Reactions要求の復元時にもAPIを呼ばないことを確認した。実OCでの投稿・管理者削除の可否は利用者の運用観測を続ける。
