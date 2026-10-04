@@ -299,7 +299,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
         return reply(
             tx,
             job,
-            "名前を指定してください。!id help で使い方を確認できます。",
+            "名前を指定してください。!help id で使い方を確認できます。",
             now,
         );
     }

@@ -67,19 +67,15 @@ pub fn prepare(
     if !known {
         return CommandPlan::Ignore;
     }
-    if name == "help"
-        || args
-            .first()
-            .is_some_and(|arg| arg.eq_ignore_ascii_case("help"))
-    {
+    if name == "help" {
         let target = if name == "help" && !args.is_empty() {
-            canonical_name(args[0])
+            canonical_name(&args[0].to_ascii_lowercase()).to_owned()
         } else {
-            name
+            name.to_owned()
         };
         return CommandPlan::Text(vec![(
             content
-                .command_help(target)
+                .command_help(&target)
                 .unwrap_or("そのコマンドの案内はありません。!help で一覧を確認できます。".into()),
             now,
         )]);
@@ -87,27 +83,12 @@ pub fn prepare(
     if name == "id" {
         return CommandPlan::Ignore;
     }
-    if name == "test" {
-        return if args.first().is_some_and(|arg| {
-            [
-                "reply", "allow", "mention", "delete", "kick", "deputy", "admin",
-            ]
-            .iter()
-            .any(|name| arg.eq_ignore_ascii_case(name))
-        }) && !args
-            .get(1)
-            .is_some_and(|arg| arg.eq_ignore_ascii_case("help"))
-        {
-            CommandPlan::Ignore
+    if matches!(name, "test" | "bot" | "oc") {
+        return if args.is_empty() {
+            CommandPlan::Text(vec![(content.command_help(name).unwrap_or_default(), now)])
         } else {
-            CommandPlan::Text(vec![(
-                content.command_help("test").unwrap_or_default(),
-                now,
-            )])
+            CommandPlan::Ignore
         };
-    }
-    if matches!(name, "bot" | "oc") {
-        return CommandPlan::Text(vec![(content.command_help(name).unwrap_or_default(), now)]);
     }
     if matches!(name, "ut" | "tut" | "st") {
         if args.is_empty() {

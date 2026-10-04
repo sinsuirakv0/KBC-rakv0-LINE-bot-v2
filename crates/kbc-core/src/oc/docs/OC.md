@@ -4,7 +4,7 @@
 
 ## 入力と権限
 
-`!oc help` は公開案内、`!oc adminhelp` は管理案内。設定はOC全体のsquareMid単位、入退室通知はトークのsquareChatMid単位。自動処理の初期値はすべてOFF。明示した旧管理設定は初回だけ変換して引き継ぐ。旧ログの変換はデータリポジトリの別Workflowで行う。
+`!help oc` は公開案内、`!oc adminhelp` は管理案内。設定はOC全体のsquareMid単位、入退室通知はトークのsquareChatMid単位。自動処理の初期値はすべてOFF。明示した旧管理設定は初回だけ変換して引き継ぐ。旧ログの変換はデータリポジトリの別Workflowで行う。
 
 | 操作 | 旧版を維持した権限 |
 | --- | --- |

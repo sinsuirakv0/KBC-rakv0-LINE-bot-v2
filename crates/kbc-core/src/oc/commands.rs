@@ -96,7 +96,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
         return reply(
             tx,
             job,
-            "実行権限がありません。!oc help で権限区分を確認してください。",
+            "実行権限がありません。!help oc で権限区分を確認してください。",
             now,
         );
     }
@@ -420,7 +420,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
             return next_target(tx, job, now);
         }
         "history" => return show_history(tx, job, now),
-        _ => return reply(tx, job, "使い方: !oc help / !oc adminhelp", now),
+        _ => return reply(tx, job, "使い方: !help oc / !oc adminhelp", now),
     }
     save_settings(tx, &context.square_id, &value)?;
     reply(tx, job, status(&value), now)

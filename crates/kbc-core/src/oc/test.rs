@@ -218,7 +218,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
     }
     let plan = match plan(job) {
         Ok(plan) => plan,
-        Err(message) => return reply(tx, job, format!("{message}\n使い方: !test help"), now),
+        Err(message) => return reply(tx, job, format!("{message}\n使い方: !help test"), now),
     };
     let square = &job.context.as_ref().ok_or("MissingOcContext")?.square_id;
     if !permitted(tx, square)? {

@@ -41,7 +41,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &Job, now: i64) -> 
         return reply(
             tx,
             job,
-            "返信先のメッセージIDを数字で指定してください。使い方: !test help",
+            "返信先のメッセージIDを数字で指定してください。使い方: !help test",
             now,
         );
     }
@@ -50,7 +50,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &Job, now: i64) -> 
         return reply(
             tx,
             job,
-            "返信は実行トークへ送ります。返信元トークMIDは --chat で指定してください。使い方: !test help",
+            "返信は実行トークへ送ります。返信元トークMIDは --chat で指定してください。使い方: !help test",
             now,
         );
     }

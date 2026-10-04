@@ -174,7 +174,7 @@ try {
   const unknownStickers = db.prepare("SELECT id FROM actions WHERE status='unknown' AND json_extract(payload,'$.request.type')='sticker'").all() as { id: string }[];
   for (const item of unknownStickers) core.resolveAction({ actionId: item.id, status: "failed", code: "ConfirmedUnsentInFixture" });
   assert.equal(core.stats().unknownActions, beforeStickerUnknown);
-  await message("!test sticker help", user); assert(texts(await drain()).includes("スタンプ送信"));
+  await message("!help test", user); assert(texts(await drain()).includes("スタンプ送信"));
   // 管理下の検証OCを複数登録し、確認だけでは変更せず、明示実行を既存配送へ渡す。
   await message(`!test allow ${square} ${labSquare}`, admin); assert(texts(await drain()).includes("BOT管理者専用"));
   await message(`!test admin ${labCo} --target-chat ${labSquare} --apply`, owner);
@@ -269,7 +269,7 @@ try {
   assert.equal(replySends.length, beforeInvalid);
   await message(`!test reply ${replyMessage} -- --chatから始まる本文`, owner); await drain();
   assert.equal(replySends.at(-1)?.text, "--chatから始まる本文");
-  await message("!test reply help", user);
+  await message("!help test", user);
   const testHelp = await drain(); assert(texts(testHelp).includes("BOT管理者専用"));
   assert(testHelp.every(action => action.type === "sendMessage"));
   // 旧kicktestは案内だけ。通常応答は返信先を付けず、サブトークの受信済みIDを参照する。
@@ -304,7 +304,7 @@ try {
   const manyId = await message("絵文字", user, undefined, chat, { metadataJson: JSON.stringify(manyEmoji) }); await drain();
   await message(`!id emoji ${manyId}`, user); const boundedInfo = texts(await drain());
   assert(boundedInfo.includes("先頭20個") && boundedInfo.includes("sticonId): 20") && !boundedInfo.includes("sticonId): 21"));
-  await message("!ut help", user); const searchHelp = texts(await drain());
+  await message("!help ut", user); const searchHelp = texts(await drain());
   assert(searchHelp.includes("1ページ10件") && searchHelp.includes("3p")); assert.equal(emojiSends.length, 0);
   await message("!id reply", user, sourceId); assert(texts(await drain()).includes(`元トークMID: ${sub}`));
   await message("!id 参加者", user); assert(texts(await drain()).includes(user));

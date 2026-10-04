@@ -4,7 +4,7 @@
 
 ## 入力と移植元
 
-`!ping` 等は [txt catalog](../../../../../content/docs/CONTENT.md) で登録。`!help / !ut help` は同じcatalogの案内を返す。`ut / tut / st` はDiscord v2のcommit `02e6e9b` の仕様・公開資料・素材解決を参照する。LINE向けの表示・Session・配送を共通化し、Discord Client・Reaction・編集は持ち込まない。
+`!ping` 等は [txt catalog](../../../../../content/docs/CONTENT.md) で登録。`!help / !help ut` は同じcatalogの案内を返す。`ut / tut / st` はDiscord v2のcommit `02e6e9b` の仕様・公開資料・素材解決を参照する。LINE向けの表示・Session・配送を共通化し、Discord Client・Reaction・編集は持ち込まない。
 
 | 入力 | 動作 |
 | --- | --- |
