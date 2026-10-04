@@ -101,7 +101,12 @@ async function signal(id: string, state: string, scope = "square", targetChat = 
 try {
   // 管理下の検証OCを複数登録し、確認だけでは変更せず、明示実行を既存配送へ渡す。
   await message(`!test allow ${square} ${labSquare}`, admin); assert(texts(await drain()).includes("BOT管理者専用"));
-  await message(`!test delete 1234567890 --apply`, owner); assert(texts(await drain()).includes("未登録"));
+  await message(`!test admin ${labCo} --target-chat ${labSquare} --apply`, owner);
+  const invalidChat = texts(await drain()); assert(invalidChat.includes("mから始まるトークMID専用") && !invalidChat.includes("実行OCが検証対象に未登録"));
+  assert.equal(roleCalls.length, 0);
+  await message(`!test allow ${labSquare}`, owner); await drain();
+  await message(`!test admin ${labCo} --target-chat ${labChat}`, owner);
+  const unregisteredSource = texts(await drain()); assert(unregisteredSource.includes("実行OCが検証対象に未登録") && unregisteredSource.includes(`!test allow ${square}`));
   await message(`!test allow ${square} ${labSquare} ${square}`, owner); await drain();
   assert.equal((db.prepare("SELECT count(*) AS n FROM oc_test_squares").get() as { n: number }).n, 2);
   await message(`!test allow ${mid("s", "f")} ${chat}`, owner); await drain();
@@ -138,7 +143,8 @@ try {
   assert.deepEqual(roleCalls.at(-1), [{ id: labAdmin, square: labSquare, role: "CO_ADMIN", revision: 7n }, { id: labCo, square: labSquare, role: "ADMIN", revision: 7n }]);
   await message(`!test mention ${user} --target-chat ${labChat} --apply`, owner); assert(texts(await drain()).includes("InspectionMemberScopeMismatch"));
   await message(`!test allow remove ${labSquare}`, owner); await drain();
-  await message(`!test delete 1234567890 --target-chat ${labChat} --apply`, owner); assert(texts(await drain()).includes("未登録"));
+  await message(`!test delete 1234567890 --target-chat ${labChat} --apply`, owner);
+  const unregisteredTarget = texts(await drain()); assert(unregisteredTarget.includes("対象OCが検証対象に未登録") && unregisteredTarget.includes(`!test allow ${labSquare}`) && unregisteredTarget.includes(labChat));
   assert.equal(deleted.length, deletedBefore + 1);
   const testUnknown = db.prepare("SELECT action FROM oc_history WHERE operation='test-deputy-on' AND status='結果不明'").get() as { action: string };
   core.resolveAction({ actionId: testUnknown.action, status: "failed", code: "ConfirmedDeniedInFixture" });

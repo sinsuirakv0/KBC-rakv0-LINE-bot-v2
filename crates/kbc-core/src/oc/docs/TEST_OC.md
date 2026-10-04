@@ -21,6 +21,10 @@ BOT admin（実行OCまたは実行トークのrank 2）だけが利用する。
 
 全操作に--target-chat <mMID>を付けると対象トークを変える。省略時は実行トーク。--applyなしでは未実行の対象確認、付けた場合だけ実通信を登録する。mentionの本文を指定する--より前にこれらの引数を置く。o.testも同じ。管理操作の対象は1件で、許可OCの複数登録とは別の指定である。
 
+--target-chatはmから始まるトークMID専用。sから始まるOC MIDを受け付けない。対象トークの!id talkでmMIDと親OCのsMIDを確認する。allowには両方のOCのsMIDを登録し、mMIDを混ぜない。admin / deputy / kickは入力トークから解決した親OCに作用するため、同じOCのサブトークごとの権限移行ではない。
+
+2026-10-04の実ログで、対象OCだけを登録し、未登録の実行OCからadminを呼ぶと実行OCの判定で停止することを確認した。また、不正な--target-chatのsMIDが同じ判定に隠れていた。現在はBOT権限を確認した後、引数の形式を先に検証する。未登録の実行OC・対象OCは別の文面で実際のsMIDと登録コマンドを返す。Inspect待機中に実行OCの登録を解除した場合も、対象OCの未登録と混同しない。操作の許可範囲やAPI引数は変更しない。
+
 adminの移行元は対象OCのBot。Botが対象OCの管理人でない場合は、--from <現在の管理人pMID>を明示して権限不足の試験も行える。現在ADMINとCO_ADMINである2者のrevisionを取得し、同じ対象OCであることを照合する。副官の「譲渡」はon/offとして役割の付与・解除を試す。kickは一般メンバーだけが対象で、Bot・ADMIN・CO_ADMIN・未知roleを除外する。
 
 各操作はAPI上で対象トークまたは対象OCを指定する。実行元トークの権限を引き継ぐ引数はない。対象側に権限がない場合の可否はサーバーの判定と実観測で確認し、権限回避が成立すると仮定しない。メンションの描画・metadataの付与と端末通知は別に観測する。管理人移行の一般仕様は[LINE公式](https://help.line.me/line/smartphone?contentId=20005393&lang=ja)で現在の副官への移行・旧管理人の副官化を確認した。
@@ -44,7 +48,7 @@ API成功・失敗・結果不明を実行トークへ返し、対象OCをキー
 | 関数 | 接続と働き |
 | --- | --- |
 | test::initialize / allow / permitted | 小さな検証OC table、原子的な複数登録・解除、所属OCの照合 |
-| test::parse / plan / execute | 引数解析、共通ContextのBOT権限、Inspectへの継続Job登録 |
+| test::parse / plan / execute | 共通ContextのBOT権限、理由付き引数解析、実行OC登録確認、Inspectへの継続Job登録 |
 | test::inspected | 現在の対象・役割・期限・許可を確認し、previewまたは1操作を登録 |
 | test::mutated | 既存ActionResultから結果通知・対象OCの履歴、手動解決時の重複通知抑止 |
 | oc::ingest / complete / request | 共通受付・transaction・Outbox・continuationを共有 |
@@ -52,5 +56,7 @@ API成功・失敗・結果不明を実行トークへ返し、対象OCをキー
 | deliverAction / ApiScheduler | API名ごとの実送信境界、30秒期限、共通枠とunknown契約 |
 
 smoke:ocの同じSDK mockで、BOT権限、複数許可登録・不正入力の非反映、previewで変更しないこと、別OC・一般roleのBotの要求先、MENTION metadata、管理者削除、KICK_OUT、役割付与・解除、2者の管理人移行、メンバー所属不一致、許可解除、通信後拒否をunknownにして再送しないこと、手動解決の履歴更新と再起動後の許可保持を確認した。実LINEで権限不足の操作が通ることや通知が鳴ることの証明にはしない。
+
+誤入力の修正は同じSmokeで、実行OC未登録でも--target-chatのsMIDを先に拒否すること、対象だけ登録した場合の実行OCの案内、対象解除後の親OCとトークの案内を確認した。誤入力から役割変更を送らない。npm run build、smoke:oc、smoke:commands、Clippyの同じ設定が通過。help本文は974 UTF-16単位で、1,500単位の上限内。
 
 Windows / Node 24.15.0 / Rust GNU LLVMでnpm run build、smoke / smoke:commands / smoke:oc / smoke:persistence / smoke:logsとClippy（workspace・all-targets・release・locked・警告をエラー扱い）が通過。途中のオフライン検証でinspectを照会Action選択のSQLへ登録し忘れる待機を検出し、修正後に同じ経路の完了を確認した。BOM・LF・資料リンク・git diff --checkも確認した。

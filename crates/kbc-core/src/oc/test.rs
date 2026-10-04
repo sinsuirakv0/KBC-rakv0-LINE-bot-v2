@@ -130,14 +130,14 @@ fn allow(tx: &Transaction<'_>, job: &Job, now: i64) -> Result<()> {
     )
 }
 
-fn plan(job: &Job) -> Option<Plan> {
+fn plan(job: &Job) -> std::result::Result<Plan, &'static str> {
     let mut input = job.input.body.as_str();
     let mut operation = job.input.args[0].clone();
     if operation == "deputy" {
         operation = match take_word(&mut input) {
             "on" => "deputy-on",
             "off" => "deputy-off",
-            _ => return None,
+            _ => return Err("deputyはonまたはoffを指定してください。"),
         }
         .into();
     }
@@ -148,7 +148,7 @@ fn plan(job: &Job) -> Option<Plan> {
     } else {
         !mid(target, 'p')
     } {
-        return None;
+        return Err("対象メンバーはpMID、deleteの対象は数字のメッセージIDを指定してください。");
     }
     let mut result = Plan {
         operation,
@@ -173,7 +173,9 @@ fn plan(job: &Job) -> Option<Plan> {
             "--target-chat" if !chat_set => {
                 let chat = take_word(&mut input);
                 if !mid(chat, 'm') {
-                    return None;
+                    return Err(
+                        "--target-chatはmから始まるトークMID専用です。トークMIDは対象トークの!id talkで取得できます。sから始まるOC MIDは!test allowの登録に使います。",
+                    );
                 }
                 result.chat = chat.into();
                 chat_set = true;
@@ -181,22 +183,22 @@ fn plan(job: &Job) -> Option<Plan> {
             "--from" if result.operation == "admin" && result.members.len() == 1 => {
                 let member = take_word(&mut input);
                 if !mid(member, 'p') || member == target {
-                    return None;
+                    return Err("--fromには移行先と異なる現在の管理人pMIDを指定してください。");
                 }
                 result.members.push(member.into());
             }
             "--apply" if !result.apply => result.apply = true,
             "--" if result.operation == "mention" => {
                 if input.trim().is_empty() {
-                    return None;
+                    return Err("--の後にメンション本文を指定してください。");
                 }
                 result.text = input.into();
                 break;
             }
-            _ => return None,
+            _ => return Err("テスト引数を確認してください。"),
         }
     }
-    Some(result)
+    Ok(result)
 }
 
 pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
@@ -211,25 +213,21 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
     if job.input.args[0] == "allow" {
         return allow(tx, job, now);
     }
-    if !permitted(
-        tx,
-        &job.context.as_ref().ok_or("MissingOcContext")?.square_id,
-    )? {
+    let plan = match plan(job) {
+        Ok(plan) => plan,
+        Err(message) => return reply(tx, job, format!("{message}\n使い方: !test help"), now),
+    };
+    let square = &job.context.as_ref().ok_or("MissingOcContext")?.square_id;
+    if !permitted(tx, square)? {
         return reply(
             tx,
             job,
-            "実行OCが検証対象に未登録です。!test allow <sMID> ... で管理下の検証OCを登録してください。",
+            format!(
+                "実行OCが検証対象に未登録です。対象OCとは別に、管理下の実行OCも登録してください。\n実行OC: {square}\n登録: !test allow {square}"
+            ),
             now,
         );
     }
-    let Some(plan) = plan(job) else {
-        return reply(
-            tx,
-            job,
-            "テスト引数を確認してください。使い方: !test help",
-            now,
-        );
-    };
     let request_value = OcRequest::Inspect {
         chat_id: plan.chat.clone(),
         member_ids: plan.members.clone(),
@@ -276,16 +274,25 @@ pub fn inspected(
     let value = result.oc_result.as_ref().ok_or("MissingOcResult")?;
     let context = value.context.as_ref().ok_or("MissingTestContext")?;
     let mut test = job.test.take().ok_or("MissingTestPlan")?;
-    if !permitted(tx, &context.square_id)?
-        || !permitted(
-            tx,
-            &job.context.as_ref().ok_or("MissingOcContext")?.square_id,
-        )?
-    {
+    let square = &job.context.as_ref().ok_or("MissingOcContext")?.square_id;
+    if !permitted(tx, square)? {
         return reply(
             tx,
             job,
-            "対象OCが検証対象に未登録です。対象トークが所属するOCのsMIDを!test allowで登録してください。操作は未実行です。",
+            format!(
+                "実行OCの検証登録が解除されています。操作は未実行です。\n実行OC: {square}\n登録: !test allow {square}"
+            ),
+            now,
+        );
+    }
+    if !permitted(tx, &context.square_id)? {
+        return reply(
+            tx,
+            job,
+            format!(
+                "対象OCが検証対象に未登録です。管理下の対象OCを登録してください。操作は未実行です。\n対象トーク: {}\n対象OC: {}\n登録: !test allow {}",
+                test.chat, context.square_id, context.square_id
+            ),
             now,
         );
     }
