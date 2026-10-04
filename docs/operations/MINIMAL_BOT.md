@@ -126,3 +126,11 @@ b76f157 / next-story-1765のLinux buildは2分6秒で成功。旧instanceの0 / 
 切替前はhealth 200 / receiving、Core完了158件・既存unknown 10件、待機Action 1件、照会・送信中0。GitHub退避45回 / failures 0、ログ同期9周期・51行 / failures 0、pendingLogs 0。旧版で発生した不明結果は再実行せず、新版へ引き継いだ。
 
 新版の起動約95秒でhealth 200 / receiving、PUSH session / sign-on各1、11トークの定期取得・優先4、補完・一覧・定期取得の失敗0。API requests 123 / errors 0 / rateLimits 0、GitHub退避2回 / failures 0、Node RSS約128MiB。Core完了158件・unknown 10件、待機Action 1件、照会・送信中0。新起動後の配送失敗・unknownは0。ログ3行は5分同期の待機中で、この時点で新周期の完了は未確認。NorthflankはRunning / 1 / 1・restart 0を確認した。build、3種類のSmoke、Clippy、BOM / LF / 資料リンク検査は通過。Codexから実LINEの名前変更APIは発行していない。配備・起動確認を実LINEでの改名成功として扱わず、利用者が希望の名前で試す。
+
+## 2026-10-04のBot表示名制限解除・再確認配備
+
+名前の独自文字数上限・改行拒否・制御文字拒否を削除し、空の名前だけをUsageにした。`!bot name `の区切り空白を1個だけ除去し、残りの入力は未加工でLINEJSへ渡す。実際の受理可否はLINE側の仕様に委ねる。前版の実LINE観測で`updateSquareMember`の返却が完全なMember DTOではなく、2件を`InvalidSquareMemberResponse`として結果不明にしたため、更新後に同じMemberを1回だけ再取得して状態と表示名を確認する方式へ修正した。結果不明の自動再送は行わない。[入力と再取得確認](../../crates/kbc-core/src/oc/docs/BOT.md)。
+
+bc805ff / worthy-office-3638のLinux build成功後、旧instanceを0へ変更して0 / 0を確認し、新版を配備して1 instanceへ戻した。Protocol v10のNativeとAdapterを同時に更新。0.2vCPU / 512MB、Volume追加なし、CD OFFを維持する。起動約15秒のhealthは200 / receiving、PUSH session / sign-on各1、API requests 18 / errors 0 / rateLimits 0、待機・照会・送信中0、配送失敗0 / unknown0、GitHub退避1回 / failures 0、RSS約120MiB、restart 0だった。CoreのunknownActions 13は旧状態からの累積値であり、新起動後に増えていない。
+
+build、型検査、smoke:oc、変更検査、git diff --checkは通過済み。今回の切替後は実LINEの名前変更コマンドをまだ発行していないため、任意の名前が実際に受理されることは未確認。利用者が`!bot name 名前`または`o.bot name 名前`で確認する。
