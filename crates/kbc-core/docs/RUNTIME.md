@@ -65,6 +65,6 @@ Protocol v9はProfile変更要求を追加する。BOT管理者の!bot nameは�
 
 Protocol v10はOcResultのrawMemberNameを追加し、Bot名の完全一致判定へ未加工のLINEプロフィール名を使う。表示用DTOの短縮・改行整形とAPI確認を分ける。Bot固有の20文字・改行・制御文字制限は利用者指定で撤廃し、共通の入力・結果byte上限を維持する。
 
-Protocol v11はReactionNotified / Reactions / OcReactionを追加する。Reactionsは既存のnext_query_actionへ渡し、OC管理・モデレーション・メッセージログの入力とは区別する。sessions.pending_payloadを起動時に追加し、照会と変更先を保持する。complete_search_reactionは共通enqueue_responsesでページ投稿を作り、complete_actionはSendMessage成功時だけpending_payloadを確定する。未知の送信結果を自動再送しない。[ページ操作の関数・検証](../src/commands/docs/COMMANDS.md)。
+Protocol v11でReactionNotified / Reactions / OcReactionを追加したが、2026-10-04の利用者指定でページ操作への利用を廃止した。型は旧snapshotの復元用に維持し、旧Reactionsの結果でページを変更しない。sessions.pending_payloadはリプライによる変更先を保持し、complete_actionはSendMessage成功時だけ確定する。未知の送信結果を自動再送しない。Sessionのrevisionはsnapshotと表示件数を含め、旧8件表示は起動時に失効する。[ページ操作の関数・検証](../src/commands/docs/COMMANDS.md)。
 
-Protocol v12はSendMessageに任意のMessageEmojiを追加し、通常配送でLINE標準絵文字を付ける。旧保存Actionの未指定値はdefaultで復元し、新旧Native / Adapterは混在させない。message_refsはスタンプとLINE絵文字の必要なIDだけを保持し、既存の件数・期間・DB byte上限とsnapshotを共有する。[IDの関数と上限](../src/oc/docs/ID.md)。
+Protocol v12はSendMessageに任意のMessageEmojiを追加した。旧保存Actionの未指定値はdefaultで復元し、新旧Native / Adapterは混在させない。現在のページ案内は絵文字装飾を付けず、型とAdapterは保存互換のため維持する。message_refsはスタンプとLINE絵文字の必要なIDだけを保持し、既存の件数・期間・DB byte上限とsnapshotを共有する。[IDの関数と上限](../src/oc/docs/ID.md)。

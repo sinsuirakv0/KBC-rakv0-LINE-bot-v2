@@ -12,7 +12,7 @@ use std::{
     path::Path,
 };
 use unicode_normalization::UnicodeNormalization;
-pub const PAGE_SIZE: usize = 8;
+pub const PAGE_SIZE: usize = 10;
 pub const SESSION_TTL_MS: i64 = 600000;
 
 #[derive(Deserialize)]
@@ -191,6 +191,10 @@ fn parse(kind: &str, args: &[&str]) -> Option<(String, bool, Operation)> {
     (!query.is_empty()).then_some((query, force, operation))
 }
 impl SearchCatalog {
+    pub fn session_revision(&self) -> String {
+        // 表示件数を変更した古い一覧で候補番号を再解釈しない。
+        format!("{}:pages{PAGE_SIZE}", self.revision)
+    }
     pub fn asset_url(&self, path: &str) -> Result<String> {
         Ok(format!(
             "https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-assets/{}/jp/sitedata/{path}",
@@ -411,12 +415,14 @@ impl SearchCatalog {
         let start = s.page * PAGE_SIZE;
         let end = (start + PAGE_SIZE).min(count);
         let mut lines = vec![format!(
-            "{}「{}」\n{}〜{} / {}件",
+            "{}「{}」\n{}〜{} / {}件\n{} / {}ページ",
             label(&s.kind),
             s.query.chars().take(60).collect::<String>(),
             start + 1,
             end,
-            if s.files.is_some() { count } else { s.total }
+            if s.files.is_some() { count } else { s.total },
+            s.page + 1,
+            count.div_ceil(PAGE_SIZE)
         )];
         for i in start..end {
             let name = if let Some(files) = &s.files {
@@ -453,14 +459,14 @@ impl SearchCatalog {
             ));
             let mut moves = Vec::new();
             if end < count {
-                moves.push("👍（いいね）：次へ");
+                moves.push("次：次ページ");
             }
             if start > 0 {
-                moves.push("❤️（ハート）：前へ");
+                moves.push("前：前ページ");
             }
             if !moves.is_empty() {
                 lines.push(format!(
-                    "一覧を長押ししてリアクションを付ける\n{}",
+                    "この一覧へリプライ\n{}　3p：3ページへ",
                     moves.join("　")
                 ));
             }

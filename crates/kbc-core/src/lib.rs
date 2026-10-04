@@ -140,7 +140,7 @@ impl Runtime {
         )?;
         db.execute(
             "DELETE FROM sessions WHERE expires<=?1 OR revision<>?2",
-            params![now_ms(), search.revision],
+            params![now_ms(), search.session_revision()],
         )?;
         let assets = assets::AssetService::new(search.asset_commit()?)?;
         Ok(Self {
@@ -389,24 +389,6 @@ impl Runtime {
         self.enqueue_responses(tx, event_id, chat_id, responses, replacement, now)
     }
 
-    fn complete_search_reaction(
-        &self,
-        tx: &rusqlite::Transaction<'_>,
-        action: &CoreAction,
-        result: &ActionResult,
-        now: i64,
-    ) -> Result<()> {
-        let CoreAction::OcApi {
-            event_id, chat_id, ..
-        } = action
-        else {
-            return Ok(());
-        };
-        let (responses, replacement) =
-            commands::sessions::complete_reaction(tx, action, result, &self.search, now)?;
-        self.enqueue_responses(tx, event_id, chat_id, responses, replacement, now)
-    }
-
     fn enqueue_responses(
         &self,
         tx: &rusqlite::Transaction<'_>,
@@ -460,7 +442,7 @@ impl Runtime {
                     event_id: event_id.into(),
                     chat_id: chat_id.into(),
                     related_message_id: String::new(),
-                    emojis: commands::message_emojis(&body),
+                    emojis: None,
                     text: body,
                     image_url: None,
                     attachment: None,

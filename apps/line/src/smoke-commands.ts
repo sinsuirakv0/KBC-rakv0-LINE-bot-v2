@@ -7,7 +7,7 @@ import { BaseClient } from "@evex/linejs/base";
 import { ApiScheduler } from "./adapter/api.js";
 import { deliverAction } from "./adapter/delivery.js";
 import { normalizeEvent } from "./adapter/events.js";
-import { SquareDirectory, messageMetadata } from "./adapter/square.js";
+import { SquareDirectory } from "./adapter/square.js";
 import { createCore, PROTOCOL_VERSION, type CoreAction } from "./protocol/native.js";
 
 const directory = await mkdtemp(join(tmpdir(), "kbc-command-smoke-"));
@@ -64,64 +64,57 @@ try {
   assert(action.text.includes("第二形態名でヒット") && action.text.includes("000 ネコ")); sent(action, "normalized-prompt");
 
   // 本人・トーク・送信済みpromptに結び付け、再起動とページ更新後も誤選択しない。
-  await submit("o.ut ねこ"); const firstPage = await take(); assert(firstPage.text.includes("👍（いいね）：次へ") && !firstPage.text.includes("9：次へ")); sent(firstPage, "prompt-one");
-  assert(firstPage.text.includes("一覧を長押し"));
-  assert.equal(firstPage.emojis?.[0]?.emojiId, "143");
-  const pageMetadata = JSON.parse(messageMetadata(undefined, firstPage.emojis)!.REPLACE).sticon.resources;
-  assert.equal(firstPage.text.slice(pageMetadata[0].S, pageMetadata[0].E), "👍");
-  assert.equal(pageMetadata[0].productId, "670e0cce840a8236ddd4ee4c");
-  assert.equal((await submit("1", "bob", "prompt-one")).actionsCreated, 0);
-  assert.equal((await submit("1", "alice", "prompt-one", "other-chat")).actionsCreated, 0);
-  assert.equal((await submit("1")).actionsCreated, 0);
-  core.shutdown();
-  db.exec("ALTER TABLE sessions DROP COLUMN pending_payload");
-  core = createCore(config);
-  await submit("9", "alice", "prompt-one"); action = await take(); assert(action.text.includes("長押し")); sent(action);
+  await submit("o.ut ねこ"); const firstPage = await take();
+  assert(firstPage.text.includes("1〜10") && firstPage.text.includes("次：次ページ") && firstPage.text.includes("3p：3ページへ"));
+  assert(!firstPage.emojis && !firstPage.text.includes("長押し")); sent(firstPage, "prompt-one");
+  assert.equal((await submit("次", "bob", "prompt-one")).actionsCreated, 0);
+  assert.equal((await submit("3p", "alice", "prompt-one", "other-chat")).actionsCreated, 0);
+  assert.equal((await submit("次")).actionsCreated, 0);
+  core.shutdown(); db.exec("ALTER TABLE sessions DROP COLUMN pending_payload"); core = createCore(config);
+  assert.equal((await submit("1p", "alice", "prompt-one")).actionsCreated, 0);
   assert.equal((await submit("👍", "alice", "prompt-one")).actionsCreated, 0);
-  assert.equal((await notifyReaction("prompt-one", "LOVE")).actionsCreated, 0);
-  assert.equal((await notifyReaction("prompt-one", "NICE", "other-chat")).actionsCreated, 0);
-  const reactionController = new AbortController(), reactionGate = new ApiScheduler(reactionController.signal, 2, 1);
-  const reactionClient = new BaseClient({ device: "DESKTOPWIN" });
-  let reactor = "bob", reactionType = "NICE", reactionCalls = 0;
-  reactionClient.request.request = async <T>(...[_body, method]: Parameters<typeof reactionClient.request.request>): Promise<T> => reactionGate.run(method, async () => {
-    assert.equal(method, "getMessageReactions"); reactionCalls++;
-    return { reactions: [{ type: reactionType, reactor: { squareMemberMid: reactor }, createdAt: Date.now(), updatedAt: Date.now() }] } as T;
-  });
-  const reactionDirectory = new SquareDirectory(reactionClient);
-  await notifyReaction("prompt-one", "NICE"); let query = await core.nextQueryAction(); assert(query?.type === "ocApi" && query.request.type === "reactions");
   assert.equal((await notifyReaction("prompt-one", "NICE")).actionsCreated, 0);
-  assert.equal((await deliverAction(reactionClient, core, reactionGate, query, reactionDirectory)).status, "sent");
-  assert.equal((JSON.parse((db.prepare("SELECT payload FROM sessions").get() as { payload: string }).payload)).page, 0);
-  reactor = "alice";
-  await notifyReaction("prompt-one", "NICE"); query = await core.nextQueryAction(); assert(query);
-  await deliverAction(reactionClient, core, reactionGate, query, reactionDirectory);
-  const secondPage = await take(); assert(secondPage.text.includes("9〜16") && secondPage.text.includes("❤️（ハート）：前へ"));
-  assert(secondPage.emojis?.some(item => item.emojiId === "165" && secondPage.text.slice(item.start, item.end) === "❤️"));
-  assert.equal((JSON.parse((db.prepare("SELECT payload FROM sessions").get() as { payload: string }).payload)).page, 0);
-  await submit("1", "alice", "prompt-one");
-  const oldCleanupId = `cleanup:${JSON.stringify(["chat", "prompt-one"])}`;
+  assert.equal((db.prepare("SELECT count(*) AS count FROM actions WHERE status='queued' AND json_extract(payload,'$.request.type')='reactions'").get() as { count: number }).count, 0);
+  const legacyClient = new BaseClient({ device: "DESKTOPWIN" });
+  legacyClient.request.request = async () => { throw new Error("UnexpectedReactionApi"); };
+  assert.deepEqual(await new SquareDirectory(legacyClient).execute("chat", { type: "reactions", messageId: "prompt-one", memberId: "alice", reactionType: "NICE" }), { chats: [], members: [] });
+  for (const input of ["前", "0p", "999999999999999999999999999p"]) {
+    await submit(input, "alice", "prompt-one"); action = await take(); assert(action.text.includes("移動できません")); sent(action);
+  }
+  await submit("次", "alice", "prompt-one"); const secondPage = await take();
+  assert(secondPage.text.includes("11〜20") && secondPage.text.includes("前：前ページ"));
+  assert.equal(JSON.parse((db.prepare("SELECT payload FROM sessions").get() as { payload: string }).payload).page, 0);
+  await submit("1", "alice", "prompt-one"); await submit("3p", "alice", "prompt-one");
+  const oldCleanupId = "cleanup:" + JSON.stringify(["chat", "prompt-one"]);
   assert((db.prepare("SELECT due FROM actions WHERE id=?").get(oldCleanupId) as { due: number }).due > Date.now());
   sent(secondPage, "prompt-two");
-  action = await take(); assert(action.text.includes("切り替えています")); sent(action);
-  assert.equal((await notifyReaction("prompt-one", "NICE")).actionsCreated, 0);
+  for (let index = 0; index < 2; index++) { action = await take(); assert(action.text.includes("切り替えています")); sent(action); }
+  assert.equal((await submit("次", "alice", "prompt-one")).actionsCreated, 0);
   assert.equal((await submit("1", "alice", "prompt-one")).actionsCreated, 0);
-  // ページ送信の確定失敗は旧一覧へ戻し、再起動後も同じ番号を保つ。
-  reactionType = "LOVE";
-  await notifyReaction("prompt-two", "LOVE"); query = await core.nextQueryAction(); assert(query);
-  await deliverAction(reactionClient, core, reactionGate, query, reactionDirectory);
-  action = await take(); assert(action.text.includes("1〜8"));
+  // 確定失敗は旧一覧へ戻し、再起動後もページ番号と項目を保つ。
+  await submit("前", "alice", "prompt-two"); action = await take(); assert(action.text.includes("1〜10"));
   core.completeAction({ actionId: action.actionId, status: "failed", code: "BeforeSendFailure" });
   const restored = db.prepare("SELECT payload,prompt,pending_payload FROM sessions").get() as { payload: string; prompt: string; pending_payload: string | null };
   assert.equal(JSON.parse(restored.payload).page, 1); assert.equal(restored.prompt, "prompt-two"); assert.equal(restored.pending_payload, null);
   core.shutdown(); core = createCore(config);
-  await notifyReaction("prompt-two", "LOVE"); query = await core.nextQueryAction(); assert(query);
-  await deliverAction(reactionClient, core, reactionGate, query, reactionDirectory);
-  action = await take(); assert(action.text.includes("1〜8")); sent(action, "prompt-three");
-  await submit("1", "alice", "prompt-three"); action = await take(); assert(action.text.includes("https://jarjarblink.github.io/JDB/")); sent(action);
-  assert(deleted.includes("prompt-one"));
-  assert.equal(reactionCalls, 4); reactionController.abort();
-  assert.equal(core.stats().activeSessions, 0);
-  assert.equal((await submit("1", "alice", "prompt-two")).actionsCreated, 0);
+  await submit("3p", "alice", "prompt-two"); action = await take(); assert(action.text.includes("21〜30")); sent(action, "prompt-three");
+  await submit("前", "alice", "prompt-three"); action = await take(); assert(action.text.includes("11〜20"));
+  const tenth = action.text.split("\n").find(line => line.startsWith("10．"))!.slice(3); sent(action, "prompt-four");
+  await submit("10", "alice", "prompt-four"); action = await take(); assert(action.text.includes(tenth) && action.text.includes("https://jarjarblink.github.io/JDB/")); sent(action);
+  assert(deleted.includes("prompt-one")); assert.equal(core.stats().activeSessions, 0);
+  assert.equal((await submit("1", "alice", "prompt-three")).actionsCreated, 0);
+  // 末尾の少数候補に存在しない番号を選ばず、古い8件表示は再起動で失効する。
+  await submit("o.ut ねこ"); action = await take(); sent(action, "last-source");
+  const results = JSON.parse((db.prepare("SELECT payload FROM sessions").get() as { payload: string }).payload).results.length as number;
+  await submit(String(Math.ceil(results / 10)) + "p", "alice", "last-source"); action = await take();
+  assert.equal(action.text.split("\n").filter(line => /^\d+．/.test(line)).length, results % 10 || 10); sent(action, "last-prompt");
+  if (results % 10) {
+    await submit(String(results % 10 + 1), "alice", "last-prompt"); action = await take(); assert(action.text.includes("候補番号")); sent(action);
+  }
+  await submit("次", "alice", "last-prompt"); action = await take(); assert(action.text.includes("移動できません")); sent(action);
+  db.exec("UPDATE sessions SET revision=substr(revision,1,instr(revision,':')-1)");
+  core.shutdown(); core = createCore(config); assert.equal(core.stats().activeSessions, 0);
+  assert.equal((await submit("1", "alice", "last-prompt")).actionsCreated, 0);
   await submit("o.ut ねこ"); action = await take(); sent(action, "expired-prompt");
   db.prepare("UPDATE sessions SET expires=0").run();
   assert.equal((await submit("1", "alice", "expired-prompt")).actionsCreated, 0);

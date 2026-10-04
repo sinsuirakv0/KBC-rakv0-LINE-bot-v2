@@ -253,8 +253,8 @@ try {
   const manyId = await message("絵文字", user, undefined, chat, { metadataJson: JSON.stringify(manyEmoji) }); await drain();
   await message(`!id emoji ${manyId}`, user); const boundedInfo = texts(await drain());
   assert(boundedInfo.includes("先頭20個") && boundedInfo.includes("sticonId): 20") && !boundedInfo.includes("sticonId): 21"));
-  await message("!ut help", user); await drain(); assert.equal(emojiSends.length, 1);
-  assert.deepEqual(JSON.parse(emojiSends[0]!).sticon.resources.map((item: { sticonId: string }) => item.sticonId), ["143", "165"]);
+  await message("!ut help", user); const searchHelp = texts(await drain());
+  assert(searchHelp.includes("1ページ10件") && searchHelp.includes("3p")); assert.equal(emojiSends.length, 0);
   await message("!id reply", user, sourceId); assert(texts(await drain()).includes(`元トークMID: ${sub}`));
   await message("!id 参加者", user); assert(texts(await drain()).includes(user));
   // 旧権限区分、本人への番号返信、照会待ちの通常配送と再起動。

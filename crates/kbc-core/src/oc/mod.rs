@@ -260,7 +260,7 @@ fn text_action(
             event_id: root.into(),
             chat_id: chat.into(),
             related_message_id: related_message_id.clone().unwrap_or_default(),
-            emojis: crate::commands::message_emojis(&text),
+            emojis: None,
             text,
             image_url: None,
             attachment: None,
@@ -541,7 +541,8 @@ pub fn complete(
         return Err("OcResultLimit".into());
     }
     if matches!(api, OcRequest::Reactions { .. }) {
-        return runtime.complete_search_reaction(tx, action, result, now);
+        // 旧snapshotの照会は完了させるが、ページ操作には使わない。
+        return Ok(());
     }
     let mut job: Job = serde_json::from_str(continuation)?;
     if job.input.name == "test" && matches!(job.phase, Phase::Mutation) {

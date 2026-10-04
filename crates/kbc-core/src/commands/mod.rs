@@ -5,26 +5,6 @@ pub mod sessions;
 use content::{ContentCatalog, canonical_name};
 use search::{SearchCatalog, SearchSession};
 
-pub fn message_emojis(text: &str) -> Option<Vec<kbc_protocol::MessageEmoji>> {
-    // 標準LINE絵文字の案内部分だけ装飾する。位置は分割後の本文のUTF-16単位。
-    let mut result = Vec::new();
-    for (label, symbol, emoji_id) in [("👍（いいね）", "👍", "143"), ("❤️（ハート）", "❤️", "165")]
-    {
-        for (index, _) in text.match_indices(label) {
-            let start = text[..index].encode_utf16().count() as u32;
-            result.push(kbc_protocol::MessageEmoji {
-                product_id: "670e0cce840a8236ddd4ee4c".into(),
-                emoji_id: emoji_id.into(),
-                start,
-                end: start + symbol.encode_utf16().count() as u32,
-            });
-        }
-    }
-    result.sort_by_key(|item| item.start);
-    result.truncate(20);
-    (!result.is_empty()).then_some(result)
-}
-
 pub fn split_responses(
     responses: Vec<sessions::Response>,
 ) -> crate::Result<Vec<sessions::Response>> {
