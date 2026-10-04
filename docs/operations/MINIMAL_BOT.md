@@ -118,3 +118,11 @@ f69a3bc / special-yam-6537のLinux build成功を確認し、旧instanceを0へ�
 利用者の実ログで対象OCだけがallow登録済み、実行OCは未登録と確認した。また、--target-chatのsMID誤入力が登録判定に隠れていた。引数形式を先に確認し、未登録側のsMIDと登録コマンドを表示する修正を8703967 / graceful-bear-2760へ配備した。Linux buildは2分7秒で成功。旧instanceの0 / 0を確認してから配備・1 instanceへ戻し、v8・0.2vCPU / 512MB・Volumeなし・CD OFFを維持した。[原因と入力の使い分け](../../crates/kbc-core/src/oc/docs/TEST_OC.md)。
 
 起動約31秒でhealth 200 / receiving、PUSH session / sign-on各1、11トークの定期取得・優先4、Core完了124件・既存unknown 8件・受信保持1,530件を復元した。待機・実行中・新規配送の失敗とunknownは0。API requests 34 / errors 0 / rateLimits 0、GitHub退避1回 / failures 0、RSS約120MiB。この観測期間に新規メッセージはなく、実LINEのadmin実行成功や応答時間の測定とは扱わない。修正のbuild・smoke:oc・smoke:commands・ClippyとBOM / LF / 資料リンク確認は通過。実行OC・対象OCの許可要件やサーバーの権限判定は変更していない。
+
+## 2026-10-04のBot表示名変更配備
+
+b76f157 / next-story-1765のLinux buildは2分6秒で成功。旧instanceの0 / 0を確認してから配備・1 instanceへ戻し、Protocol v9のNativeとAdapterを同時に更新した。0.2vCPU / 512MB、Volume追加なし、CD OFFを維持する。BOT管理者だけが!bot name 名前（o.も可）を使える。[入力・関数・更新API・検証範囲](../../crates/kbc-core/src/oc/docs/BOT.md)。
+
+切替前はhealth 200 / receiving、Core完了158件・既存unknown 10件、待機Action 1件、照会・送信中0。GitHub退避45回 / failures 0、ログ同期9周期・51行 / failures 0、pendingLogs 0。旧版で発生した不明結果は再実行せず、新版へ引き継いだ。
+
+新版の起動約95秒でhealth 200 / receiving、PUSH session / sign-on各1、11トークの定期取得・優先4、補完・一覧・定期取得の失敗0。API requests 123 / errors 0 / rateLimits 0、GitHub退避2回 / failures 0、Node RSS約128MiB。Core完了158件・unknown 10件、待機Action 1件、照会・送信中0。新起動後の配送失敗・unknownは0。ログ3行は5分同期の待機中で、この時点で新周期の完了は未確認。NorthflankはRunning / 1 / 1・restart 0を確認した。build、3種類のSmoke、Clippy、BOM / LF / 資料リンク検査は通過。Codexから実LINEの名前変更APIは発行していない。配備・起動確認を実LINEでの改名成功として扱わず、利用者が希望の名前で試す。
