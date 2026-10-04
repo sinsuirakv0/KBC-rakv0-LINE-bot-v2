@@ -88,12 +88,15 @@ pub fn prepare(
         return CommandPlan::Ignore;
     }
     if name == "test" {
-        return if args
-            .first()
-            .is_some_and(|arg| arg.eq_ignore_ascii_case("reply"))
-            && !args
-                .get(1)
-                .is_some_and(|arg| arg.eq_ignore_ascii_case("help"))
+        return if args.first().is_some_and(|arg| {
+            [
+                "reply", "allow", "mention", "delete", "kick", "deputy", "admin",
+            ]
+            .iter()
+            .any(|name| arg.eq_ignore_ascii_case(name))
+        }) && !args
+            .get(1)
+            .is_some_and(|arg| arg.eq_ignore_ascii_case("help"))
         {
             CommandPlan::Ignore
         } else {

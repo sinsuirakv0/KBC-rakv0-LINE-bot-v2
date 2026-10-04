@@ -63,3 +63,7 @@ Bridgeの非同期受付は最大4受付・実処理1件。外部素材の取得
 通常応答・一覧・生成受付は入力へ自動replyせず普通に送信する。番号を入力する側は最新promptへのリプライを使う。!idのhelpは同じContentCatalog、取得・検索・同OCサブトークの返信情報は既存OC照会経路を使う。[ID仕様と関数](../../oc/docs/ID.md)。
 
 利用者指定の実リプライ送信は!test replyへ追加した。本文は改行・空白を保って最大1,500 UTF-16単位、--chatには元メッセージがあるmから始まるトークMIDを指定する。投稿先は常に実行トーク。BOT adminだけが実行でき、既存Context照会・Outbox・SendMessageを共有する。通常の!replyコマンドや旧testの他機能は追加していない。[仕様・関数・試験範囲](../../oc/docs/TEST_REPLY.md)。
+
+## 検証OCの操作
+
+!test allowは検証OCのsMIDを複数登録・解除する。BOT adminだけに許可し、!test mention / delete / kick / deputy / adminは対象確認後、--apply付きで1回の実操作を登録する。--target-chatは対象トーク、!test replyの--chatは返信元。txtの案内・共通Context・既存Outboxを使う。[仕様・関数・上限](../../oc/docs/TEST_OC.md)。

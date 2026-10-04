@@ -642,6 +642,7 @@ fn signal_job(
         deferred: None,
         id_lookup: None,
         target_member: None,
+        test: None,
     }
 }
 pub fn confirm_left(

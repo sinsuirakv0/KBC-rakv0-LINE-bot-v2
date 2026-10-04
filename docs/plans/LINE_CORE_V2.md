@@ -272,3 +272,7 @@ Protocol v5でテキスト以外の媒体・参加退出・OCのtyped APIを追�
 通常送信を既定とし、同じOCの原因投稿を残す副官通知はサブトークのreplyを利用する。!idの取得・名前検索・観測済みmessage参照を移植し、旧log allの過去一括取得は利用者指定で後回し。[ID実装](../../crates/kbc-core/src/oc/docs/ID.md)。Chrome GPTへ旧管理仕様を並行調査させ、旧コードで検証した差だけ [互換記録](../research/OC_LEGACY_COMPATIBILITY_2026_10_03.md) に沿って修正する。
 
 参加退出は投稿なしでもchatイベントを取得する。通知・監視対象3秒、その他60秒を目安とし、PUSH補完とのcursorとAPI枠を共有する。[仕様・制限](../../apps/line/docs/ADAPTER.md)。motionは同じ本番Dockerfileの0.2CPU / 512MiBで実験し、メモリ圧迫で生成を中止した後のping処理も確認した。[計測と限界](../../experiments/motion-memory/docs/MEMORY.md)。本番症状の完全再現・原因確定、イベント網羅性、長期運用は観測を続ける。
+
+## 2026-10-04の検証OC操作追加
+
+利用者が管理する検証OCで!testのメンション・削除・強制退会・副官付与/解除・管理人移行を試せる経路を追加する。allowでOC MIDを複数登録し、対象トーク・実行指定は操作ごとの引数へ置く。Protocol v8で既存OCの照会・配送・保存を共有する。[実装・確認範囲](../../crates/kbc-core/src/oc/docs/TEST_OC.md)。実LINEで権限不足の操作が受け付けられること、別OCメンションの通知は未確認。

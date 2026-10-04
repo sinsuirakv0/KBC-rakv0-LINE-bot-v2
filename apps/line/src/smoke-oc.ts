@@ -17,7 +17,9 @@ const mid = (prefix: string, digit: string) => prefix + digit.repeat(32);
 const square = mid("s", "1"), chat = mid("m", "1"), sub = mid("m", "2");
 const admin = mid("p", "1"), co = mid("p", "2"), mod = mid("p", "3"), user = mid("p", "4"), bot = mid("p", "5");
 const owner = mid("p", "9");
+const labChat = mid("m", "b"), labSquare = mid("s", "b"), labBot = mid("p", "c"), labUser = mid("p", "d"), labAdmin = mid("p", "e"), labCo = mid("p", "f");
 const roles = new Map([[admin, "ADMIN"], [co, "CO_ADMIN"], [mod, "MEMBER"], [user, "MEMBER"], [bot, "CO_ADMIN"]]);
+for (const [id, role] of [[labBot, "MEMBER"], [labUser, "MEMBER"], [labAdmin, "ADMIN"], [labCo, "CO_ADMIN"]]) roles.set(id!, role!);
 const states = new Map<string, string>();
 await writeFile(join(directory, "permissions.json"), JSON.stringify({ version: 1, roles: [
   { chatMid: square, userMid: mod, chatType: "SQUARE", role: "mod" },
@@ -28,11 +30,11 @@ let core = createCore(config);
 const db = new DatabaseSync(config.databasePath);
 const controller = new AbortController(), gate = new ApiScheduler(controller.signal, 2, 1);
 const client = new BaseClient({ device: "DESKTOPWIN" });
-const member = (id: string) => ({ squareMemberMid: id, squareMid: square, displayName: id === user ? "参加者🙂" : "メンバー",
+const member = (id: string) => ({ squareMemberMid: id, squareMid: [labBot, labUser, labAdmin, labCo].includes(id) ? labSquare : square, displayName: id === user ? "参加者🙂" : "メンバー",
   role: roles.get(id) ?? "MEMBER", membershipState: states.get(id) ?? "JOINED", revision: 7n });
 let failMutation = false;
-client.square.getSquareChat = async ({ squareChatMid }) => ({ squareChat: { squareChatMid, squareMid: square, name: "検証", type: "SQUARE_DEFAULT" },
-  squareChatMember: { squareMemberMid: bot } }) as Awaited<ReturnType<typeof client.square.getSquareChat>>;
+client.square.getSquareChat = async ({ squareChatMid }) => ({ squareChat: { squareChatMid, squareMid: squareChatMid === labChat ? labSquare : square, name: "検証", type: "SQUARE_DEFAULT" },
+  squareChatMember: { squareMemberMid: squareChatMid === labChat ? labBot : bot } }) as Awaited<ReturnType<typeof client.square.getSquareChat>>;
 client.square.getSquareMember = async ({ squareMemberMid }) => ({ squareMember: member(squareMemberMid) }) as Awaited<ReturnType<typeof client.square.getSquareMember>>;
 client.square.searchSquareMembers = async () => ({ members: [member(user)] }) as Awaited<ReturnType<typeof client.square.searchSquareMembers>>;
 client.square.updateSquareMember = async options => gate.run("updateSquareMember", async () => {
@@ -42,14 +44,28 @@ client.square.updateSquareMember = async options => gate.run("updateSquareMember
   states.set(updated.squareMemberMid, String(updated.membershipState));
   return { squareMember: member(updated.squareMemberMid) } as Awaited<ReturnType<typeof client.square.updateSquareMember>>;
 });
+let denyRole = false;
+const roleCalls: Array<Array<{ id: string; square: string; role: string; revision: bigint }>> = [];
+client.square.updateSquareMembers = async options => gate.run("updateSquareMembers", async () => {
+  assert.deepEqual(options?.request?.updatedAttrs, ["ROLE"]);
+  const members = options!.request!.members!;
+  roleCalls.push(members.map(value => ({ id: value.squareMemberMid!, square: value.squareMid!, role: String(value.role), revision: BigInt(value.revision!) })));
+  gate.beforeFetch(); assert.equal(core.stats().sendingActions, 1);
+  if (denyRole) throw Object.assign(new Error("NOT_AUTHORIZED"), { data: { errorCode: "NOT_AUTHORIZED" } });
+  for (const value of members) roles.set(value.squareMemberMid!, String(value.role));
+  return { members: Object.fromEntries(members.map(value => [value.squareMemberMid!, member(value.squareMemberMid!)])) } as Awaited<ReturnType<typeof client.square.updateSquareMembers>>;
+});
 const deleted: string[] = [];
+const deletedChats: string[] = [];
 client.square.destroyMessage = async options => gate.run("destroyMessage", async () => {
-  gate.beforeFetch(); deleted.push(options.messageId); return {} as Awaited<ReturnType<typeof client.square.destroyMessage>>;
+  gate.beforeFetch(); deleted.push(options.messageId); deletedChats.push(options.squareChatMid); return {} as Awaited<ReturnType<typeof client.square.destroyMessage>>;
 });
 let promptSequence = 0;
 const replySends: Array<{ chat: string; message: string; text: string | undefined }> = [];
+const mentionSends: Array<{ chat: string; text: string | undefined; metadata: string }> = [];
 client.square.sendMessage = async options => gate.run("sendMessage", async () => {
   if (options.relatedMessageId) replySends.push({ chat: options.squareChatMid, message: options.relatedMessageId, text: options.text });
+  if (options.contentMetadata?.MENTION) mentionSends.push({ chat: options.squareChatMid, text: options.text, metadata: options.contentMetadata.MENTION });
   gate.beforeFetch(); return { createdSquareMessage: { message: { id: `bot-${++promptSequence}` } } } as Awaited<ReturnType<typeof client.square.sendMessage>>;
 });
 const service = new SquareDirectory(client);
@@ -70,7 +86,7 @@ async function drain() {
     const next = db.prepare("SELECT payload FROM actions WHERE status='queued' AND due<=? ORDER BY due,rowid LIMIT 1").get(Date.now() + 100) as { payload: string } | undefined;
     if (!next) return actions.slice(start);
     const data = JSON.parse(next.payload) as CoreAction;
-    const action = await (data.type === "ocApi" && ["context", "member", "chats", "members", "joinedChats"].includes(data.request.type) ? core.nextQueryAction() : core.nextAction());
+    const action = await (data.type === "ocApi" && ["context", "member", "chats", "members", "joinedChats", "inspect"].includes(data.request.type) ? core.nextQueryAction() : core.nextAction());
     assert(action); actions.push(action);
     await deliverAction(client, core, gate, action, service);
   }
@@ -83,6 +99,50 @@ async function signal(id: string, state: string, scope = "square", targetChat = 
     displayName: "参加者🙂", state, scope, memberCreatedAtMs: at, createdAtMs: at });
 }
 try {
+  // 管理下の検証OCを複数登録し、確認だけでは変更せず、明示実行を既存配送へ渡す。
+  await message(`!test allow ${square} ${labSquare}`, admin); assert(texts(await drain()).includes("BOT管理者専用"));
+  await message(`!test delete 1234567890 --apply`, owner); assert(texts(await drain()).includes("未登録"));
+  await message(`!test allow ${square} ${labSquare} ${square}`, owner); await drain();
+  assert.equal((db.prepare("SELECT count(*) AS n FROM oc_test_squares").get() as { n: number }).n, 2);
+  await message(`!test allow ${mid("s", "f")} ${chat}`, owner); await drain();
+  assert.equal((db.prepare("SELECT count(*) AS n FROM oc_test_squares").get() as { n: number }).n, 2);
+  await message(`!test mention ${labUser} --target-chat ${labChat}`, owner); const preview = texts(await drain());
+  assert(preview.includes("未実行") && preview.includes(labBot) && preview.includes("MEMBER"));
+  assert.equal(mentionSends.length, 0);
+  await message(`!test mention ${labUser} --target-chat ${labChat} --apply -- 本文🙂\n連続  空白`, owner);
+  const mentionResult = texts(await drain()); assert(mentionResult.includes("テスト結果") && mentionResult.includes("成功"));
+  assert.deepEqual(mentionSends.at(-1), { chat: labChat, text: "@メンバー\n本文🙂\n連続  空白", metadata: JSON.stringify({ MENTIONEES: [{ S: "0", E: "5", M: labUser }] }) });
+  const deletedBefore = deleted.length;
+  await message(`!test delete 1234567890 --target-chat ${labChat}`, owner); await drain(); assert.equal(deleted.length, deletedBefore);
+  await message(`!test delete 1234567890 --target-chat ${labChat} --apply`, owner); assert(texts(await drain()).includes("成功"));
+  assert.equal(deleted.at(-1), "1234567890");
+  assert.equal(deletedChats.at(-1), labChat);
+  await message(`!test kick ${labBot} --target-chat ${labChat} --apply`, owner); assert(texts(await drain()).includes("一般メンバー"));
+  await message(`!test kick ${labUser} --target-chat ${labChat} --apply`, owner); const labKick = await drain();
+  assert(labKick.some(action => action.type === "ocApi" && action.request.type === "membership" && action.request.squareId === labSquare && action.request.state === "KICK_OUT"));
+  states.delete(labUser);
+  await message(`!test deputy on ${labUser} --target-chat ${labChat}`, owner); await drain(); assert.equal(roleCalls.length, 0);
+  denyRole = true;
+  const unknownBefore = core.stats().unknownActions;
+  await message(`!test deputy on ${labUser} --target-chat ${labChat} --apply`, owner); const denied = texts(await drain());
+  assert(denied.includes("結果不明") && denied.includes("NOT_AUTHORIZED"));
+  assert.equal(roleCalls.length, 1); assert.equal(core.stats().unknownActions, unknownBefore + 1);
+  await drain(); assert.equal(roleCalls.length, 1);
+  denyRole = false;
+  await message(`o.test deputy on ${labUser} --target-chat ${labChat} --apply`, owner); await drain();
+  assert.deepEqual(roleCalls.at(-1), [{ id: labUser, square: labSquare, role: "CO_ADMIN", revision: 7n }]);
+  await message(`!test deputy off ${labUser} --target-chat ${labChat} --apply`, owner); await drain();
+  assert.equal(roles.get(labUser), "MEMBER");
+  await message(`!test admin ${labCo} --from ${labAdmin} --target-chat ${labChat} --apply`, owner); const transfer = texts(await drain());
+  assert(transfer.includes("成功"));
+  assert.deepEqual(roleCalls.at(-1), [{ id: labAdmin, square: labSquare, role: "CO_ADMIN", revision: 7n }, { id: labCo, square: labSquare, role: "ADMIN", revision: 7n }]);
+  await message(`!test mention ${user} --target-chat ${labChat} --apply`, owner); assert(texts(await drain()).includes("InspectionMemberScopeMismatch"));
+  await message(`!test allow remove ${labSquare}`, owner); await drain();
+  await message(`!test delete 1234567890 --target-chat ${labChat} --apply`, owner); assert(texts(await drain()).includes("未登録"));
+  assert.equal(deleted.length, deletedBefore + 1);
+  const testUnknown = db.prepare("SELECT action FROM oc_history WHERE operation='test-deputy-on' AND status='結果不明'").get() as { action: string };
+  core.resolveAction({ actionId: testUnknown.action, status: "failed", code: "ConfirmedDeniedInFixture" });
+  assert.equal((db.prepare("SELECT status FROM oc_history WHERE action=?").get(testUnknown.action) as { status: string }).status, "失敗");
   // 返信元が別トーク・別OCでも送信先は実行トーク。BOT管理者だけが本文を崩さず1件送信できる。
   const replyMessage = "123456789012345678";
   await message("返信元の投稿", user, undefined, sub, { messageId: replyMessage }); await drain();
@@ -139,6 +199,7 @@ try {
   await message("o.ping", user); const ping = await core.nextAction(); assert(ping?.type === "sendMessage" && ping.text === "pong!");
   await deliverAction(client, core, gate, ping, service); assert.equal(core.stats().queryingActions, 1);
   core.shutdown(); core = createCore(config); await drain(); assert(settings().media);
+  assert.equal((db.prepare("SELECT count(*) AS n FROM oc_test_squares").get() as { n: number }).n, 1);
   await message(`o.oc kick ${user}`, mod); failMutation = true; const unknown = await drain(); failMutation = false;
   assert(unknown.some(a => a.type === "ocApi" && a.request.type === "membership")); assert.equal(core.stats().unknownActions, 1);
   core.shutdown(); core = createCore(config); assert.equal(core.stats().unknownActions, 1);

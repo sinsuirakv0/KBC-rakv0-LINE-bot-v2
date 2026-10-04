@@ -86,3 +86,7 @@ SQLiteのoc_settings / oc_notifications / oc_sessions / oc_members / oc_presence
 leftmessageと処分審議の旧aliasを復元した。BANNED解除は引き続き依頼記録だけ。[旧コード・GPT調査との照合](../../../../../docs/research/OC_LEGACY_COMPATIBILITY_2026_10_03.md)、[!idの関数・範囲](ID.md)。smoke:ocでkicktest非処分、通常送信、同OCのサブトーク参照・名前検索、mute警告清掃、BANNED非退出通知、再参加者非処分を既存シナリオへ追加して検証する。
 
 2026-10-04、BOT管理者限定の [!test reply](TEST_REPLY.md) を同じContext照会とOutboxへ接続した。text_actionのTextDeliveryは任意のrelated_message_idを受け取り、通常応答では省略、副官通知では原因投稿ID、送信テストでは指定したIDを使う。新しいProtocol・Queue・通信経路は追加しない。
+
+## 管理下OCでのテスト
+
+通常の管理機能の権限区分・対象保護を維持し、!testの複数OC許可登録とメンション・管理操作を別に追加した。BOT adminだけが管理下の検証対象OCを登録し、実行元と対象の双方を照合する。実APIでの権限不足の結果も記録する。[検証OCの操作と関数](TEST_OC.md)。

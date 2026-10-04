@@ -1,6 +1,6 @@
 ﻿use super::*;
 
-fn take_word<'a>(input: &mut &'a str) -> &'a str {
+pub(super) fn take_word<'a>(input: &mut &'a str) -> &'a str {
     *input = input.trim_start();
     let end = input.find(char::is_whitespace).unwrap_or(input.len());
     let word = &input[..end];

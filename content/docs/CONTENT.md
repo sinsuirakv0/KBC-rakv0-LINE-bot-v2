@@ -14,4 +14,4 @@ OCの公開案内はhelp/oc.txt。help/oc-admin.txtはinternal_helpから権限�
 
 help/id.txtも起動時に検証する。!idの通常案内はcatalog、取得・検索は [OCの共通照会](../../crates/kbc-core/src/oc/docs/ID.md) に渡す。
 
-help/test.txtは!test / !test help / !test reply help / !help testの共通案内。!test replyだけを実装し、BOT管理者の権限判定は [OCの共通照会と送信テスト](../../crates/kbc-core/src/oc/docs/TEST_REPLY.md) で行う。
+help/test.txtは!test / !test help / 各操作のhelp / !help testの共通案内。!test replyは [送信テスト](../../crates/kbc-core/src/oc/docs/TEST_REPLY.md)、allowの複数OC登録とメンション・管理操作は [検証OCの実装](../../crates/kbc-core/src/oc/docs/TEST_OC.md) でBOT管理者の権限を確認する。

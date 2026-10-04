@@ -3,6 +3,7 @@ mod id;
 mod legacy;
 mod moderation;
 mod policy;
+mod test;
 mod test_reply;
 pub use legacy::import_legacy;
 
@@ -59,6 +60,7 @@ enum Phase {
     Report,
     Chats,
     Id,
+    TestInspect,
 }
 #[derive(Serialize, Deserialize)]
 struct Job {
@@ -76,6 +78,8 @@ struct Job {
     id_lookup: Option<id::Lookup>,
     #[serde(default)]
     target_member: Option<OcMember>,
+    #[serde(default)]
+    test: Option<test::Plan>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 enum Session {
@@ -89,6 +93,7 @@ enum Session {
 }
 pub fn initialize(db: &Connection) -> Result<()> {
     id::initialize(db)?;
+    test::initialize(db)?;
     db.execute_batch("CREATE TABLE IF NOT EXISTS oc_settings(square TEXT PRIMARY KEY,payload TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS oc_notifications(chat TEXT PRIMARY KEY,square TEXT NOT NULL,payload TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS oc_notifications_square ON oc_notifications(square);
@@ -409,6 +414,7 @@ pub fn ingest(
     let input = if let Some(input) = commands::parse(text)
         .or_else(|| id::parse(text))
         .or_else(|| test_reply::parse(text))
+        .or_else(|| test::parse(text))
     {
         Some(input)
     } else if let Some(prompt) = reply_to_message_id {
@@ -447,6 +453,7 @@ pub fn ingest(
             deferred: None,
             id_lookup: None,
             target_member: None,
+            test: None,
         };
         let authority = job.input.name == "authority";
         request(
@@ -479,6 +486,7 @@ pub fn ingest(
             deferred: Some(serde_json::to_string(plan)?),
             id_lookup: None,
             target_member: None,
+            test: None,
         };
         request(
             tx,
@@ -519,6 +527,12 @@ pub fn complete(
         return Err("OcResultLimit".into());
     }
     let mut job: Job = serde_json::from_str(continuation)?;
+    if job.input.name == "test" && matches!(job.phase, Phase::Mutation) {
+        return test::mutated(tx, &job, action, result, resolving, now);
+    }
+    if matches!(job.phase, Phase::TestInspect) {
+        return test::inspected(runtime, tx, &mut job, result, now);
+    }
     if resolving {
         history(
             tx,
@@ -574,6 +588,8 @@ pub fn complete(
                 id::execute(runtime, tx, &mut job, now)
             } else if job.input.name == "test-reply" {
                 test_reply::execute(runtime, tx, &job, now)
+            } else if job.input.name == "test" {
+                test::execute(runtime, tx, &mut job, now)
             } else if job.input.name == "moderate" {
                 moderation::execute(runtime, tx, &mut job, now)
             } else {
@@ -595,6 +611,7 @@ pub fn complete(
         Phase::Chats => commands::chats(tx, &mut job, result, now),
         Phase::Report => moderation::after_report(tx, &mut job, result, now),
         Phase::Id => id::complete(tx, &mut job, result, now),
+        Phase::TestInspect => unreachable!(),
     }
 }
 fn sent_prompt(
