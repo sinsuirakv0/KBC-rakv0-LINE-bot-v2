@@ -1,13 +1,13 @@
 ﻿import type { BaseClient } from "@evex/linejs/base";
 import type { CoreAction, NativeCore } from "../protocol/native.js";
 import { ApiScheduler, errorCode, type SendAttempt } from "./api.js";
-import { SquareDirectory } from "./square.js";
+import { SquareDirectory, mentionMetadata } from "./square.js";
 
 export async function deliverAction(client: BaseClient, core: NativeCore, gate: ApiScheduler, action: CoreAction, directory?: SquareDirectory): Promise<{ status: "sent" | "failed" | "unknown" | "queued"; code: string }> {
   if (action.type === "prepareMedia") throw new Error("InternalActionReachedAdapter");
   if (action.type === "ocApi") {
     const service = directory ?? new SquareDirectory(client);
-    const read = ["context", "member", "chats", "members", "joinedChats"].includes(action.request.type);
+    const read = ["context", "member", "chats", "members", "joinedChats", "inspect"].includes(action.request.type);
     if (read) {
       core.markSending(action.actionId);
       let result;
@@ -21,7 +21,9 @@ export async function deliverAction(client: BaseClient, core: NativeCore, gate: 
       return { status: "sent", code: "OK" };
     }
     let storeError: unknown;
-    const attempt: SendAttempt = { started: false, method: action.request.type === "report" ? "reportSquareMessage" : "updateSquareMember", beforeSend: () => {
+    const method: SendAttempt["method"] = action.request.type === "report" ? "reportSquareMessage" : action.request.type === "roles" ? "updateSquareMembers"
+      : action.request.type === "post" ? "sendMessage" : action.request.type === "delete" ? "destroyMessage" : "updateSquareMember";
+    const attempt: SendAttempt = { started: false, method, beforeSend: () => {
       if (Date.now() - action.createdAtMs > 30_000) throw new Error("OcActionExpired");
       try { core.markSending(action.actionId); } catch (error) { storeError = error; throw error; }
     } };
@@ -65,7 +67,7 @@ export async function deliverAction(client: BaseClient, core: NativeCore, gate: 
       } else {
         const sent = await gate.withSendAttempt(attempt, () => client.square.sendMessage({ squareChatMid: action.chatId,
           relatedMessageId: action.relatedMessageId || undefined, text: action.text,
-          contentMetadata: action.mention ? { MENTION: JSON.stringify({ MENTIONEES: [{ S: String(action.mention.start), E: String(action.mention.end), M: action.mention.memberId }] }) } : undefined }));
+          contentMetadata: mentionMetadata(action.mention) }));
         messageId = sent.createdSquareMessage?.message?.id;
         if (!messageId) throw new Error("MissingSentMessageId");
       }

@@ -44,7 +44,7 @@ LINEJSの最新公開版は2026-10-03のnpm再確認でも3.4.2。npm配布物re
 
 ## Commandの追加境界
 
-Protocol v7。通常返信の実送信IDをCoreへ渡し、候補promptへ結び付ける。管理者削除はsquare.destroyMessageへ渡し、新しい返信成功後に実行する。OCのメディアはoid省略のOBS reqseq upload自身が投稿し、空のIMAGE/VIDEOを先に送らない。画像・動画・GIF・ファイルの素材準備はRust共通Worker、BlobとLINEJS入出力はAdapterが扱う。uploadMediaも共通API枠・実fetch直前のsending記録を通し、HTTP statusを共通transportで検査する。動画durationはCoreの実Frame数から渡す。メディア自体はrelatedMessageId付き返信にならない。通信後の不明結果はunknownで自動再投稿しない。[Media Worker](../../../crates/kbc-core/docs/MEDIA.md) と [実素材実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) を参照。
+Protocol v8。通常返信の実送信IDをCoreへ渡し、候補promptへ結び付ける。管理者削除はsquare.destroyMessageへ渡し、新しい返信成功後に実行する。OCのメディアはoid省略のOBS reqseq upload自身が投稿し、空のIMAGE/VIDEOを先に送らない。画像・動画・GIF・ファイルの素材準備はRust共通Worker、BlobとLINEJS入出力はAdapterが扱う。uploadMediaも共通API枠・実fetch直前のsending記録を通し、HTTP statusを共通transportで検査する。動画durationはCoreの実Frame数から渡す。メディア自体はrelatedMessageId付き返信にならない。通信後の不明結果はunknownで自動再投稿しない。[Media Worker](../../../crates/kbc-core/docs/MEDIA.md) と [実素材実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) を参照。
 
 ## OCイベント・管理API
 
@@ -77,3 +77,7 @@ ApiScheduler.runはenqueue時のSendAttemptを保持し、pumpが別RPCの完了
 normalizeEventsのsourceはpush / chat / pollを区別する。MemberChangedにはeventTypeとreceivedAtMsも付け、ログのextraへ残す。イベント作成時刻と取得時刻を比較できるが、サーバーで発生してから保持されるまでの時間を保証しない。通常応答はrelatedMessageIdなし、副官部屋で原因投稿を残す一斉参加の監視などは同じOCのサブトークからreplyする。[ID取得と参照の範囲](../../../crates/kbc-core/src/oc/docs/ID.md)。
 
 2026-10-04の実API照合: getJoinedSquareChatsはNOT_IMPLEMENTEDを返した。LINEJS 3.4.2のClient.fetchJoinedSquareChatsと同じく、fetchMyEventsの初期snapshotからnotifiedCreateSquareChatMember.chatを抽出するjoinedChatPageへ変更した。初回の空syncTokenから、syncToken・continuationToken・subscriptionIdを有限な一覧用cursor（base64url JSON / 2,048byte）で継続する。PUSH側のcheckpoint、SDK poll.sync、通常Commandの受付へこの一覧snapshotを渡さない。getJoinedSquareChatsへの再要求は廃止し、通知設定済みトークは一覧失敗時も独立取得する。snapshot一覧はOC設定のトーク選択・BOT管理者の!id talk ocでも共有する。
+
+## 管理下OCのテスト操作（v8）
+
+Inspectはトークcacheを更新し、対象Botの現在roleと最大2メンバーのOC・MIDを確認する。RolesはROLE属性とrevisionでupdateSquareMembersを呼び、返値の変更対象・役割を確認する。Postはメンション付き通常投稿、Deleteは管理者削除。deliverActionは各API名に対応したSendAttemptを使い、実fetch直前のsending・30秒期限・unknownの契約を共有する。対象許可・引数・previewはRustに置く。既存の2配送・1照会・全RPC枠を共有し、背景APIを追加しない。[OCテストの仕様と検証](../../../crates/kbc-core/src/oc/docs/TEST_OC.md)。

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTOCOL_VERSION: u32 = 7;
+pub const PROTOCOL_VERSION: u32 = 8;
 
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -193,7 +193,7 @@ pub struct Attachment {
     pub duration_ms: Option<u32>,
 }
 
-#[derive(Debug, Deserialize, Serialize, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageMention {
     pub member_id: String,
@@ -237,6 +237,10 @@ pub enum OcRequest {
     Member {
         member_id: String,
     },
+    Inspect {
+        chat_id: String,
+        member_ids: Vec<String>,
+    },
     Chats {
         square_id: String,
     },
@@ -259,6 +263,19 @@ pub enum OcRequest {
         square_id: String,
         message_id: String,
     },
+    Roles {
+        square_id: String,
+        members: Vec<OcMember>,
+    },
+    Post {
+        chat_id: String,
+        text: String,
+        mention: MessageMention,
+    },
+    Delete {
+        chat_id: String,
+        message_id: String,
+    },
 }
 impl OcRequest {
     pub fn is_read(&self) -> bool {
@@ -266,6 +283,7 @@ impl OcRequest {
             self,
             Self::Context { .. }
                 | Self::Member { .. }
+                | Self::Inspect { .. }
                 | Self::Chats { .. }
                 | Self::JoinedChats { .. }
                 | Self::Members { .. }
@@ -305,6 +323,9 @@ pub struct OcChat {
 #[derive(Debug, Clone, Default, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct OcResult {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub message_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub context: Option<OcContext>,

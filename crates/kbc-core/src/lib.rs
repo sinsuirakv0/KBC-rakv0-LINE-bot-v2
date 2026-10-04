@@ -466,7 +466,7 @@ impl Runtime {
                     "SELECT a.id,a.payload,a.due FROM actions a WHERE a.status='queued'
                     AND json_extract(a.payload,'$.type')<>'prepareMedia'
                     AND ?1=COALESCE(json_extract(a.payload,'$.type')='ocApi'
-                        AND json_extract(a.payload,'$.request.type') IN ('context','member','chats','members','joinedChats'),0)
+                        AND json_extract(a.payload,'$.request.type') IN ('context','member','chats','members','joinedChats','inspect'),0)
                     AND (?1=1 OR NOT EXISTS (SELECT 1 FROM actions b WHERE b.chat=a.chat AND b.status IN ('claimed','sending')))
                     ORDER BY a.due,a.rowid LIMIT 1", [query],
                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).optional()?;

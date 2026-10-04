@@ -3,6 +3,11 @@ import type { OcRequest } from "../protocol/generated/OcRequest.js";
 import type { OcResult } from "../protocol/generated/OcResult.js";
 import type { OcMember } from "../protocol/generated/OcMember.js";
 import type { OcChat } from "../protocol/generated/OcChat.js";
+import type { MessageMention } from "../protocol/generated/MessageMention.js";
+
+export function mentionMetadata(mention?: MessageMention | null): Record<string, string> | undefined {
+  return mention ? { MENTION: JSON.stringify({ MENTIONEES: [{ S: String(mention.start), E: String(mention.end), M: mention.memberId }] }) } : undefined;
+}
 
 type ChatInfo = Awaited<ReturnType<BaseClient["square"]["getSquareChat"]>>;
 type Member = Awaited<ReturnType<BaseClient["square"]["getSquareMember"]>>["squareMember"];
@@ -77,6 +82,21 @@ export class SquareDirectory {
         botMemberId, botRole, actor: memberDto(actor.squareMember), authority };
     } else if (request.type === "member") {
       result.member = memberDto((await this.client.square.getSquareMember({ squareMemberMid: request.memberId })).squareMember);
+    } else if (request.type === "inspect") {
+      if (!/^m[0-9a-f]{8,63}$/i.test(request.chatId) || request.memberIds.length > 2
+          || request.memberIds.some(id => !/^p[0-9a-f]{8,63}$/i.test(id))) throw new Error("InvalidInspectionTarget");
+      // 実験前はトークとBotの所属・roleを改めて照会し、以前の役割を根拠にしない。
+      this.cache.delete(request.chatId);
+      const chat = await this.chat(request.chatId);
+      const bot = memberDto((await this.client.square.getSquareMember({ squareMemberMid: chat.squareChatMember.squareMemberMid })).squareMember);
+      if (bot.memberId !== chat.squareChatMember.squareMemberMid || bot.squareId !== chat.squareChat.squareMid) throw new Error("InspectionBotScopeMismatch");
+      result.context = { squareId: bot.squareId, chatName: displayName(chat.squareChat.name ?? ""), botMemberId: bot.memberId,
+        botRole: bot.role, actor: bot, authority: "" };
+      for (const id of request.memberIds) {
+        const member = id === bot.memberId ? bot : memberDto((await this.client.square.getSquareMember({ squareMemberMid: id })).squareMember);
+        if (member.memberId !== id || member.squareId !== bot.squareId) throw new Error("InspectionMemberScopeMismatch");
+        result.members.push(member);
+      }
     } else if (request.type === "chats") {
       const chats = new Map<string, OcChat>();
       const add = (chat: ChatInfo["squareChat"]) => {
@@ -126,7 +146,31 @@ export class SquareDirectory {
       result.member = memberDto(response.squareMember);
       if (result.member.memberId !== request.memberId || result.member.squareId !== request.squareId) throw new Error("UnconfirmedMembershipTarget");
       if (![request.state, request.state === "BANNED" ? "6" : "5"].includes(result.member.state)) throw new Error("UnconfirmedMembershipChange");
-    } else {
+    } else if (request.type === "roles") {
+      if (!/^s[0-9a-f]{8,63}$/i.test(request.squareId) || request.members.length < 1 || request.members.length > 2
+          || new Set(request.members.map(member => member.memberId)).size !== request.members.length
+          || request.members.some(member => member.squareId !== request.squareId || !/^p[0-9a-f]{8,63}$/i.test(member.memberId)
+            || !/^[0-9]{1,19}$/.test(member.revision) || !["ADMIN", "CO_ADMIN", "MEMBER"].includes(member.role))) throw new Error("InvalidRoleUpdate");
+      const response = await this.client.square.updateSquareMembers({ request: { updatedAttrs: ["ROLE"],
+        members: request.members.map(member => ({ squareMemberMid: member.memberId, squareMid: member.squareId,
+          revision: BigInt(member.revision), role: member.role as "ADMIN" | "CO_ADMIN" | "MEMBER" })) } });
+      const responseMembers = Object.values(response.members ?? {});
+      if (responseMembers.length > 8) throw new Error("InvalidRoleUpdateResponse");
+      const updated = responseMembers.map(memberDto);
+      for (const expected of request.members) {
+        const member = updated.find(member => member.memberId === expected.memberId && member.squareId === expected.squareId);
+        const numericRole = { ADMIN: "1", CO_ADMIN: "2", MEMBER: "10" }[expected.role];
+        if (!member || ![expected.role, numericRole].includes(member.role)) throw new Error("UnconfirmedRoleChange");
+        result.members.push(member);
+      }
+    } else if (request.type === "post") {
+      const sent = await this.client.square.sendMessage({ squareChatMid: request.chatId, text: request.text,
+        contentMetadata: mentionMetadata(request.mention) });
+      result.messageId = sent.createdSquareMessage?.message?.id;
+      if (!result.messageId) throw new Error("MissingSentMessageId");
+    } else if (request.type === "delete") {
+      await this.client.square.destroyMessage({ squareChatMid: request.chatId, messageId: request.messageId });
+    } else if (request.type === "report") {
       await this.client.square.reportSquareMessage({ request: { squareMid: request.squareId, squareChatMid: chatId,
         squareMessageId: request.messageId, reportType: "SCAM" } });
     }
