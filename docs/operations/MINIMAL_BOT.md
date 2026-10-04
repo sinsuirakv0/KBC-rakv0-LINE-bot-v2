@@ -166,3 +166,13 @@ build、型検査、smoke / smoke:commands / smoke:oc、Clippyを通過した。
 切替直前はCore完了199件・既存unknown 15件、待機・照会・送信中・pendingLogs 0。GitHub退避25回 / failures 0、ログ同期4周期・9行 / failures 0。16:34 JST、新版の起動約24秒でhealth 200 / receiving、PUSH session / sign-on各1、12トークの定期取得・優先4、補完・定期取得・一覧取得の失敗0。API requests 23 / errors 0 / rateLimits 0、GitHub退避1回 / failures 0、RSS約122MiB。Core完了199件・既存unknown 15件を復元し、待機・照会・送信中0、新規配送の失敗・unknown0を確認した。NorthflankはRunning / 1 / 1、起動約1分でrestart 0を確認。旧unknownは推測で再送しない。新起動後のログ同期周期と実OCのページ操作はこの初期観測では未確認。
 
 build、型検査、smoke / smoke:commands / smoke:oc、Clippyを通過した。既存Command Smokeで10番選択、次/前/指定ページ、ページ端・0p・overflow、同じページの投稿抑制、切替中の番号とページ操作、確定失敗・再起動復帰、旧8件Session失効を確認した。リアクション通知から追加Actionを作らず、旧Reactions要求の復元時にもAPIを呼ばないことを確認した。実OCでの投稿・管理者削除の可否は利用者の運用観測を続ける。
+
+## 2026-10-04の指定IDスタンプ送信テスト配備
+
+4e0c00b / famous-camp-1232のLinux buildは2分20秒で成功。旧instanceを0にして0 / 0の停止を確認後、Protocol v13のNativeとAdapterを同時に配備し、1 instanceへ戻した。0.2vCPU / 512MB、Volume追加なし、CD OFFを維持する。
+
+BOT管理者専用の!test sticker <セットID> <スタンプID>を追加した。--version / --optionも指定でき、versionの既定値は1。実行トークへ1件送信し、API codeと返された送信message IDを通知する。allow登録・--applyは不要で、通信後unknownは自動再送しない。[入力・関数・検証範囲](../../crates/kbc-core/src/oc/docs/TEST_STICKER.md)。
+
+切替直前はhealth 200 / receiving、Core完了208件・既存unknown 15件、待機・照会・送信中・pendingLogs 0。GitHub退避23回 / failures 0、ログ同期4周期・10行 / failures 0。17:00 JST、新版の起動約18秒でhealth 200 / receiving、PUSH session / sign-on各1、12トークの定期取得・優先4、補完・定期取得・一覧取得の失敗0。API requests 21 / errors 0 / rateLimits 0、GitHub退避1回 / failures 0、RSS約122MiB。Core完了208件・既存unknown 15件を復元し、待機・照会・送信中0、新規配送の失敗・unknown0を確認した。NorthflankはRunning / 1 / 1、restart 0を確認。ログ1行は5分同期の待機中で、同期完了はこの初期観測では未確認。
+
+build、型検査、3種類のSmoke、Clippy、BOM / LF / 資料リンク検査は通過。Codexから実OCへのスタンプ試験は発行していない。配備・受信開始・模擬SDK送信を実LINEでのスタンプ受理や表示の成功とは扱わず、利用者が!id stickerで取得した少数のIDを試す。
