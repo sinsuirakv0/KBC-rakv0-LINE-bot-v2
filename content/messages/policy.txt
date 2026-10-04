@@ -1,0 +1,5 @@
+﻿# 利用者向け文面。差し込み項目を保持して編集してください。
+policy.duration_01 = "{arg0}日{arg1}時間"
+policy.duration_02 = "{arg0}時間{arg1}分"
+policy.duration_03 = "{arg0}分{arg1}秒"
+policy.duration_04 = "{seconds}秒"

@@ -1,10 +1,12 @@
-﻿use std::{collections::BTreeMap, path::Path};
+use crate::messages::message;
+use std::{collections::BTreeMap, path::Path};
 
 use crate::Result;
 
 pub struct ContentCatalog {
     pub responses: BTreeMap<String, String>,
     help: BTreeMap<String, String>,
+    pub messages: std::sync::Arc<crate::messages::Messages>,
 }
 
 pub fn canonical_name(name: &str) -> &str {
@@ -56,7 +58,13 @@ impl ContentCatalog {
                 return Err(format!("MissingHelp:{key}").into());
             }
         }
-        Ok(Self { responses, help })
+        let message_catalog =
+            std::sync::Arc::new(crate::messages::Messages::load(&root.join("messages"))?);
+        Ok(Self {
+            responses,
+            help,
+            messages: message_catalog,
+        })
     }
 
     pub fn internal_help(&self, name: &str) -> Option<String> {
@@ -64,6 +72,7 @@ impl ContentCatalog {
     }
 
     pub fn command_help(&self, name: &str) -> Option<String> {
+        let message_catalog = &self.messages;
         if name == "oc-admin" {
             return None;
         }
@@ -81,12 +90,13 @@ impl ContentCatalog {
             ];
             names.extend(self.responses.keys().map(String::as_str));
             names.sort_unstable();
-            return Some(format!(
-                "{}\n\n使えるコマンド\n{}",
-                self.help["index"],
-                names
+            return Some(message!(
+                message_catalog,
+                "search.command_help_01",
+                arg0 = self.help["index"],
+                arg1 = names
                     .into_iter()
-                    .map(|name| format!("・!{name}"))
+                    .map(|name| message!(message_catalog, "search.command_help_02", name = name))
                     .collect::<Vec<_>>()
                     .join("\n")
             ));

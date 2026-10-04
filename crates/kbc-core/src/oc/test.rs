@@ -1,5 +1,6 @@
 ﻿use super::test_reply::take_word;
 use super::*;
+use crate::messages::message;
 
 #[derive(Serialize, Deserialize)]
 pub(super) struct Plan {
@@ -55,7 +56,12 @@ pub fn parse(text: &str) -> Option<Input> {
     })
 }
 
-fn allow(tx: &Transaction<'_>, job: &Job, now: i64) -> Result<()> {
+fn allow(
+    message_catalog: &crate::messages::Messages,
+    tx: &Transaction<'_>,
+    job: &Job,
+    now: i64,
+) -> Result<()> {
     let mut args = job.input.body.split_whitespace().collect::<Vec<_>>();
     let remove = args.first() == Some(&"remove");
     if remove || args.first() == Some(&"add") {
@@ -72,24 +78,20 @@ fn allow(tx: &Transaction<'_>, job: &Job, now: i64) -> Result<()> {
             tx,
             job,
             if squares.is_empty() {
-                "検証OCは未登録です。!test allow <sMID> <sMID> ... で登録できます。".into()
+                message!(message_catalog, "test.allow_01").into()
             } else {
-                format!(
-                    "検証を許可したOC（{}件）\n{}",
-                    squares.len(),
-                    squares.join("\n")
+                message!(
+                    message_catalog,
+                    "test.allow_02",
+                    arg0 = squares.len(),
+                    arg1 = squares.join("\n")
                 )
             },
             now,
         );
     }
     if args.len() > 16 || args.iter().any(|value| !mid(value, 's')) {
-        return reply(
-            tx,
-            job,
-            "検証OCはsから始まるMIDで、一度に16件まで指定してください。!test allow remove <sMID> ... で解除できます。",
-            now,
-        );
+        return reply(tx, job, message!(message_catalog, "test.allow_03"), now);
     }
     let mut squares = tx
         .prepare("SELECT square FROM oc_test_squares")?
@@ -103,12 +105,7 @@ fn allow(tx: &Transaction<'_>, job: &Job, now: i64) -> Result<()> {
         }
     }
     if squares.len() > 64 {
-        return reply(
-            tx,
-            job,
-            "検証OCの登録上限は64件です。不要な登録をremoveで解除してください。",
-            now,
-        );
+        return reply(tx, job, message!(message_catalog, "test.allow_04"), now);
     }
     for value in args.iter().collect::<std::collections::BTreeSet<_>>() {
         if remove {
@@ -120,24 +117,32 @@ fn allow(tx: &Transaction<'_>, job: &Job, now: i64) -> Result<()> {
     reply(
         tx,
         job,
-        format!(
-            "検証OCを{}しました（現在{}件）。\n{}",
-            if remove { "解除" } else { "登録" },
-            squares.len(),
-            args.join("\n")
+        message!(
+            message_catalog,
+            "test.allow_05",
+            arg0 = if remove {
+                message!(message_catalog, "common.removed")
+            } else {
+                message!(message_catalog, "common.registered")
+            },
+            arg1 = squares.len(),
+            arg2 = args.join("\n")
         ),
         now,
     )
 }
 
-fn plan(job: &Job) -> std::result::Result<Plan, &'static str> {
+fn plan<'a>(
+    message_catalog: &'a crate::messages::Messages,
+    job: &Job,
+) -> std::result::Result<Plan, &'a str> {
     let mut input = job.input.body.as_str();
     let mut operation = job.input.args[0].clone();
     if operation == "deputy" {
         operation = match take_word(&mut input) {
             "on" => "deputy-on",
             "off" => "deputy-off",
-            _ => return Err("deputyはonまたはoffを指定してください。"),
+            _ => return Err(message!(message_catalog, "test.plan_01")),
         }
         .into();
     }
@@ -148,7 +153,7 @@ fn plan(job: &Job) -> std::result::Result<Plan, &'static str> {
     } else {
         !mid(target, 'p')
     } {
-        return Err("対象メンバーはpMID、deleteの対象は数字のメッセージIDを指定してください。");
+        return Err(message!(message_catalog, "test.plan_02"));
     }
     let mut result = Plan {
         operation,
@@ -163,7 +168,7 @@ fn plan(job: &Job) -> std::result::Result<Plan, &'static str> {
         } else {
             String::new()
         },
-        text: "メンション通知テスト".into(),
+        text: message!(message_catalog, "test.plan_03").into(),
         apply: false,
         context: None,
     };
@@ -173,9 +178,7 @@ fn plan(job: &Job) -> std::result::Result<Plan, &'static str> {
             "--target-chat" if !chat_set => {
                 let chat = take_word(&mut input);
                 if !mid(chat, 'm') {
-                    return Err(
-                        "--target-chatはmから始まるトークMID専用です。トークMIDは対象トークの!id talkで取得できます。sから始まるOC MIDは!test allowの登録に使います。",
-                    );
+                    return Err(message!(message_catalog, "test.plan_04"));
                 }
                 result.chat = chat.into();
                 chat_set = true;
@@ -183,51 +186,57 @@ fn plan(job: &Job) -> std::result::Result<Plan, &'static str> {
             "--from" if result.operation == "admin" && result.members.len() == 1 => {
                 let member = take_word(&mut input);
                 if !mid(member, 'p') || member == target {
-                    return Err("--fromには移行先と異なる現在の管理人pMIDを指定してください。");
+                    return Err(message!(message_catalog, "test.plan_05"));
                 }
                 result.members.push(member.into());
             }
             "--apply" if !result.apply => result.apply = true,
             "--" if result.operation == "mention" => {
                 if input.trim().is_empty() {
-                    return Err("--の後にメンション本文を指定してください。");
+                    return Err(message!(message_catalog, "test.plan_06"));
                 }
                 result.text = input.into();
                 break;
             }
-            _ => return Err("テスト引数を確認してください。"),
+            _ => return Err(message!(message_catalog, "test.plan_07")),
         }
     }
     Ok(result)
 }
 
 pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
+    let message_catalog = &runtime.content.messages;
     if bot_rank(runtime, job) < 2 {
         return reply(
             tx,
             job,
-            "このテストと検証OCの登録はBOT管理者専用です。",
+            message!(message_catalog, "common.bot_admin_only"),
             now,
         );
     }
     if job.input.args[0] == "allow" {
-        return allow(tx, job, now);
+        return allow(message_catalog, tx, job, now);
     }
     if job.input.args[0] == "sticker" {
-        return sticker(tx, job, now);
+        return sticker(message_catalog, tx, job, now);
     }
-    let plan = match plan(job) {
+    let plan = match plan(message_catalog, job) {
         Ok(plan) => plan,
-        Err(message) => return reply(tx, job, format!("{message}\n使い方: !help test"), now),
+        Err(message) => {
+            return reply(
+                tx,
+                job,
+                message!(message_catalog, "test.execute_01", message = message),
+                now,
+            );
+        }
     };
     let square = &job.context.as_ref().ok_or("MissingOcContext")?.square_id;
     if !permitted(tx, square)? {
         return reply(
             tx,
             job,
-            format!(
-                "実行OCが検証対象に未登録です。対象OCとは別に、管理下の実行OCも登録してください。\n実行OC: {square}\n登録: !test allow {square}"
-            ),
+            message!(message_catalog, "test.execute_02", square = square),
             now,
         );
     }
@@ -239,8 +248,13 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
     request(tx, job, request_value, Phase::TestInspect, now)
 }
 
-fn sticker(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
-    let usage = "使い方: !test sticker <セットID> <スタンプID> [--version 数字] [--option STKOPT]";
+fn sticker(
+    message_catalog: &crate::messages::Messages,
+    tx: &Transaction<'_>,
+    job: &mut Job,
+    now: i64,
+) -> Result<()> {
+    let usage = message!(message_catalog, "test.sticker_01");
     let mut input = job.input.body.as_str();
     let package_id = take_word(&mut input);
     let sticker_id = take_word(&mut input);
@@ -266,15 +280,14 @@ fn sticker(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
         return reply(
             tx,
             job,
-            format!(
-                "IDとversionは64桁以内の数字、STKOPTは64文字以内の英数字・_で指定してください。\n{usage}"
-            ),
+            message!(message_catalog, "test.sticker_02", usage = usage),
             now,
         );
     }
     let api = OcRequest::Sticker {
         package_id: package_id.into(),
         sticker_id: sticker_id.into(),
+        text: message!(message_catalog, "test.sticker_alt").into(),
         version: version.into(),
         option: option.map(String::from),
     };
@@ -284,7 +297,13 @@ fn sticker(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
         operation: "sticker".into(),
         chat,
         members: vec![],
-        message: format!("セットID: {package_id} / スタンプID: {sticker_id} / version: {version}"),
+        message: message!(
+            message_catalog,
+            "test.sticker_03",
+            package_id = package_id,
+            sticker_id = sticker_id,
+            version = version
+        ),
         text: String::new(),
         apply: true,
         context: job.context.clone(),
@@ -309,24 +328,17 @@ pub fn inspected(
     result: &ActionResult,
     now: i64,
 ) -> Result<()> {
+    let message_catalog = &runtime.content.messages;
     if !matches!(result.status, DeliveryStatus::Sent) {
         return reply(
             tx,
             job,
-            format!(
-                "検証対象の情報を取得できませんでした。操作は未実行です。API: {}",
-                result.code
-            ),
+            message!(message_catalog, "test.inspected_01", arg0 = result.code),
             now,
         );
     }
     if bot_rank(runtime, job) < 2 || identity(&job.event).4 < now - 60000 {
-        return reply(
-            tx,
-            job,
-            "テストの権限または受付期限を確認できませんでした。未実行です。",
-            now,
-        );
+        return reply(tx, job, message!(message_catalog, "test.inspected_02"), now);
     }
     let value = result.oc_result.as_ref().ok_or("MissingOcResult")?;
     let context = value.context.as_ref().ok_or("MissingTestContext")?;
@@ -336,9 +348,7 @@ pub fn inspected(
         return reply(
             tx,
             job,
-            format!(
-                "実行OCの検証登録が解除されています。操作は未実行です。\n実行OC: {square}\n登録: !test allow {square}"
-            ),
+            message!(message_catalog, "test.inspected_03", square = square),
             now,
         );
     }
@@ -346,9 +356,12 @@ pub fn inspected(
         return reply(
             tx,
             job,
-            format!(
-                "対象OCが検証対象に未登録です。管理下の対象OCを登録してください。操作は未実行です。\n対象トーク: {}\n対象OC: {}\n登録: !test allow {}",
-                test.chat, context.square_id, context.square_id
+            message!(
+                message_catalog,
+                "test.inspected_04",
+                arg0 = test.chat,
+                arg1 = context.square_id,
+                arg2 = context.square_id
             ),
             now,
         );
@@ -365,12 +378,7 @@ pub fn inspected(
             })
         })
     {
-        return reply(
-            tx,
-            job,
-            "対象OC・メンバー・Botの参加状態が一致しません。未実行です。",
-            now,
-        );
+        return reply(tx, job, message!(message_catalog, "test.inspected_05"), now);
     }
     let target = value.members.first();
     let api = match test.operation.as_str() {
@@ -379,19 +387,14 @@ pub fn inspected(
             let label = format!(
                 "@{}",
                 if member.name.is_empty() {
-                    "メンバー"
+                    message!(message_catalog, "common.member")
                 } else {
                     &member.name
                 }
             );
             let text = format!("{label}\n{}", test.text);
             if text.encode_utf16().count() > 1500 {
-                return reply(
-                    tx,
-                    job,
-                    "メンションを含む本文は1,500 UTF-16単位までです。",
-                    now,
-                );
+                return reply(tx, job, message!(message_catalog, "test.inspected_06"), now);
             }
             // 指定トークはメンバーの所属確認に使い、投稿は実行トークへ返す。
             OcRequest::Post {
@@ -411,12 +414,7 @@ pub fn inspected(
         "kick" => {
             let member = target.ok_or("MissingTestMember")?;
             if member.member_id == context.bot_member_id || role(&member.role) != "MEMBER" {
-                return reply(
-                    tx,
-                    job,
-                    "強制退会テストは検証用の一般メンバーだけを指定してください。Bot・管理者・副官は対象外です。",
-                    now,
-                );
+                return reply(tx, job, message!(message_catalog, "test.inspected_07"), now);
             }
             OcRequest::Membership {
                 square_id: context.square_id.clone(),
@@ -433,12 +431,7 @@ pub fn inspected(
                 "CO_ADMIN"
             };
             if role(&member.role) != expected {
-                return reply(
-                    tx,
-                    job,
-                    "副官設定onは一般メンバー、offは副官を指定してください。",
-                    now,
-                );
+                return reply(tx, job, message!(message_catalog, "test.inspected_08"), now);
             }
             member.role = if test.operation == "deputy-on" {
                 "CO_ADMIN"
@@ -458,12 +451,7 @@ pub fn inspected(
                 || role(&previous.role) != "ADMIN"
                 || member.member_id == previous.member_id
             {
-                return reply(
-                    tx,
-                    job,
-                    "管理人移行は現在の副官を指定します。Botが対象OCの管理人でない場合は --from <現在の管理人pMID> も指定してください。",
-                    now,
-                );
+                return reply(tx, job, message!(message_catalog, "test.inspected_09"), now);
             }
             member.role = "ADMIN".into();
             previous.role = "CO_ADMIN".into();
@@ -492,31 +480,34 @@ pub fn inspected(
         return reply(
             tx,
             job,
-            format!(
-                "【テスト対象確認・未実行】\n操作: {}\nトーク: {} ({})\nOC: {}\n対象Bot: {} / {}\n{}{}\n実行する場合は同じ引数へ --apply を追加してください（本文指定の -- より前）。",
-                test.operation,
-                context.chat_name,
-                test.chat,
-                context.square_id,
-                context.bot_member_id,
-                role(&context.bot_role),
-                targets,
-                if test.operation == "delete" {
-                    format!("メッセージID: {}", test.message)
+            message!(
+                message_catalog,
+                "test.inspected_10",
+                arg0 = test.operation,
+                arg1 = context.chat_name,
+                arg2 = test.chat,
+                arg3 = context.square_id,
+                arg4 = context.bot_member_id,
+                arg5 = role(&context.bot_role),
+                targets = targets,
+                arg7 = if test.operation == "delete" {
+                    message!(message_catalog, "test.inspected_11", arg0 = test.message)
                 } else if test.operation == "mention" {
-                    format!(
-                        "\n送信先トーク: {}\n本文: {}",
-                        identity(&job.event).1,
-                        test.text
+                    message!(
+                        message_catalog,
+                        "test.inspected_12",
+                        arg0 = identity(&job.event).1,
+                        arg1 = test.text
                     )
                 } else if test.operation == "admin" {
-                    "\n現在の管理人→副官、対象の副官→管理人".into()
+                    message!(message_catalog, "test.inspected_13").into()
                 } else if test.operation == "kick" {
-                    "\n強制退会（再参加可能）".into()
+                    message!(message_catalog, "test.inspected_14").into()
                 } else {
-                    format!(
-                        "\n変更後: {}",
-                        if test.operation == "deputy-on" {
+                    message!(
+                        message_catalog,
+                        "test.inspected_15",
+                        arg0 = if test.operation == "deputy-on" {
                             "CO_ADMIN"
                         } else {
                             "MEMBER"
@@ -534,6 +525,7 @@ pub fn inspected(
 }
 
 pub fn mutated(
+    message_catalog: &crate::messages::Messages,
     tx: &Transaction<'_>,
     job: &Job,
     action: &CoreAction,
@@ -556,16 +548,22 @@ pub fn mutated(
         .first()
         .map_or(test.message.as_str(), String::as_str);
     tx.execute("INSERT INTO oc_history(square,target,actor,operation,status,detail,at,action,target_name,actor_name,reason) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'',?9,?10)
-        ON CONFLICT(action) WHERE action<>'' DO UPDATE SET status=excluded.status,detail=excluded.detail,at=excluded.at", params![context.square_id,target,identity(&job.event).3,job.operation,status,result.code,now,action_id,job.context.as_ref().ok_or("MissingOcContext")?.actor.name,format!("対象トーク: {} / Bot: {}",test.chat,context.bot_role)])?;
+        ON CONFLICT(action) WHERE action<>'' DO UPDATE SET status=excluded.status,detail=excluded.detail,at=excluded.at", params![context.square_id,target,identity(&job.event).3,job.operation,status,result.code,now,action_id,job.context.as_ref().ok_or("MissingOcContext")?.actor.name,message!(message_catalog, "test.mutated_01", arg0 = test.chat, arg1 = context.bot_role)])?;
     tx.execute("DELETE FROM oc_history WHERE id IN (SELECT id FROM oc_history ORDER BY id DESC LIMIT -1 OFFSET 2048)", [])?;
     if !resolving {
         let message = result
             .oc_result
             .as_ref()
             .and_then(|value| value.message_id.as_deref())
-            .map_or(String::new(), |id| format!("\n送信メッセージID: {id}"));
+            .map_or(String::new(), |id| {
+                message!(message_catalog, "test.mutated_02", id = id)
+            });
         let ids = if test.operation == "mention" {
-            format!("\n送信先トーク: {}", identity(&job.event).1)
+            message!(
+                message_catalog,
+                "test.mutated_03",
+                arg0 = identity(&job.event).1
+            )
         } else if test.operation == "sticker" {
             format!("\n{}", test.message)
         } else {
@@ -574,18 +572,22 @@ pub fn mutated(
         reply(
             tx,
             job,
-            format!(
-                "【テスト結果】{}: {status}\n{}: {}{ids}\nAPI: {}{message}{}",
-                test.operation,
-                if test.operation == "mention" {
-                    "メンバー照会トーク"
+            message!(
+                message_catalog,
+                "test.mutated_04",
+                arg0 = test.operation,
+                status = message_catalog.status(status),
+                arg1 = if test.operation == "mention" {
+                    message!(message_catalog, "test.mutated_05")
                 } else {
-                    "対象トーク"
+                    message!(message_catalog, "test.mutated_06")
                 },
-                test.chat,
-                result.code,
-                if matches!(result.status, DeliveryStatus::Unknown) {
-                    "\n通信後の結果を確定できません。対象を確認してください。自動再実行はしません。"
+                arg2 = test.chat,
+                ids = ids,
+                arg3 = result.code,
+                message = message,
+                arg4 = if matches!(result.status, DeliveryStatus::Unknown) {
+                    message!(message_catalog, "test.mutated_07")
                 } else {
                     ""
                 }

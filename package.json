@@ -11,6 +11,7 @@
     "check": "tsc --noEmit",
     "smoke": "node dist/smoke.js",
     "smoke:commands": "node dist/smoke-commands.js",
+    "smoke:messages": "node dist/smoke-messages.js",
     "smoke:oc": "node dist/smoke-oc.js",
     "smoke:persistence": "node dist/smoke-persistence.js",
     "smoke:logs": "node dist/smoke-logs.js",

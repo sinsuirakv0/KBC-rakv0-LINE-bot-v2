@@ -1,4 +1,5 @@
 ﻿use super::*;
+use crate::messages::message;
 
 fn notice(tx: &Transaction<'_>, key: &str, window: i64, now: i64) -> Result<bool> {
     let at: Option<i64> = tx
@@ -29,7 +30,8 @@ fn delete(tx: &Transaction<'_>, event: &CoreEvent, reason: &str, now: i64) -> Re
     tx.execute("DELETE FROM oc_history WHERE id IN (SELECT id FROM oc_history ORDER BY id DESC LIMIT -1 OFFSET 2048)",[])?;
     Ok(())
 }
-pub fn mute(_runtime: &Runtime, tx: &Transaction<'_>, event: &CoreEvent, now: i64) -> Result<bool> {
+pub fn mute(runtime: &Runtime, tx: &Transaction<'_>, event: &CoreEvent, now: i64) -> Result<bool> {
+    let message_catalog = &runtime.content.messages;
     let Some(square) = square(event) else {
         return Ok(false);
     };
@@ -47,23 +49,25 @@ pub fn mute(_runtime: &Runtime, tx: &Transaction<'_>, event: &CoreEvent, now: i6
     };
     delete(tx, event, "mute", now)?;
     if notice(tx, &format!("mute:{square}:{sender}"), 60000, now)? {
+        let label = format!("@{}", mute.name);
+        let text = message!(
+            message_catalog,
+            "moderation.mute_01",
+            mention = label,
+            arg1 = mute.until.map_or(
+                message!(message_catalog, "common.unlimited").into(),
+                |until| policy::duration(message_catalog, until - now)
+            )
+        );
+        let mention = mention_span(&text, &label, sender);
         text_action(
             tx,
             event,
             "mute-notice",
             chat,
-            format!(
-                "@{}\n現在ミュートされています。期限まで待つか、手動解除をお待ちください。\n残り時間: {}",
-                mute.name,
-                mute.until
-                    .map_or("無期限".into(), |until| policy::duration(until - now))
-            ),
+            text,
             TextDelivery {
-                mention: Some(MessageMention {
-                    member_id: sender.into(),
-                    start: 0,
-                    end: format!("@{}", mute.name).encode_utf16().count() as u32,
-                }),
+                mention,
                 ..Default::default()
             },
             now,
@@ -156,6 +160,7 @@ pub fn candidate(
     Ok(None)
 }
 pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
+    let message_catalog = &runtime.content.messages;
     let context = job.context.as_ref().ok_or("MissingOcContext")?.clone();
     if policy::role_rank(&context.actor.role) == 0 {
         return Ok(());
@@ -204,21 +209,27 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
                 }
                 return Ok(());
             }
-            delete(tx, &job.event, "未許可URL", now)?;
+            delete(
+                tx,
+                &job.event,
+                message!(message_catalog, "moderation.execute_01"),
+                now,
+            )?;
             for url in denied {
                 case(
+                    message_catalog,
                     tx,
                     job,
                     None,
                     Some(&url),
-                    "未許可URL。1 完全一致 / 2 パス / 3 配下 / 4 ドメイン / 5 却下",
+                    message!(message_catalog, "moderation.execute_02"),
                     now,
                 )?;
             }
             reply(
                 tx,
                 job,
-                "未許可URLを含む投稿の削除を要求しました。HTTPSの許可ルールは管理者が設定できます。",
+                message!(message_catalog, "moderation.execute_03"),
                 now,
             )
         }
@@ -238,7 +249,12 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
                     now,
                 );
             }
-            delete(tx, &job.event, "初参加・危険語", now)?;
+            delete(
+                tx,
+                &job.event,
+                message!(message_catalog, "moderation.execute_04"),
+                now,
+            )?;
             request(
                 tx,
                 job,
@@ -253,14 +269,27 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
             )
         }
         "media" if value.media => {
-            delete(tx, &job.event, "画像・動画連投", now)?;
+            delete(
+                tx,
+                &job.event,
+                message!(message_catalog, "moderation.execute_05"),
+                now,
+            )?;
             if notice(
                 tx,
                 &format!("media:{}:{}", context.square_id, context.actor.member_id),
                 30000,
                 now,
             )? {
-                text_action(tx,&job.event,"media-notice",&chat,"7枚以上画像（動画）を連投したため、一部画像の削除を要求しました。\nラグ軽減のため、7枚以上はスレッドへ送信してください。".into(),TextDelivery::default(), now)?;
+                text_action(
+                    tx,
+                    &job.event,
+                    "media-notice",
+                    &chat,
+                    message!(message_catalog, "moderation.execute_06").into(),
+                    TextDelivery::default(),
+                    now,
+                )?;
             }
             Ok(())
         }
@@ -270,11 +299,12 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
                 params![context.square_id, context.actor.member_id],
             )?;
             case(
+                message_catalog,
                 tx,
                 job,
                 Some(&context.actor.member_id),
                 None,
-                "一斉参加の監視対象者による危険語・URL・招待らしい投稿（自動処分なし）。",
+                message!(message_catalog, "moderation.execute_07"),
                 now,
             )
         }
@@ -287,14 +317,23 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
     }
 }
 pub fn after_report(
+    message_catalog: &crate::messages::Messages,
     tx: &Transaction<'_>,
     job: &mut Job,
     result: &ActionResult,
     now: i64,
 ) -> Result<()> {
-    job.results
-        .push(format!("原因投稿の通報: {:?}", result.status));
-    delete(tx, &job.event, "初参加・危険語", now)?;
+    job.results.push(message!(
+        message_catalog,
+        "moderation.after_report_01",
+        arg0_formatted = format!("{:?}", result.status)
+    ));
+    delete(
+        tx,
+        &job.event,
+        message!(message_catalog, "moderation.execute_04"),
+        now,
+    )?;
     let context = job.context.as_ref().ok_or("MissingOcContext")?.clone();
     request(
         tx,
@@ -310,6 +349,7 @@ pub fn after_report(
     )
 }
 pub fn case(
+    message_catalog: &crate::messages::Messages,
     tx: &Transaction<'_>,
     job: &Job,
     target: Option<&str>,
@@ -348,13 +388,17 @@ pub fn case(
         .as_ref()
         .filter(|member| Some(member.member_id.as_str()) == target)
         .or_else(|| (Some(context.actor.member_id.as_str()) == target).then_some(&context.actor))
-        .map_or("メンバー", |member| member.name.as_str());
-    let text = format!(
-        "OC管理ログ\n{reason}\n対象: {}\n実行トーク: {}\n{}\n投稿・参加時刻: {}",
-        target.map_or("URL".into(), |target| format!("{target_name} ({target})")),
-        identity(&job.event).1,
-        url.unwrap_or(""),
-        identity(&job.event).4
+        .map_or(message!(message_catalog, "common.member"), |member| {
+            member.name.as_str()
+        });
+    let text = message!(
+        message_catalog,
+        "moderation.case_01",
+        reason = reason,
+        arg0 = target.map_or("URL".into(), |target| format!("{target_name} ({target})")),
+        arg1 = identity(&job.event).1,
+        arg2 = url.unwrap_or(""),
+        arg3 = identity(&job.event).4
     );
     let action = text_action(
         tx,
@@ -390,11 +434,12 @@ pub fn case(
     Ok(())
 }
 pub fn member_event(
-    _runtime: &Runtime,
+    runtime: &Runtime,
     tx: &Transaction<'_>,
     event: &CoreEvent,
     now: i64,
 ) -> Result<()> {
+    let message_catalog = &runtime.content.messages;
     let CoreEvent::MemberChanged {
         square_id,
         chat_id,
@@ -442,7 +487,7 @@ pub fn member_event(
             .as_ref()
             .map(|(_, _, name)| name.clone())
             .filter(|name| !name.is_empty())
-            .unwrap_or("メンバー".into())
+            .unwrap_or(message!(message_catalog, "common.member").into())
     } else {
         display_name.clone()
     };
@@ -469,16 +514,6 @@ pub fn member_event(
             )?
         {
             let mut text = template.text.replace("<name>", &name);
-            let mut mention = None;
-            if template.mention {
-                let prefix = format!("@{name}");
-                mention = Some(MessageMention {
-                    member_id: member_id.clone(),
-                    start: 0,
-                    end: prefix.encode_utf16().count() as u32,
-                });
-                text = format!("{prefix}\n{text}");
-            }
             if template.show_id {
                 use base64::Engine;
                 use sha1::Digest;
@@ -490,15 +525,25 @@ pub fn member_event(
                     .take(6)
                     .collect::<String>()
                     .to_ascii_lowercase();
-                if template.mention {
-                    text = format!(
-                        "@{name}\nID: {id}\n{}",
-                        template.text.replace("<name>", &name)
-                    );
-                } else {
-                    text = format!("ID: {id}\n{text}");
-                }
+                text = message!(
+                    message_catalog,
+                    "moderation.notification_id",
+                    id = id,
+                    text = text
+                );
             }
+            let label = format!("@{name}");
+            let mention = if template.mention {
+                text = message!(
+                    message_catalog,
+                    "moderation.notification_mention",
+                    mention = label,
+                    text = text
+                );
+                mention_span(&text, &label, member_id)
+            } else {
+                None
+            };
             text_action(
                 tx,
                 event,
@@ -552,11 +597,12 @@ pub fn member_event(
                 )? {
                     let job = signal_job(event, &value, square_id, &name, "cohort-log");
                     case(
+                        message_catalog,
                         tx,
                         &job,
                         Some(member_id),
                         None,
-                        "2分以内に初参加者3人以上。30分の監視を開始（自動処分なし）。",
+                        message!(message_catalog, "moderation.member_event_01"),
                         now,
                     )?;
                 }
@@ -646,6 +692,7 @@ fn signal_job(
     }
 }
 pub fn confirm_left(
+    message_catalog: &crate::messages::Messages,
     tx: &Transaction<'_>,
     job: &mut Job,
     member: &OcMember,
@@ -677,11 +724,12 @@ pub fn confirm_left(
         "UPDATE oc_members SET state='LEFT',last=?3 WHERE square=?1 AND member=?2",
         params![member.square_id, member.member_id, identity(&job.event).4],
     )?;
-    let reason = format!(
-        "OC全体の退会を確認。\n参加時間: {} / 発言数: {}件\n最後の発言: {}",
-        policy::duration(elapsed),
-        messages,
-        last_text
+    let reason = message!(
+        message_catalog,
+        "moderation.confirm_left_01",
+        arg0 = policy::duration(message_catalog, elapsed),
+        messages = messages,
+        last_text = last_text
     );
     if first && visits == 1 && elapsed <= 300000 {
         job.operation = "left-ban".into();
@@ -705,9 +753,12 @@ pub fn confirm_left(
                 &job.event,
                 "returning-leave-log",
                 &room,
-                format!(
-                    "【監視ログ】再参加者の本OC短時間退室\n対象: {} ({})\n{reason}\n処分: 未実行\n初参加ではないため、自動再参加禁止や審議は行いません。",
-                    member.name, member.member_id
+                message!(
+                    message_catalog,
+                    "moderation.confirm_left_02",
+                    arg0 = member.name,
+                    arg1 = member.member_id,
+                    reason = reason
                 ),
                 TextDelivery::default(),
                 now,
@@ -716,12 +767,15 @@ pub fn confirm_left(
         Ok(())
     } else {
         case(
+            message_catalog,
             tx,
             job,
             Some(&member.member_id),
             None,
-            &format!(
-                "【確認待ち】参加後30分以内の退会\n{reason}\n処分: 未実行\n再参加禁止 / 無視 / 解除で審議できます。"
+            &message!(
+                message_catalog,
+                "moderation.confirm_left_03",
+                reason = reason
             ),
             now,
         )

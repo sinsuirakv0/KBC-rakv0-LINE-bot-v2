@@ -1,0 +1,556 @@
+{
+  "bot.execute_01": [],
+  "bot.mutation_01": [
+    "arg0",
+    "arg1"
+  ],
+  "bot.mutation_02": [
+    "arg0"
+  ],
+  "bot.mutation_03": [
+    "arg0"
+  ],
+  "bot.target_01": [],
+  "bot.target_02": [],
+  "bot.target_03": [
+    "arg0"
+  ],
+  "commands.case_reply_01": [],
+  "commands.case_reply_02": [],
+  "commands.case_reply_03": [],
+  "commands.case_reply_04": [],
+  "commands.case_reply_05": [],
+  "commands.chat_page_01": [],
+  "commands.chat_page_02": [],
+  "commands.chat_page_03": [],
+  "commands.chat_page_04": [],
+  "commands.chat_page_05": [],
+  "commands.chats_01": [],
+  "commands.execute_01": [],
+  "commands.execute_02": [
+    "arg0",
+    "arg1",
+    "arg2",
+    "arg3"
+  ],
+  "commands.execute_03": [],
+  "commands.execute_04": [],
+  "commands.execute_05": [],
+  "commands.execute_06": [],
+  "commands.execute_07": [],
+  "commands.execute_08": [],
+  "commands.execute_09": [],
+  "commands.execute_10": [],
+  "commands.execute_11": [
+    "page",
+    "arg0"
+  ],
+  "commands.execute_12": [],
+  "commands.execute_13": [
+    "arg0",
+    "arg1"
+  ],
+  "commands.execute_14": [],
+  "commands.execute_15": [],
+  "commands.execute_16": [],
+  "commands.execute_17": [],
+  "commands.execute_18": [
+    "arg0",
+    "id",
+    "arg1"
+  ],
+  "commands.execute_19": [
+    "page",
+    "arg0"
+  ],
+  "commands.execute_20": [],
+  "commands.execute_21": [],
+  "commands.execute_22": [],
+  "commands.execute_23": [],
+  "commands.mutation_01": [],
+  "commands.mutation_02": [
+    "elapsed",
+    "word",
+    "body",
+    "label",
+    "arg0"
+  ],
+  "commands.mutation_03": [
+    "label"
+  ],
+  "commands.mutation_04": [
+    "label",
+    "arg0"
+  ],
+  "commands.mutation_05": [
+    "label",
+    "arg0"
+  ],
+  "commands.next_target_01": [
+    "arg0",
+    "arg1"
+  ],
+  "commands.next_target_02": [
+    "arg0",
+    "arg1",
+    "arg2",
+    "arg3",
+    "text"
+  ],
+  "commands.next_target_03": [],
+  "commands.next_target_04": [],
+  "commands.reason_01": [],
+  "commands.reason_02": [],
+  "commands.reason_03": [],
+  "commands.session_reply_01": [],
+  "commands.session_reply_02": [],
+  "commands.session_reply_03": [],
+  "commands.session_reply_04": [],
+  "commands.session_reply_05": [
+    "arg0"
+  ],
+  "commands.setup_menu_01": [
+    "arg0"
+  ],
+  "commands.show_history_01": [
+    "at",
+    "status",
+    "operation",
+    "target_name",
+    "target",
+    "actor_name",
+    "actor",
+    "reason",
+    "detail"
+  ],
+  "commands.show_history_02": [],
+  "commands.show_history_03": [],
+  "commands.show_history_04": [],
+  "commands.show_history_05": [],
+  "commands.show_history_06": [],
+  "commands.show_history_07": [],
+  "commands.show_history_08": [],
+  "commands.status_01": [
+    "arg0",
+    "arg1",
+    "arg2",
+    "arg3",
+    "arg4",
+    "arg5",
+    "arg6",
+    "arg7",
+    "arg8",
+    "arg9"
+  ],
+  "commands.target_01": [],
+  "commands.target_02": [],
+  "commands.target_03": [],
+  "commands.target_04": [
+    "arg0",
+    "arg1"
+  ],
+  "commands.target_05": [
+    "arg0"
+  ],
+  "commands.target_06": [
+    "arg0",
+    "period"
+  ],
+  "commands.target_07": [
+    "arg0",
+    "arg1",
+    "arg2",
+    "arg3",
+    "arg4",
+    "text"
+  ],
+  "commands.target_08": [
+    "arg0",
+    "arg1"
+  ],
+  "common.bot_admin_only": [],
+  "common.details": [],
+  "common.file": [],
+  "common.member": [],
+  "common.none": [],
+  "common.not_set": [],
+  "common.not_specified": [],
+  "common.registered": [],
+  "common.removed": [],
+  "common.unavailable": [],
+  "common.unknown": [],
+  "common.unlimited": [],
+  "id.complete_01": [],
+  "id.complete_02": [
+    "arg0",
+    "arg1",
+    "arg2",
+    "arg3"
+  ],
+  "id.complete_03": [],
+  "id.complete_04": [],
+  "id.complete_05": [
+    "token"
+  ],
+  "id.complete_06": [],
+  "id.complete_07": [],
+  "id.complete_08": [],
+  "id.complete_09": [
+    "arg0",
+    "arg1",
+    "arg2"
+  ],
+  "id.decoration_info_01": [],
+  "id.decoration_info_02": [],
+  "id.decoration_info_03": [],
+  "id.decoration_info_04": [
+    "target"
+  ],
+  "id.decoration_info_05": [
+    "arg0",
+    "arg1",
+    "arg2",
+    "arg3",
+    "arg4",
+    "arg5",
+    "arg6"
+  ],
+  "id.decoration_info_06": [],
+  "id.decoration_info_07": [
+    "arg0",
+    "arg1",
+    "arg2",
+    "arg3",
+    "target"
+  ],
+  "id.decoration_info_08": [],
+  "id.execute_01": [],
+  "id.execute_02": [
+    "arg0",
+    "arg1",
+    "arg2"
+  ],
+  "id.execute_03": [],
+  "id.execute_04": [],
+  "id.execute_05": [],
+  "id.message_info_01": [],
+  "id.message_info_02": [
+    "target"
+  ],
+  "id.message_info_03": [
+    "target"
+  ],
+  "id.message_info_04": [
+    "arg0",
+    "arg1",
+    "arg2",
+    "arg3",
+    "arg4"
+  ],
+  "id.message_info_05": [
+    "related",
+    "arg0",
+    "arg1"
+  ],
+  "id.message_info_06": [],
+  "id.person_01": [
+    "arg0",
+    "arg1",
+    "arg2"
+  ],
+  "media.enqueue_responses_01": [],
+  "media.finish_media_01": [],
+  "media.finish_media_02": [],
+  "media.finish_media_03": [],
+  "media.finish_media_04": [],
+  "media.finish_media_05": [],
+  "media.finish_media_06": [],
+  "media.prepare_attachment_01": [],
+  "media.prepare_image_01": [
+    "url"
+  ],
+  "mod.complete_01": [
+    "target"
+  ],
+  "mod.complete_02": [],
+  "mod.complete_03": [],
+  "mod.complete_04": [],
+  "mod.complete_05": [],
+  "mod.session_01": [],
+  "moderation.after_report_01": [
+    "arg0_formatted"
+  ],
+  "moderation.case_01": [
+    "reason",
+    "arg0",
+    "arg1",
+    "arg2",
+    "arg3"
+  ],
+  "moderation.confirm_left_01": [
+    "arg0",
+    "messages",
+    "last_text"
+  ],
+  "moderation.confirm_left_02": [
+    "arg0",
+    "arg1",
+    "reason"
+  ],
+  "moderation.confirm_left_03": [
+    "reason"
+  ],
+  "moderation.execute_01": [],
+  "moderation.execute_02": [],
+  "moderation.execute_03": [],
+  "moderation.execute_04": [],
+  "moderation.execute_05": [],
+  "moderation.execute_06": [],
+  "moderation.execute_07": [],
+  "moderation.member_event_01": [],
+  "moderation.mute_01": [
+    "mention",
+    "arg1"
+  ],
+  "policy.duration_01": [
+    "arg0",
+    "arg1"
+  ],
+  "policy.duration_02": [
+    "arg0",
+    "arg1"
+  ],
+  "policy.duration_03": [
+    "arg0",
+    "arg1"
+  ],
+  "policy.duration_04": [
+    "seconds"
+  ],
+  "search.apply_inner_01": [],
+  "search.apply_inner_02": [
+    "arg0"
+  ],
+  "search.apply_inner_03": [],
+  "search.apply_inner_04": [],
+  "search.apply_inner_05": [],
+  "search.apply_inner_06": [
+    "pages"
+  ],
+  "search.apply_inner_07": [],
+  "search.command_help_01": [
+    "arg0",
+    "arg1"
+  ],
+  "search.command_help_02": [
+    "name"
+  ],
+  "search.entry_label_01": [
+    "n"
+  ],
+  "search.entry_label_02": [],
+  "search.entry_label_03": [],
+  "search.entry_label_04": [],
+  "search.entry_label_05": [],
+  "search.file_options_01": [],
+  "search.file_options_02": [
+    "arg0"
+  ],
+  "search.file_options_03": [],
+  "search.file_options_04": [],
+  "search.file_options_05": [],
+  "search.file_options_06": [
+    "label"
+  ],
+  "search.file_options_07": [
+    "label"
+  ],
+  "search.file_options_08": [
+    "label"
+  ],
+  "search.file_options_09": [],
+  "search.file_options_10": [],
+  "search.file_options_11": [],
+  "search.file_options_12": [],
+  "search.file_options_13": [
+    "form"
+  ],
+  "search.label_01": [],
+  "search.label_02": [],
+  "search.label_03": [],
+  "search.page_01": [
+    "arg0",
+    "arg1",
+    "arg2",
+    "end",
+    "arg4",
+    "arg5",
+    "arg6"
+  ],
+  "search.page_02": [
+    "count"
+  ],
+  "search.page_03": [
+    "arg0",
+    "arg1"
+  ],
+  "search.page_04": [],
+  "search.page_05": [],
+  "search.page_06": [
+    "arg0"
+  ],
+  "search.page_07": [],
+  "search.page_08": [],
+  "search.prepare_01": [],
+  "search.prepare_02": [],
+  "search.prepare_03": [],
+  "search.prepare_04": [
+    "seconds"
+  ],
+  "search.prepare_05": [],
+  "search.prepare_06": [],
+  "search.selected_01": [],
+  "search.selected_02": [],
+  "search.selected_03": [],
+  "search.selected_04": [],
+  "search.selected_05": [],
+  "test.allow_01": [],
+  "test.allow_02": [
+    "arg0",
+    "arg1"
+  ],
+  "test.allow_03": [],
+  "test.allow_04": [],
+  "test.allow_05": [
+    "arg0",
+    "arg1",
+    "arg2"
+  ],
+  "test.execute_01": [
+    "message"
+  ],
+  "test.execute_02": [
+    "square"
+  ],
+  "test.inspected_01": [
+    "arg0"
+  ],
+  "test.inspected_02": [],
+  "test.inspected_03": [
+    "square"
+  ],
+  "test.inspected_04": [
+    "arg0",
+    "arg1",
+    "arg2"
+  ],
+  "test.inspected_05": [],
+  "test.inspected_06": [],
+  "test.inspected_07": [],
+  "test.inspected_08": [],
+  "test.inspected_09": [],
+  "test.inspected_10": [
+    "arg0",
+    "arg1",
+    "arg2",
+    "arg3",
+    "arg4",
+    "arg5",
+    "targets",
+    "arg7"
+  ],
+  "test.inspected_11": [
+    "arg0"
+  ],
+  "test.inspected_12": [
+    "arg0",
+    "arg1"
+  ],
+  "test.inspected_13": [],
+  "test.inspected_14": [],
+  "test.inspected_15": [
+    "arg0"
+  ],
+  "test.mutated_01": [
+    "arg0",
+    "arg1"
+  ],
+  "test.mutated_02": [
+    "id"
+  ],
+  "test.mutated_03": [
+    "arg0"
+  ],
+  "test.mutated_04": [
+    "arg0",
+    "status",
+    "arg1",
+    "arg2",
+    "ids",
+    "arg3",
+    "message",
+    "arg4"
+  ],
+  "test.mutated_05": [],
+  "test.mutated_06": [],
+  "test.mutated_07": [],
+  "test.plan_01": [],
+  "test.plan_02": [],
+  "test.plan_03": [],
+  "test.plan_04": [],
+  "test.plan_05": [],
+  "test.plan_06": [],
+  "test.plan_07": [],
+  "test.sticker_01": [],
+  "test.sticker_02": [
+    "usage"
+  ],
+  "test.sticker_03": [
+    "package_id",
+    "sticker_id",
+    "version"
+  ],
+  "test_reply.execute_01": [],
+  "test_reply.execute_02": [],
+  "test_reply.execute_03": [],
+  "test_reply.execute_04": [],
+  "test_reply.execute_05": [],
+  "common.success": [],
+  "common.failed": [],
+  "common.result_unknown": [],
+  "common.accepted": [],
+  "moderation.notification_id": [
+    "id",
+    "text"
+  ],
+  "moderation.notification_mention": [
+    "mention",
+    "text"
+  ],
+  "test.sticker_alt": [],
+  "id.square": [
+    "square"
+  ],
+  "commands.modroom_usage": [],
+  "commands.media_usage": [],
+  "commands.watch_usage": [],
+  "search.entry": [
+    "id",
+    "name",
+    "annotation"
+  ],
+  "search.detail": [
+    "label",
+    "url"
+  ],
+  "search.row": [
+    "number",
+    "name"
+  ],
+  "commands.mutation_result": [
+    "status",
+    "name",
+    "target",
+    "detail"
+  ]
+}

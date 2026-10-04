@@ -1,0 +1,6 @@
+﻿# 利用者向け文面。差し込み項目を保持して編集してください。
+test_reply.execute_01 = "返信先のメッセージIDを数字で指定してください。使い方: !help test"
+test_reply.execute_02 = "返信は実行トークへ送ります。返信元トークMIDは --chat で指定してください。使い方: !help test"
+test_reply.execute_03 = "返信元はmから始まるトークMIDを指定してください。"
+test_reply.execute_04 = "メッセージIDと返信元トークMIDが受信済み情報に一致しません。"
+test_reply.execute_05 = "返信本文は1〜1,500 UTF-16単位で指定してください。"

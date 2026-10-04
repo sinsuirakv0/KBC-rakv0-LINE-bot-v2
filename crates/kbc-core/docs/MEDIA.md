@@ -25,3 +25,5 @@ FFmpegの実行pathはCoreConfig.ffmpegPath（FFMPEG_PATH）。Linuxコンテナ
 未実行ジョブにもsnapshotのrevisionを保存し、更新後の索引・共有素材へ以前の解決結果を適用しない。revision不一致は未通信の再実行案内に変える。配送直前に成果が消失していても、通常返信へ変えて他の配送を維持する。fileの選択案内には固定commitのダウンロードURLも添える。
 
 RenderContext.check_memoryはLinuxコンテナの使用量を共通Workerで確認し、上限の64MiB手前で新規生成・Sprite展開を拒否する。動画では16Frameごとに再確認し、子FFmpegも含む使用量のsample最大値を記録する。取消・入力上限は従来どおり維持する。[条件・限界とLinux実験](../../../experiments/motion-memory/docs/MEMORY.md)。
+
+利用者に送る素材取得・生成失敗・添付消失の案内は[Messages](MESSAGES.md)のmedia.txtで変更する。監視用のerror code・stderrと、現在配送しない内部のMotion進捗は文面設定の対象に含めない。

@@ -1,4 +1,5 @@
-﻿use crate::{
+﻿use crate::messages::message;
+use crate::{
     Result, Runtime,
     commands::search::SearchSession,
     motion::{MotionJob, MotionPlan},
@@ -318,6 +319,7 @@ impl Runtime {
         }
     }
     fn finish_media(&self, action: CoreAction, outcome: Result<MediaOutput>) -> Result<()> {
+        let message_catalog = &self.content.messages;
         let CoreAction::PrepareMedia {
             action_id,
             event_id,
@@ -366,8 +368,7 @@ impl Runtime {
                         r.get(0)
                     })?;
                 if std::fs::metadata(&artifact.path)?.len() > MAX_OUTPUT_BYTES {
-                    text = "生成ファイルが上限（8MiB）を超えました。Frame範囲を短くしてください。"
-                        .into();
+                    text = message!(message_catalog, "media.finish_media_01").into();
                 } else {
                     let output = self.media_root.join(format!("job-{row_id}")).join("output");
                     if artifact.path != output {
@@ -392,7 +393,18 @@ impl Runtime {
             }
             Err(error) => {
                 eprintln!("Media preparation failed: {error}");
-                text=if error.to_string()=="MediaMemoryBudgetExceeded" { "生成用のメモリが不足しているため、生成を中止しました。少し待つか、Frame範囲を短くしてお試しください。" } else if error.to_string()=="MissingFfmpeg" { "動画生成用のFFmpegが設定されていません。" } else if error.to_string()=="NoAvailableFiles" { "利用できる関連ファイルが見つかりませんでした。" } else if error.to_string()=="SearchDataChanged" { "検索データが更新されました。もう一度コマンドを実行してください。" } else { "素材の取得・生成に失敗しました。検索条件やFrame範囲を確認して再度お試しください。" }.into();
+                text = if error.to_string() == "MediaMemoryBudgetExceeded" {
+                    message!(message_catalog, "media.finish_media_02")
+                } else if error.to_string() == "MissingFfmpeg" {
+                    message!(message_catalog, "media.finish_media_03")
+                } else if error.to_string() == "NoAvailableFiles" {
+                    message!(message_catalog, "media.finish_media_04")
+                } else if error.to_string() == "SearchDataChanged" {
+                    message!(message_catalog, "media.finish_media_05")
+                } else {
+                    message!(message_catalog, "media.finish_media_06")
+                }
+                .into();
             }
         }
         if is_prompt && !file_list_ready {
@@ -418,6 +430,7 @@ impl Runtime {
         Ok(())
     }
     pub async fn prepare_attachment(&self, action_id: &str) -> Result<Option<Vec<u8>>> {
+        let message_catalog = &self.content.messages;
         let (row_id,payload):(i64,String)=self.database.lock().map_err(|_|"DatabaseLock")?.query_row("SELECT rowid,payload FROM actions WHERE id=?1 AND status='claimed' AND json_extract(payload,'$.attachment') IS NOT NULL",[action_id],|row|Ok((row.get(0)?,row.get(1)?)))?;
         let path = self.media_root.join(format!("job-{row_id}")).join("output");
         let read = async {
@@ -439,8 +452,7 @@ impl Runtime {
                     return Err("InvalidAttachmentAction".into());
                 };
                 *attachment = None;
-                *text = "添付ファイルを準備できませんでした。もう一度コマンドを実行してください。"
-                    .into();
+                *text = message!(message_catalog, "media.prepare_attachment_01").into();
                 let changed=self.database.lock().map_err(|_|"DatabaseLock")?.execute("UPDATE actions SET payload=?2,status='queued',code='MediaUnavailable' WHERE id=?1 AND status='claimed'",params![action_id,serde_json::to_string(&action)?])?;
                 if changed != 1 {
                     return Err("ActionNotClaimed".into());

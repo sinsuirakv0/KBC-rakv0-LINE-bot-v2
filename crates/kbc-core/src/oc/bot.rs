@@ -1,4 +1,5 @@
 ﻿use super::*;
+use crate::messages::message;
 
 pub fn parse(text: &str) -> Option<Input> {
     let mut input = text;
@@ -21,12 +22,18 @@ pub fn parse(text: &str) -> Option<Input> {
 }
 
 pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
+    let message_catalog = &runtime.content.messages;
     if bot_rank(runtime, job) < 2 {
-        return reply(tx, job, "Botの名前変更はBOT管理者専用です。", now);
+        return reply(
+            tx,
+            job,
+            message!(message_catalog, "common.bot_admin_only"),
+            now,
+        );
     }
     let name = &job.input.body;
     if name.is_empty() {
-        return reply(tx, job, "使い方: !bot name 名前", now);
+        return reply(tx, job, message!(message_catalog, "bot.execute_01"), now);
     }
     let member_id = job
         .context
@@ -44,9 +51,15 @@ pub fn target(
     result: &ActionResult,
     now: i64,
 ) -> Result<()> {
+    let message_catalog = &runtime.content.messages;
     // 変更APIの発行時も、BOT管理者としての権限を確認する。
     if bot_rank(runtime, job) < 2 {
-        return reply(tx, job, "Botの名前変更はBOT管理者専用です。", now);
+        return reply(
+            tx,
+            job,
+            message!(message_catalog, "common.bot_admin_only"),
+            now,
+        );
     }
     let context = job.context.as_ref().ok_or("MissingOcContext")?;
     let Some(member) = result
@@ -54,13 +67,13 @@ pub fn target(
         .as_ref()
         .and_then(|value| value.member.clone())
     else {
-        return reply(tx, job, "Botのプロフィールを確認できませんでした。", now);
+        return reply(tx, job, message!(message_catalog, "bot.target_01"), now);
     };
     if member.member_id != context.bot_member_id
         || member.square_id != context.square_id
         || !matches!(member.state.as_str(), "JOINED" | "2")
     {
-        return reply(tx, job, "このOCに参加中のBotを確認できませんでした。", now);
+        return reply(tx, job, message!(message_catalog, "bot.target_02"), now);
     }
     if result
         .oc_result
@@ -71,9 +84,10 @@ pub fn target(
         return reply(
             tx,
             job,
-            format!(
-                "Botの名前はすでに「{}」です。",
-                display_name(&job.input.body)
+            message!(
+                message_catalog,
+                "bot.target_03",
+                arg0 = display_name(&job.input.body)
             ),
             now,
         );
@@ -90,7 +104,13 @@ pub fn target(
     request(tx, job, update, Phase::Mutation, now)
 }
 
-pub fn mutation(tx: &Transaction<'_>, job: &Job, result: &ActionResult, now: i64) -> Result<()> {
+pub fn mutation(
+    message_catalog: &crate::messages::Messages,
+    tx: &Transaction<'_>,
+    job: &Job,
+    result: &ActionResult,
+    now: i64,
+) -> Result<()> {
     let member = job.target_member.as_ref().ok_or("MissingBotProfile")?;
     let label = match result.status {
         DeliveryStatus::Sent => "成功",
@@ -98,6 +118,7 @@ pub fn mutation(tx: &Transaction<'_>, job: &Job, result: &ActionResult, now: i64
         DeliveryStatus::Unknown => "結果不明",
     };
     history(
+        message_catalog,
         tx,
         job,
         &member.member_id,
@@ -109,18 +130,18 @@ pub fn mutation(tx: &Transaction<'_>, job: &Job, result: &ActionResult, now: i64
         tx,
         job,
         match result.status {
-            DeliveryStatus::Sent => format!(
-                "Botの名前を変更しました。\n{} → {}",
-                display_name(&member.name),
-                display_name(&job.input.body)
+            DeliveryStatus::Sent => message!(
+                message_catalog,
+                "bot.mutation_01",
+                arg0 = display_name(&member.name),
+                arg1 = display_name(&job.input.body)
             ),
             DeliveryStatus::Failed => {
-                format!("Botの名前を変更できませんでした。\nAPI: {}", result.code)
+                message!(message_catalog, "bot.mutation_02", arg0 = result.code)
             }
-            DeliveryStatus::Unknown => format!(
-                "Botの名前変更: 結果不明\nAPI: {}\nプロフィールを確認してください。自動再実行はしません。",
-                result.code
-            ),
+            DeliveryStatus::Unknown => {
+                message!(message_catalog, "bot.mutation_03", arg0 = result.code)
+            }
         },
         now,
     )

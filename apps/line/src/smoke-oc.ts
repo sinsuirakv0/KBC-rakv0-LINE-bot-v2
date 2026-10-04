@@ -1,5 +1,5 @@
 ﻿import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -27,7 +27,12 @@ await writeFile(join(directory, "permissions.json"), JSON.stringify({ version: 1
   { chatMid: square, userMid: mod, chatType: "SQUARE", role: "mod" },
   { chatMid: square, userMid: owner, chatType: "SQUARE", role: "admin" },
 ] }));
-const config = { databasePath: join(directory, "core.sqlite"), ownerId: "fixture-account", permissionsPath: join(directory, "permissions.json") };
+await cp("content", join(directory, "content"), { recursive: true });
+const messagePath = join(directory, "content/messages/moderation.txt");
+await writeFile(messagePath, (await readFile(messagePath, "utf8")).replace('moderation.mute_01 = "', 'moderation.mute_01 = "🙂 ご案内\\n'));
+const commonPath = join(directory, "content/messages/common.txt");
+await writeFile(commonPath, (await readFile(commonPath, "utf8")).replace('この操作はBOT管理者専用です。', '共通案内: BOT管理者専用です。'));
+const config = { databasePath: join(directory, "core.sqlite"), ownerId: "fixture-account", permissionsPath: join(directory, "permissions.json"), contentDirectory: join(directory, "content") };
 let core = createCore(config);
 const db = new DatabaseSync(config.databasePath);
 const controller = new AbortController(), gate = new ApiScheduler(controller.signal, 2, 1);
@@ -126,7 +131,7 @@ async function signal(id: string, state: string, scope = "square", targetChat = 
 try {
   // OC管理人・副官・BOTモデレーターにも許可せず、実行OCのBot名だけを更新する。
   for (const actor of [admin, co, mod, user]) {
-    await message("!bot name 未許可", actor); assert(texts(await drain()).includes("BOT管理者専用"));
+    await message("!bot name 未許可", actor); assert(texts(await drain()).includes("共通案内: BOT管理者専用"));
   }
   assert.equal(profileCalls.length, 0);
   await message("!bot name", owner); assert(texts(await drain()).includes("使い方"));
@@ -149,7 +154,7 @@ try {
   assert.equal(core.stats().unknownActions, profileUnknown);
   // スタンプは実行トーク限定。管理操作のallow未登録でもBOT管理者が1回試せる。
   for (const actor of [admin, co, mod, user]) {
-    await message("!test sticker 1 7", actor); assert(texts(await drain()).includes("BOT管理者専用"));
+    await message("!test sticker 1 7", actor); assert(texts(await drain()).includes("共通案内: BOT管理者専用"));
   }
   for (const input of ["", "1", "x 7", "1 7 --version", "1 7 --option", "1 7 --version 2 --version 3", "1 7 --target-chat " + sub]) {
     await message("!test sticker " + input, owner); assert(texts(await drain()).includes("使い方"));
@@ -329,11 +334,19 @@ try {
   assert(kickHistory.includes("参加者🙂") && kickHistory.includes(mod));
 
   // 明示muteは権限免除より優先。URL免除と連投の7件目を確認。
+  names.set(user, "参加者🙂{arg1}");
   await message(`o.oc mute ${user} inf`, mod); await drain();
   roles.set(user, "ADMIN"); const muted = await message("o.ping", user); const warning = await drain(); assert(deleted.includes(muted));
   assert(warning.some(action => action.type === "sendMessage" && action.mention && action.text.includes("無期限")));
+  const muteNotice = warning.find(action => action.type === "sendMessage" && action.mention);
+  assert(muteNotice?.type === "sendMessage" && muteNotice.mention);
+  const nameOffset = muteNotice.text.indexOf("@参加者🙂{arg1}");
+  assert(nameOffset > 0);
+  assert.equal(muteNotice.mention.start, muteNotice.text.slice(0, nameOffset).length);
+  assert.equal(muteNotice.text.slice(muteNotice.mention.start, muteNotice.mention.end), "@参加者🙂{arg1}");
   assert(db.prepare("SELECT 1 FROM actions WHERE id LIKE '%:oc:mute-notice:0:cleanup' AND due>?").get(Date.now()));
   roles.set(user, "MEMBER"); await message(`o.oc mute ${user} off`, mod); await drain();
+  names.delete(user);
   await message("o.oc url add https://example.com/docs prefix"); await drain(); await message("o.oc url on"); await drain();
   const prefixed = await message("o.ping", user); assert(texts(await drain()).includes("pong!")); assert(!deleted.includes(prefixed));
   await message("!ping", user); assert(texts(await drain()).includes("pong!"));

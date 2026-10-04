@@ -1,0 +1,8 @@
+﻿# 利用者向け文面。差し込み項目を保持して編集してください。
+bot.execute_01 = "使い方: !bot name 名前"
+bot.mutation_01 = "Botの名前を変更しました。\n{arg0} → {arg1}"
+bot.mutation_02 = "Botの名前を変更できませんでした。\nAPI: {arg0}"
+bot.mutation_03 = "Botの名前変更: 結果不明\nAPI: {arg0}\nプロフィールを確認してください。自動再実行はしません。"
+bot.target_01 = "Botのプロフィールを確認できませんでした。"
+bot.target_02 = "このOCに参加中のBotを確認できませんでした。"
+bot.target_03 = "Botの名前はすでに「{arg0}」です。"

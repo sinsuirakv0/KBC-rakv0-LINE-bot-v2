@@ -197,7 +197,7 @@ export class SquareDirectory {
     } else if (request.type === "sticker") {
       // 画像添付ではなくSTICKERのmetadataを渡す。送信可否はLINE側の応答で確認する。
       const contentMetadata: Record<string, string> = { STKPKGID: request.packageId, STKID: request.stickerId,
-        STKVER: request.version, STKTXT: "[スタンプ]" };
+        STKVER: request.version, STKTXT: request.text };
       if (request.option) contentMetadata.STKOPT = request.option;
       const sent = await this.client.square.sendMessage({ squareChatMid: chatId, contentType: "STICKER", contentMetadata });
       result.messageId = sent.createdSquareMessage?.message?.id;

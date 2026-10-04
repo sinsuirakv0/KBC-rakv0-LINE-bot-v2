@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
+﻿use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTOCOL_VERSION: u32 = 13;
+pub const PROTOCOL_VERSION: u32 = 14;
 
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -306,6 +306,8 @@ pub enum OcRequest {
     Sticker {
         package_id: String,
         sticker_id: String,
+        #[serde(default = "default_sticker_text")]
+        text: String,
         version: String,
         option: Option<String>,
     },
@@ -314,6 +316,11 @@ pub enum OcRequest {
         message_id: String,
     },
 }
+// 保存済みの旧Outboxだけは従来の代替文を維持する。
+fn default_sticker_text() -> String {
+    "[スタンプ]".into()
+}
+
 impl OcRequest {
     pub fn is_read(&self) -> bool {
         matches!(

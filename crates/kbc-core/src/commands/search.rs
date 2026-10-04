@@ -1,4 +1,5 @@
-﻿use crate::{
+﻿use crate::messages::message;
+use crate::{
     Result,
     motion::{
         MotionPlan,
@@ -35,6 +36,8 @@ pub struct SearchEntry {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchCatalog {
+    #[serde(skip)]
+    messages: Option<std::sync::Arc<crate::messages::Messages>>,
     source: SnapshotSource,
     schema_version: u32,
     pub revision: String,
@@ -191,6 +194,9 @@ fn parse(kind: &str, args: &[&str]) -> Option<(String, bool, Operation)> {
     (!query.is_empty()).then_some((query, force, operation))
 }
 impl SearchCatalog {
+    pub fn messages(&self) -> &crate::messages::Messages {
+        self.messages.as_deref().expect("MissingMessageCatalog")
+    }
     pub fn session_revision(&self) -> String {
         // 表示件数を変更した古い一覧で候補番号を再解釈しない。
         format!("{}:pages{PAGE_SIZE}", self.revision)
@@ -208,12 +214,13 @@ impl SearchCatalog {
             .map(String::as_str)
             .ok_or("MissingAssetCommit".into())
     }
-    pub fn load(path: &Path) -> Result<Self> {
+    pub fn load(path: &Path, messages: std::sync::Arc<crate::messages::Messages>) -> Result<Self> {
         if std::fs::metadata(path)?.len() > 4 * 1024 * 1024 {
             return Err("SearchDataLimit".into());
         }
         let text = std::fs::read_to_string(path)?;
         let mut catalog: Self = serde_json::from_str(text.trim_start_matches('\u{feff}'))?;
+        catalog.messages = Some(messages);
         if catalog.schema_version != 2
             || catalog.revision.len() != 64
             || !catalog.revision.bytes().all(|b| b.is_ascii_hexdigit())
@@ -372,6 +379,7 @@ impl SearchCatalog {
         &self.entries[&s.kind][s.results[index].index]
     }
     pub fn entry_label(&self, s: &SearchSession, index: usize) -> String {
+        let message_catalog = self.messages();
         let e = self.entry(s, index);
         let matched = s.results[index].name;
         let name = if s.kind == "tut" && e.display_name == "ダミー" {
@@ -379,26 +387,28 @@ impl SearchCatalog {
                 .and_then(|i| e.names.get(i))
                 .filter(|n| n.as_str() != "ダミー")
                 .or_else(|| e.names.iter().find(|n| n.as_str() != "ダミー"))
-                .map(|n| format!("{n} (ダミー)"))
+                .map(|n| message!(message_catalog, "search.entry_label_01", n = n))
                 .unwrap_or("ダミー".into())
         } else {
             e.display_name.clone()
         };
         let annotation = if s.kind == "ut" {
             match matched {
-                Some(n) if n >= e.form_count => " (別称でヒット)",
-                Some(1) => " (第二形態名でヒット)",
-                Some(2) => " (第三形態名でヒット)",
-                Some(3) => " (第四形態名でヒット)",
+                Some(n) if n >= e.form_count => message!(message_catalog, "search.entry_label_02"),
+                Some(1) => message!(message_catalog, "search.entry_label_03"),
+                Some(2) => message!(message_catalog, "search.entry_label_04"),
+                Some(3) => message!(message_catalog, "search.entry_label_05"),
                 _ => "",
             }
         } else {
             ""
         };
-        format!(
-            "{} {}{annotation}",
-            e.id,
-            name.chars().take(96).collect::<String>()
+        message!(
+            message_catalog,
+            "search.entry",
+            id = e.id,
+            name = name.chars().take(96).collect::<String>(),
+            annotation = annotation
         )
     }
     pub fn detail(&self, s: &SearchSession, index: usize) -> String {
@@ -408,21 +418,28 @@ impl SearchCatalog {
         } else {
             &e.url
         };
-        format!("{}\n{url}", self.entry_label(s, index))
+        message!(
+            self.messages(),
+            "search.detail",
+            label = self.entry_label(s, index),
+            url = url
+        )
     }
     pub fn page(&self, s: &SearchSession, interactive: bool) -> String {
+        let message_catalog = self.messages();
         let count = s.files.as_ref().map_or(s.results.len(), Vec::len);
         let start = s.page * PAGE_SIZE;
         let end = (start + PAGE_SIZE).min(count);
-        let mut lines = vec![format!(
-            "{}「{}」\n{}〜{} / {}件\n{} / {}ページ",
-            label(&s.kind),
-            s.query.chars().take(60).collect::<String>(),
-            start + 1,
-            end,
-            if s.files.is_some() { count } else { s.total },
-            s.page + 1,
-            count.div_ceil(PAGE_SIZE)
+        let mut lines = vec![message!(
+            message_catalog,
+            "search.page_01",
+            arg0 = label(message_catalog, &s.kind),
+            arg1 = s.query.chars().take(60).collect::<String>(),
+            arg2 = start + 1,
+            end = end,
+            arg4 = if s.files.is_some() { count } else { s.total },
+            arg5 = s.page + 1,
+            arg6 = count.div_ceil(PAGE_SIZE)
         )];
         for i in start..end {
             let name = if let Some(files) = &s.files {
@@ -440,41 +457,44 @@ impl SearchCatalog {
                 short.push(ch);
                 width += ch.len_utf16();
             }
-            lines.push(format!("{}．{short}", i - start + 1));
-        }
-        if s.files.is_none() && s.total > count {
-            lines.push(format!(
-                "\n先頭{count}件を表示。検索語を追加すると絞れます。"
+            lines.push(message!(
+                message_catalog,
+                "search.row",
+                number = i - start + 1,
+                name = short
             ));
         }
+        if s.files.is_none() && s.total > count {
+            lines.push(message!(message_catalog, "search.page_02", count = count));
+        }
         if interactive {
-            lines.push(format!(
-                "\nこの一覧へ番号をリプライ\n1〜{}：{}",
-                end - start,
-                if s.files.is_some() {
-                    "ファイル"
+            lines.push(message!(
+                message_catalog,
+                "search.page_03",
+                arg0 = end - start,
+                arg1 = if s.files.is_some() {
+                    message!(message_catalog, "common.file")
                 } else {
-                    "詳細"
+                    message!(message_catalog, "common.details")
                 }
             ));
             let mut moves = Vec::new();
             if end < count {
-                moves.push("次：次ページ");
+                moves.push(message!(message_catalog, "search.page_04"));
             }
             if start > 0 {
-                moves.push("前：前ページ");
+                moves.push(message!(message_catalog, "search.page_05"));
             }
             if !moves.is_empty() {
-                lines.push(format!(
-                    "この一覧へリプライ\n{}　3p：3ページへ",
-                    moves.join("　")
+                lines.push(message!(
+                    message_catalog,
+                    "search.page_06",
+                    arg0 = moves.join("　")
                 ));
             }
-            lines.push(
-                "終了：受付を終える\n検索した本人のみ・10分間\n一覧は操作後・10分経過で削除".into(),
-            );
+            lines.push(message!(message_catalog, "search.page_07").into());
         } else {
-            lines.push("\nIDを指定してもう一度検索してください。".into());
+            lines.push(message!(message_catalog, "search.page_08").into());
         }
         lines.join("\n")
     }
@@ -516,7 +536,12 @@ pub fn origin_path(e: &SearchEntry, kind: &str, family: &str, form: &str) -> Opt
         if family == "icon" { "uni" } else { "udi" }
     ))
 }
-pub fn file_options(e: &SearchEntry, kind: &str, filter: Option<&str>) -> Vec<FileOption> {
+pub fn file_options(
+    message_catalog: &crate::messages::Messages,
+    e: &SearchEntry,
+    kind: &str,
+    filter: Option<&str>,
+) -> Vec<FileOption> {
     let mut result = Vec::new();
     let mut add = |path, label| result.push(FileOption { path, label });
     let forms: Vec<&str> = if kind == "tut" {
@@ -534,7 +559,7 @@ pub fn file_options(e: &SearchEntry, kind: &str, filter: Option<&str>) -> Vec<Fi
             (
                 format!("{:03}", e.id.parse::<usize>().unwrap_or_default()),
                 "e".into(),
-                "敵".into(),
+                message!(message_catalog, "search.file_options_01").into(),
             )
         } else {
             let Some((id, suffix, _)) = stem(e, form) else {
@@ -543,9 +568,10 @@ pub fn file_options(e: &SearchEntry, kind: &str, filter: Option<&str>) -> Vec<Fi
             (
                 id,
                 suffix,
-                format!(
-                    "第{}形態",
-                    ["f", "c", "s", "u"]
+                message!(
+                    message_catalog,
+                    "search.file_options_02",
+                    arg0 = ["f", "c", "s", "u"]
                         .iter()
                         .position(|f| *f == form)
                         .unwrap()
@@ -554,25 +580,42 @@ pub fn file_options(e: &SearchEntry, kind: &str, filter: Option<&str>) -> Vec<Fi
             )
         };
         if kind == "tut" {
-            add(format!("Image/enemy_icon_{id}.png"), "敵アイコン".into());
+            add(
+                format!("Image/enemy_icon_{id}.png"),
+                message!(message_catalog, "search.file_options_03").into(),
+            );
         } else {
-            for (family, title) in [("icon", "アイコン"), ("wide", "横長画像")] {
+            for (family, title) in [
+                ("icon", message!(message_catalog, "search.file_options_04")),
+                ("wide", message!(message_catalog, "search.file_options_05")),
+            ] {
                 if let Some(path) = origin_path(e, kind, family, form) {
                     add(path, format!("{label} {title}"));
                 }
             }
         }
         let base = format!("{id}_{suffix}");
-        add(format!("Number/{base}.png"), format!("{label} スプライト"));
+        add(
+            format!("Number/{base}.png"),
+            message!(message_catalog, "search.file_options_06", label = label),
+        );
         add(
             format!("ImageData/{base}.imgcut"),
-            format!("{label} 切り抜き情報"),
+            message!(message_catalog, "search.file_options_07", label = label),
         );
         add(
             format!("ImageData/{base}.mamodel"),
-            format!("{label} モデル"),
+            message!(message_catalog, "search.file_options_08", label = label),
         );
-        for (i, title) in ["歩行", "待機", "攻撃", "ノックバック"].iter().enumerate() {
+        for (i, title) in [
+            message!(message_catalog, "search.file_options_09"),
+            message!(message_catalog, "search.file_options_10"),
+            message!(message_catalog, "search.file_options_11"),
+            message!(message_catalog, "search.file_options_12"),
+        ]
+        .iter()
+        .enumerate()
+        {
             add(
                 format!("ImageData/{base}0{i}.maanim"),
                 format!("{label} {title}"),
@@ -583,7 +626,7 @@ pub fn file_options(e: &SearchEntry, kind: &str, filter: Option<&str>) -> Vec<Fi
         for form in ["f", "m", "z"] {
             add(
                 format!("Image/gatyachara_{}_{form}.png", e.id),
-                format!("ガチャ画像 {form}"),
+                message!(message_catalog, "search.file_options_13", form = form),
             );
         }
     }
@@ -626,10 +669,10 @@ pub fn motion_plan(e: &SearchEntry, kind: &str, r: &MotionRequest) -> Option<Mot
             .collect(),
     })
 }
-pub fn label(kind: &str) -> &'static str {
+pub fn label<'a>(message_catalog: &'a crate::messages::Messages, kind: &str) -> &'a str {
     match kind {
-        "ut" => "ユニット",
-        "tut" => "敵ユニット",
-        _ => "マップ・ステージ",
+        "ut" => message!(message_catalog, "search.label_01"),
+        "tut" => message!(message_catalog, "search.label_02"),
+        _ => message!(message_catalog, "search.label_03"),
     }
 }

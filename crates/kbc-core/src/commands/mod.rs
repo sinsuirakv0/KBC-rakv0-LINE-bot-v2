@@ -1,4 +1,5 @@
-﻿pub mod content;
+use crate::messages::message;
+pub mod content;
 pub mod search;
 pub mod sessions;
 
@@ -52,6 +53,7 @@ pub fn prepare(
     text: &str,
     now: i64,
 ) -> CommandPlan {
+    let message_catalog = &content.messages;
     let text = text.trim();
     let Some(input) = text.strip_prefix('!').or_else(|| text.strip_prefix("o.")) else {
         return CommandPlan::Ignore;
@@ -76,7 +78,7 @@ pub fn prepare(
         return CommandPlan::Text(vec![(
             content
                 .command_help(&target)
-                .unwrap_or("そのコマンドの案内はありません。!help で一覧を確認できます。".into()),
+                .unwrap_or(message!(message_catalog, "search.prepare_01").into()),
             now,
         )]);
     }
@@ -104,7 +106,7 @@ pub fn prepare(
         }
         if args.join(" ").len() > 512 || args.len() > 16 {
             return CommandPlan::Text(vec![(
-                "検索語が長すぎます。短くしてもう一度お試しください。".into(),
+                message!(message_catalog, "search.prepare_02").into(),
                 now,
             )]);
         }
@@ -115,7 +117,7 @@ pub fn prepare(
                 CommandPlan::Text(vec![(
                     content
                         .command_help(name)
-                        .unwrap_or("引数を確認してください。".into()),
+                        .unwrap_or(message!(message_catalog, "search.prepare_03").into()),
                     now,
                 )])
             });
@@ -123,13 +125,16 @@ pub fn prepare(
     if name == "test-notify" {
         return CommandPlan::Text(match args.first().and_then(|arg| arg.parse::<i64>().ok()) {
             Some(seconds @ 1..=60) if args.len() == 1 => vec![
-                (format!("{seconds}秒後に通知を送ります。"), now),
                 (
-                    "通知の確認です。次の入力がなくても送信されます。".into(),
+                    message!(message_catalog, "search.prepare_04", seconds = seconds),
+                    now,
+                ),
+                (
+                    message!(message_catalog, "search.prepare_05").into(),
                     now + seconds * 1000,
                 ),
             ],
-            _ => vec![("確認用: !test-notify 1〜60（秒）".into(), now)],
+            _ => vec![(message!(message_catalog, "search.prepare_06").into(), now)],
         });
     }
     CommandPlan::Text(vec![(content.responses[name].clone(), now)])

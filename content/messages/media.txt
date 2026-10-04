@@ -1,0 +1,10 @@
+﻿# 利用者向け文面。差し込み項目を保持して編集してください。
+media.enqueue_responses_01 = "素材取得・生成が混み合っています。少し待って再度お試しください。"
+media.finish_media_01 = "生成ファイルが上限（8MiB）を超えました。Frame範囲を短くしてください。"
+media.finish_media_02 = "生成用のメモリが不足しているため、生成を中止しました。少し待つか、Frame範囲を短くしてお試しください。"
+media.finish_media_03 = "動画生成用のFFmpegが設定されていません。"
+media.finish_media_04 = "利用できる関連ファイルが見つかりませんでした。"
+media.finish_media_05 = "検索データが更新されました。もう一度コマンドを実行してください。"
+media.finish_media_06 = "素材の取得・生成に失敗しました。検索条件やFrame範囲を確認して再度お試しください。"
+media.prepare_attachment_01 = "添付ファイルを準備できませんでした。もう一度コマンドを実行してください。"
+media.prepare_image_01 = "画像を取得できませんでした。こちらから確認してください。\n{url}"

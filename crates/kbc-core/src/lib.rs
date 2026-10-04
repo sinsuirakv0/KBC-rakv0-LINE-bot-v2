@@ -1,4 +1,5 @@
-﻿use std::{
+﻿use crate::messages::message;
+use std::{
     path::Path,
     sync::{
         Mutex,
@@ -15,6 +16,7 @@ mod assets;
 mod commands;
 mod logs;
 mod media;
+mod messages;
 mod motion;
 mod oc;
 mod permissions;
@@ -62,12 +64,15 @@ impl Runtime {
         let content = commands::content::ContentCatalog::load(Path::new(
             config.content_directory.as_deref().unwrap_or("content"),
         ))?;
-        let search = commands::search::SearchCatalog::load(Path::new(
-            config
-                .search_data_path
-                .as_deref()
-                .unwrap_or("data/search/catalog.json"),
-        ))?;
+        let search = commands::search::SearchCatalog::load(
+            Path::new(
+                config
+                    .search_data_path
+                    .as_deref()
+                    .unwrap_or("data/search/catalog.json"),
+            ),
+            std::sync::Arc::clone(&content.messages),
+        )?;
         if let Some(parent) = Path::new(&config.database_path).parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -398,11 +403,12 @@ impl Runtime {
         replacement: Option<String>,
         now: i64,
     ) -> Result<()> {
+        let message_catalog = &self.content.messages;
         if responses.iter().any(|(_, _, media)| media.is_some()) {
             let count: i64 = tx.query_row("SELECT count(*) FROM actions WHERE status IN ('queued','preparing','claimed','querying','sending','unknown') AND (json_extract(payload,'$.type')='prepareMedia' OR json_extract(payload,'$.attachment') IS NOT NULL)", [], |row|row.get(0))?;
             if count >= media::MAX_MEDIA_JOBS {
                 responses = vec![(
-                    "素材取得・生成が混み合っています。少し待って再度お試しください。".into(),
+                    message!(message_catalog, "media.enqueue_responses_01").into(),
                     now,
                     None,
                 )];
@@ -722,6 +728,7 @@ impl Runtime {
     }
 
     pub async fn prepare_image(&self, action_id: &str) -> Result<Option<Vec<u8>>> {
+        let message_catalog = &self.content.messages;
         let mut action: CoreAction = {
             let db = self.database.lock().map_err(|_| "DatabaseLock")?;
             let payload: String = db.query_row(
@@ -742,7 +749,7 @@ impl Runtime {
             Ok(bytes) => Ok(Some(bytes)),
             Err(_) => {
                 // 取得失敗はLINEへ何も送っていない。元URLを示す通常返信へ切り替える。
-                *text = format!("画像を取得できませんでした。こちらから確認してください。\n{url}");
+                *text = message!(message_catalog, "media.prepare_image_01", url = url);
                 *image_url = None;
                 let count = self.database.lock().map_err(|_| "DatabaseLock")?.execute("UPDATE actions SET payload=?2,status='queued',code='ImageUnavailable' WHERE id=?1 AND status='claimed'", params![action_id, serde_json::to_string(&action)?])?;
                 if count != 1 {

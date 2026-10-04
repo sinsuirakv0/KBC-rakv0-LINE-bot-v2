@@ -1,4 +1,5 @@
 ﻿use super::*;
+use crate::messages::message;
 
 pub(super) fn take_word<'a>(input: &mut &'a str) -> &'a str {
     *input = input.trim_start();
@@ -29,8 +30,14 @@ pub fn parse(text: &str) -> Option<Input> {
 }
 
 pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &Job, now: i64) -> Result<()> {
+    let message_catalog = &runtime.content.messages;
     if bot_rank(runtime, job) < 2 {
-        return reply(tx, job, "このリプライ送信テストはBOT管理者専用です。", now);
+        return reply(
+            tx,
+            job,
+            message!(message_catalog, "common.bot_admin_only"),
+            now,
+        );
     }
     let mut input = job.input.body.as_str();
     let message = take_word(&mut input);
@@ -41,7 +48,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &Job, now: i64) -> 
         return reply(
             tx,
             job,
-            "返信先のメッセージIDを数字で指定してください。使い方: !help test",
+            message!(message_catalog, "test_reply.execute_01"),
             now,
         );
     }
@@ -50,7 +57,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &Job, now: i64) -> 
         return reply(
             tx,
             job,
-            "返信は実行トークへ送ります。返信元トークMIDは --chat で指定してください。使い方: !help test",
+            message!(message_catalog, "test_reply.execute_02"),
             now,
         );
     }
@@ -66,7 +73,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &Job, now: i64) -> 
             return reply(
                 tx,
                 job,
-                "返信元はmから始まるトークMIDを指定してください。",
+                message!(message_catalog, "test_reply.execute_03"),
                 now,
             );
         }
@@ -81,7 +88,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &Job, now: i64) -> 
             return reply(
                 tx,
                 job,
-                "メッセージIDと返信元トークMIDが受信済み情報に一致しません。",
+                message!(message_catalog, "test_reply.execute_04"),
                 now,
             );
         }
@@ -93,7 +100,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &Job, now: i64) -> 
         return reply(
             tx,
             job,
-            "返信本文は1〜1,500 UTF-16単位で指定してください。",
+            message!(message_catalog, "test_reply.execute_05"),
             now,
         );
     }

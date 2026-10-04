@@ -1,4 +1,5 @@
 ﻿use super::*;
+use crate::messages::message;
 use unicode_normalization::UnicodeNormalization;
 
 #[derive(Serialize, Deserialize)]
@@ -183,10 +184,13 @@ pub fn parse(text: &str) -> Option<Input> {
         args,
     })
 }
-fn person(member: &OcMember) -> String {
-    format!(
-        "ユーザーID\n名前: {}\nMID: {}\n状態: {}",
-        member.name, member.member_id, member.state
+fn person(message_catalog: &crate::messages::Messages, member: &OcMember) -> String {
+    message!(
+        message_catalog,
+        "id.person_01",
+        arg0 = member.name,
+        arg1 = member.member_id,
+        arg2 = member.state
     )
 }
 fn normalized(text: &str) -> String {
@@ -207,22 +211,33 @@ fn matches_name(name: &str, query: &str) -> bool {
         .all(|wanted| characters.by_ref().any(|character| character == wanted))
 }
 pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
+    let message_catalog = &runtime.content.messages;
     let context = job.context.as_ref().ok_or("MissingIdContext")?.clone();
     let args = &job.input.args;
     let mode = args.first().map(String::as_str).unwrap_or("");
     if matches!(mode, "message" | "msg" | "reply" | "metadata") {
-        return message_info(tx, job, mode == "reply", now);
+        return message_info(message_catalog, tx, job, mode == "reply", now);
     }
     if matches!(mode, "sticker" | "stamp" | "emoji") {
-        return decoration_info(tx, job, mode == "emoji", now);
+        return decoration_info(message_catalog, tx, job, mode == "emoji", now);
     }
     if mode == "oc" {
-        return reply(tx, job, format!("OC ID\nMID: {}", context.square_id), now);
+        return reply(
+            tx,
+            job,
+            message!(message_catalog, "id.square", square = context.square_id),
+            now,
+        );
     }
     if mode == "talk" {
         if args.get(1).is_some_and(|arg| arg == "oc") {
             if bot_rank(runtime, job) < 2 {
-                return reply(tx, job, "参加中OC一覧はBOT管理者専用です。", now);
+                return reply(
+                    tx,
+                    job,
+                    message!(message_catalog, "common.bot_admin_only"),
+                    now,
+                );
             }
             let token = args
                 .iter()
@@ -230,7 +245,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
                 .and_then(|index| args.get(index + 1))
                 .cloned();
             if token.as_ref().is_some_and(|token| token.len() > 2048) {
-                return reply(tx, job, "継続tokenが長すぎます。", now);
+                return reply(tx, job, message!(message_catalog, "id.execute_01"), now);
             }
             job.operation = "id-chats".into();
             return request(
@@ -246,22 +261,18 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
         return reply(
             tx,
             job,
-            format!(
-                "トークID\nトーク名: {}\nMID: {}\n種別: SQUARE\n本OC MID: {}",
-                context.chat_name,
-                identity(&job.event).1,
-                context.square_id
+            message!(
+                message_catalog,
+                "id.execute_02",
+                arg0 = context.chat_name,
+                arg1 = identity(&job.event).1,
+                arg2 = context.square_id
             ),
             now,
         );
     }
     if mode == "log" {
-        return reply(
-            tx,
-            job,
-            "入退室ログは自動保存されています。過去履歴の一括取得は今回のID移植とは別に扱います。",
-            now,
-        );
+        return reply(tx, job, message!(message_catalog, "id.execute_03"), now);
     }
     let old = mode == "old";
     if let CoreEvent::MessageReceived { mentions, .. } = &job.event {
@@ -278,14 +289,14 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
         }
     }
     if job.targets.len() > 8 {
-        return reply(tx, job, "ID取得は一度に8人までです。", now);
+        return reply(tx, job, message!(message_catalog, "id.execute_04"), now);
     }
     if !job.targets.is_empty() {
         job.operation = "id-member".into();
         return next_member(tx, job, now);
     }
     if args.is_empty() || matches!(mode, "me" | "self" | "user" | "member") && args.len() == 1 {
-        return reply(tx, job, person(&context.actor), now);
+        return reply(tx, job, person(message_catalog, &context.actor), now);
     }
     let debug = args.last().is_some_and(|arg| arg == "log");
     let query = args
@@ -296,12 +307,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
         .collect::<Vec<_>>()
         .join(" ");
     if query.is_empty() || query.len() > 160 {
-        return reply(
-            tx,
-            job,
-            "名前を指定してください。!help id で使い方を確認できます。",
-            now,
-        );
+        return reply(tx, job, message!(message_catalog, "id.execute_05"), now);
     }
     // 保存済みの同じOCの名前も照合する。本文や全履歴を検索用に再取得しない。
     let mut statement = tx.prepare(
@@ -377,6 +383,7 @@ fn search_page(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
     request(tx, job, api, Phase::Id, now)
 }
 pub fn complete(
+    message_catalog: &crate::messages::Messages,
     tx: &Transaction<'_>,
     job: &mut Job,
     result: &ActionResult,
@@ -385,27 +392,32 @@ pub fn complete(
     let response = result.oc_result.as_ref().ok_or("MissingIdResult")?;
     let square = &job.context.as_ref().ok_or("MissingIdContext")?.square_id;
     if job.operation == "id-chats" {
-        let mut lines = vec!["参加中OpenChat一覧".into()];
+        let mut lines = vec![message!(message_catalog, "id.complete_01").into()];
         for chat in &response.chats {
-            lines.push(format!(
-                "{} / {}\nトークMID: {}\nOC MID: {}",
-                if chat.is_main { "本OC" } else { "サブOC" },
-                chat.name,
-                chat.chat_id,
-                chat.square_id
+            lines.push(message!(
+                message_catalog,
+                "id.complete_02",
+                arg0 = if chat.is_main {
+                    message!(message_catalog, "id.complete_03")
+                } else {
+                    message!(message_catalog, "id.complete_04")
+                },
+                arg1 = chat.name,
+                arg2 = chat.chat_id,
+                arg3 = chat.square_id
             ));
         }
         if let Some(token) = &response.continuation_token {
-            lines.push(format!("続き: !id talk oc --cursor {token}"));
+            lines.push(message!(message_catalog, "id.complete_05", token = token));
         }
         return reply(tx, job, lines.join("\n\n"), now);
     }
     if job.operation == "id-member" {
         let member = response.member.as_ref().ok_or("MissingIdMember")?;
         if &member.square_id != square || job.targets.first() != Some(&member.member_id) {
-            return reply(tx, job, "同じOCのメンバーを指定してください。", now);
+            return reply(tx, job, message!(message_catalog, "id.complete_06"), now);
         }
-        job.results.push(person(member));
+        job.results.push(person(message_catalog, member));
         job.targets.remove(0);
         return next_member(tx, job, now);
     }
@@ -442,24 +454,25 @@ pub fn complete(
         return search_page(tx, job, now);
     }
     let mut text = if lookup.members.is_empty() {
-        "該当するメンバーが見つかりませんでした。".into()
+        message!(message_catalog, "id.complete_07").into()
     } else {
         lookup
             .members
             .iter()
-            .map(person)
+            .map(|member| person(message_catalog, member))
             .collect::<Vec<_>>()
             .join("\n\n")
     };
     if continued || lookup.members.len() >= 20 {
-        text.push_str("\n\n取得上限に達しました。名前を詳しく指定して絞り込んでください。");
+        text.push_str(message!(message_catalog, "id.complete_08"));
     }
     if lookup.debug {
-        text.push_str(&format!(
-            "\n\n検索情報\n状態数: {}\n最終状態のページ数: {}\n表示件数: {}",
-            lookup.state_index + 1,
-            lookup.pages,
-            lookup.members.len()
+        text.push_str(&message!(
+            message_catalog,
+            "id.complete_09",
+            arg0 = lookup.state_index + 1,
+            arg1 = lookup.pages,
+            arg2 = lookup.members.len()
         ));
     }
     reply(tx, job, text, now)
@@ -483,7 +496,13 @@ fn message_reference(
         .map(|value| serde_json::from_str(&value).map_err(Into::into))
         .transpose()
 }
-fn decoration_info(tx: &Transaction<'_>, job: &Job, emoji: bool, now: i64) -> Result<()> {
+fn decoration_info(
+    message_catalog: &crate::messages::Messages,
+    tx: &Transaction<'_>,
+    job: &Job,
+    emoji: bool,
+    now: i64,
+) -> Result<()> {
     let CoreEvent::MessageReceived {
         reply_to_message_id,
         ..
@@ -507,7 +526,12 @@ fn decoration_info(tx: &Transaction<'_>, job: &Job, emoji: bool, now: i64) -> Re
             .unwrap_or(current_id)
     };
     if target.len() > 256 {
-        return reply(tx, job, "message IDが長すぎます。", now);
+        return reply(
+            tx,
+            job,
+            message!(message_catalog, "id.decoration_info_01"),
+            now,
+        );
     }
     let value = if target == current_id {
         current
@@ -518,39 +542,77 @@ fn decoration_info(tx: &Transaction<'_>, job: &Job, emoji: bool, now: i64) -> Re
         return reply(
             tx,
             job,
-            "対象を未観測です。Botが受信したスタンプ・LINE絵文字の投稿へリプライしてください（直近48時間・8,192件まで）。",
+            message!(message_catalog, "id.decoration_info_02"),
             now,
         );
     };
     let text = if emoji {
         if value.emojis.is_empty() {
-            "LINE絵文字のID情報がありません。LINE絵文字を含む投稿へ !id emoji とリプライするか、!id emoji にLINE絵文字を添えてください。Unicode絵文字にはLINEのセットID・絵文字IDがありません。".into()
+            message!(message_catalog, "id.decoration_info_03").into()
         } else {
-            let mut lines = vec![format!("LINE絵文字ID\nmessage ID: {target}")];
+            let mut lines = vec![message!(
+                message_catalog,
+                "id.decoration_info_04",
+                target = target
+            )];
             for (index, item) in value.emojis.iter().enumerate() {
-                lines.push(format!("{}\nセットID (productId): {}\n絵文字ID (sticonId): {}\nversion: {}\n種類: {}\n位置 (UTF-16): {}〜{}", index + 1,
-                    item.product_id, item.emoji_id, item.version.as_deref().unwrap_or("未取得"), item.resource_type.as_deref().unwrap_or("未取得"),
-                    item.start.map_or("未取得".into(), |n| n.to_string()), item.end.map_or("未取得".into(), |n| n.to_string())));
+                lines.push(message!(
+                    message_catalog,
+                    "id.decoration_info_05",
+                    arg0 = index + 1,
+                    arg1 = item.product_id,
+                    arg2 = item.emoji_id,
+                    arg3 = item
+                        .version
+                        .as_deref()
+                        .unwrap_or(message!(message_catalog, "common.unavailable")),
+                    arg4 = item
+                        .resource_type
+                        .as_deref()
+                        .unwrap_or(message!(message_catalog, "common.unavailable")),
+                    arg5 = item.start.map_or(
+                        message!(message_catalog, "common.unavailable").into(),
+                        |n| n.to_string()
+                    ),
+                    arg6 = item.end.map_or(
+                        message!(message_catalog, "common.unavailable").into(),
+                        |n| n.to_string()
+                    )
+                ));
             }
             if value.emoji_overflow {
-                lines.push("一度に表示・保持するのは先頭20個までです。".into());
+                lines.push(message!(message_catalog, "id.decoration_info_06").into());
             }
             lines.join("\n\n")
         }
     } else if let Some(item) = value.sticker {
-        format!(
-            "スタンプID\nセットID (STKPKGID): {}\nスタンプID (STKID): {}\nversion (STKVER): {}\nオプション (STKOPT): {}\nmessage ID: {target}",
-            item.package_id,
-            item.sticker_id,
-            item.version.as_deref().unwrap_or("未取得"),
-            item.option.as_deref().unwrap_or("なし")
+        message!(
+            message_catalog,
+            "id.decoration_info_07",
+            arg0 = item.package_id,
+            arg1 = item.sticker_id,
+            arg2 = item
+                .version
+                .as_deref()
+                .unwrap_or(message!(message_catalog, "common.unavailable")),
+            arg3 = item
+                .option
+                .as_deref()
+                .unwrap_or(message!(message_catalog, "common.none")),
+            target = target
         )
     } else {
-        "スタンプのID情報がありません。スタンプの投稿へ !id sticker とリプライしてください。".into()
+        message!(message_catalog, "id.decoration_info_08").into()
     };
     reply(tx, job, text, now)
 }
-fn message_info(tx: &Transaction<'_>, job: &Job, use_reply: bool, now: i64) -> Result<()> {
+fn message_info(
+    message_catalog: &crate::messages::Messages,
+    tx: &Transaction<'_>,
+    job: &Job,
+    use_reply: bool,
+    now: i64,
+) -> Result<()> {
     let CoreEvent::MessageReceived {
         reply_to_message_id,
         ..
@@ -568,40 +630,58 @@ fn message_info(tx: &Transaction<'_>, job: &Job, use_reply: bool, now: i64) -> R
         return reply(
             tx,
             job,
-            "対象メッセージへ !id reply とリプライするか、!id message <message ID> を指定してください。",
+            message!(message_catalog, "id.message_info_01"),
             now,
         );
     };
     if target.len() > 256 {
-        return reply(tx, job, "message IDが長すぎます。", now);
+        return reply(
+            tx,
+            job,
+            message!(message_catalog, "id.decoration_info_01"),
+            now,
+        );
     }
     let mut lines = vec![
-        format!("メッセージ情報\nmessage ID: {target}"),
-        format!(
-            "リプライ指定\nrelatedMessageId: {target}\nrelatedMessageServiceCode: SQUARE\nmessageRelationType: REPLY"
-        ),
+        message!(message_catalog, "id.message_info_02", target = target),
+        message!(message_catalog, "id.message_info_03", target = target),
     ];
     if let Some(value) = message_reference(tx, job, target, now)? {
-        lines.push(format!(
-            "元トークMID: {}\nOC MID: {}\n送信者MID: {}\n送信者名: {}\n送信時刻(ms): {}",
-            value.chat_id,
-            value.square_id.as_deref().unwrap_or("未取得"),
-            value.sender_id.as_deref().unwrap_or("未取得"),
-            value.sender_name.as_deref().unwrap_or("未取得"),
-            value.at
+        lines.push(message!(
+            message_catalog,
+            "id.message_info_04",
+            arg0 = value.chat_id,
+            arg1 = value
+                .square_id
+                .as_deref()
+                .unwrap_or(message!(message_catalog, "common.unavailable")),
+            arg2 = value
+                .sender_id
+                .as_deref()
+                .unwrap_or(message!(message_catalog, "common.unavailable")),
+            arg3 = value
+                .sender_name
+                .as_deref()
+                .unwrap_or(message!(message_catalog, "common.unavailable")),
+            arg4 = value.at
         ));
         if let Some(related) = value.related_message_id {
-            lines.push(format!(
-                "元メッセージの返信先ID: {related}\nservice: {}\nrelation: {}",
-                value.related_service.as_deref().unwrap_or("未取得"),
-                value.relation.as_deref().unwrap_or("未取得")
+            lines.push(message!(
+                message_catalog,
+                "id.message_info_05",
+                related = related,
+                arg0 = value
+                    .related_service
+                    .as_deref()
+                    .unwrap_or(message!(message_catalog, "common.unavailable")),
+                arg1 = value
+                    .relation
+                    .as_deref()
+                    .unwrap_or(message!(message_catalog, "common.unavailable"))
             ));
         }
     } else {
-        lines.push(
-            "元トーク・送信者は未観測です。直近48時間・8,192件までの受信済み情報を参照します。"
-                .into(),
-        );
+        lines.push(message!(message_catalog, "id.message_info_06").into());
     }
     reply(tx, job, lines.join("\n\n"), now)
 }

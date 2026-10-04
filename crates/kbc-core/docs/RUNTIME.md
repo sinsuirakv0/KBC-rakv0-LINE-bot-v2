@@ -33,7 +33,7 @@ txtと同梱検索を受付でAction化する。検索の走査は不変snapshot
 
 ## Bridge
 
-`kbc-protocol`のRust型から`apps/line/src/protocol/generated/`を生成する。本人・返信先・送信ID・画像URLとOC操作を追加したLINE専用Protocol v13。NativeとAdapterを同時に更新し、旧Adapterと混在させない。`kbc-node`は変換とRuntime呼出だけを行う。
+`kbc-protocol`のRust型から`apps/line/src/protocol/generated/`を生成する。本人・返信先・送信ID・画像URLとOC操作を追加したLINE専用Protocol v14。NativeとAdapterを同時に更新し、旧Adapterと混在させない。`kbc-node`は変換とRuntime呼出だけを行う。
 
 JSからNativeへの設定・Batch・結果は型付きDTOをJSON文字列化して渡す。N-APIのserde Value変換では整数の時刻がf64として入ってi64の復元に失敗したため、この小さな境界では整数表現を保つ。出力はplain DTO。大きな画像・SDKオブジェクトをこの経路へ渡さない。
 
@@ -69,4 +69,6 @@ Protocol v11でReactionNotified / Reactions / OcReactionを追加したが、202
 
 Protocol v12はSendMessageに任意のMessageEmojiを追加した。旧保存Actionの未指定値はdefaultで復元し、新旧Native / Adapterは混在させない。現在のページ案内は絵文字装飾を付けず、型とAdapterは保存互換のため維持する。message_refsはスタンプとLINE絵文字の必要なIDだけを保持し、既存の件数・期間・DB byte上限とsnapshotを共有する。[IDの関数と上限](../src/oc/docs/ID.md)。
 
-Protocol v13はOcRequest::Stickerに送信ID・version・任意STKOPTを追加した。既存Context・Mutation・GitHub snapshotを共有し、旧保存DTOは変更しない。[テストコマンドと配送](../src/oc/docs/TEST_STICKER.md)。
+Protocol v14はOcRequest::Stickerに送信ID・version・任意STKOPTを追加した。既存Context・Mutation・GitHub snapshotを共有し、旧保存DTOは変更しない。[テストコマンドと配送](../src/oc/docs/TEST_STICKER.md)。
+
+2026-10-04、利用者向け文面を[共通カタログ](MESSAGES.md)へ分離した。Protocol v14のSticker.textはCoreで設定した代替文をSTKTXTへ渡すための項目。旧保存Actionは従来の代替文へ復元し、NativeとAdapterを同時に更新する。

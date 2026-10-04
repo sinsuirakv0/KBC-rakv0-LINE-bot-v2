@@ -1,4 +1,5 @@
 ﻿use super::*;
+use crate::messages::message;
 use unicode_normalization::UnicodeNormalization;
 
 pub fn parse(text: &str) -> Option<Input> {
@@ -34,52 +35,67 @@ fn word(text: &str) -> (&str, &str) {
     let end = text.find(char::is_whitespace).unwrap_or(text.len());
     (&text[..end], text[end..].trim_start())
 }
-fn status(settings: &Settings) -> String {
+fn status(message_catalog: &crate::messages::Messages, settings: &Settings) -> String {
     let flag = |enabled| if enabled { "ON" } else { "OFF" };
-    format!(
-        "OC管理設定\nURL許可制削除: {}（{}ルール）\n画像・動画連投: {}（30秒・7件目以降）\n即抜け監視: {}\n初参加・危険語: {}\n短時間一斉参加: {}\n危険語の通報: {}\n副官部屋: {}\n本OCトーク: {}\nミュート: {}人",
-        flag(settings.url),
-        settings.rules.len(),
-        flag(settings.media),
-        flag(settings.left),
-        flag(settings.danger),
-        flag(settings.cohort),
-        flag(settings.report),
-        settings.mod_room.as_deref().unwrap_or("未設定"),
-        settings.main.as_deref().unwrap_or("未設定"),
-        settings.mutes.len()
+    message!(
+        message_catalog,
+        "commands.status_01",
+        arg0 = flag(settings.url),
+        arg1 = settings.rules.len(),
+        arg2 = flag(settings.media),
+        arg3 = flag(settings.left),
+        arg4 = flag(settings.danger),
+        arg5 = flag(settings.cohort),
+        arg6 = flag(settings.report),
+        arg7 = settings
+            .mod_room
+            .as_deref()
+            .unwrap_or(message!(message_catalog, "common.not_set")),
+        arg8 = settings
+            .main
+            .as_deref()
+            .unwrap_or(message!(message_catalog, "common.not_set")),
+        arg9 = settings.mutes.len()
     )
 }
-fn setup_menu(settings: &Settings) -> String {
-    format!(
-        "OC管理セットアップ\nこのメッセージへ番号をリプライしてください。\n複数指定: 1 2 / 解除: off 1 2\n\n1 URL許可制削除\n2 画像・動画連投削除\n3 このトークを副官部屋に設定\n4 即抜け監視\n5 初参加・危険語処分\n6 短時間一斉参加監視\n7 基本項目をまとめてON（通報を除く）\n8 自動処理をOFF\n9 設定確認\n10 危険語処分時の通報\n11 本OCトークを選択\n終了: cancel\n\n{}",
-        status(settings)
+fn setup_menu(message_catalog: &crate::messages::Messages, settings: &Settings) -> String {
+    message!(
+        message_catalog,
+        "commands.setup_menu_01",
+        arg0 = status(message_catalog, settings)
     )
 }
 pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
+    let message_catalog = &runtime.content.messages;
     let context = job.context.as_ref().ok_or("MissingOcContext")?.clone();
     let name = job.input.name.as_str();
     if name == "kicktest" {
         return reply(
             tx,
             job,
-            "!oc kick を使用してください。confirmは不要です。",
+            message!(message_catalog, "commands.execute_01"),
             now,
         );
     }
     if name == "status" {
-        return reply(tx, job, status(&settings(tx, &context.square_id)?), now);
+        return reply(
+            tx,
+            job,
+            status(message_catalog, &settings(tx, &context.square_id)?),
+            now,
+        );
     }
     if name == "authority" {
         return reply(
             tx,
             job,
-            format!(
-                "実行者のOC権限: {}\nBOT管理権限: {}\nBotのOC権限: {}\n\n{}",
-                context.actor.role,
-                bot_rank(runtime, job),
-                context.bot_role,
-                context.authority
+            message!(
+                message_catalog,
+                "commands.execute_02",
+                arg0 = context.actor.role,
+                arg1 = bot_rank(runtime, job),
+                arg2 = context.bot_role,
+                arg3 = context.authority
             ),
             now,
         );
@@ -96,7 +112,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
         return reply(
             tx,
             job,
-            "実行権限がありません。!help oc で権限区分を確認してください。",
+            message!(message_catalog, "commands.execute_03"),
             now,
         );
     }
@@ -112,10 +128,10 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
         );
     }
     if name == "session" {
-        return session_reply(tx, job, now);
+        return session_reply(message_catalog, tx, job, now);
     }
     if name == "case" {
-        return case_reply(tx, job, now);
+        return case_reply(message_catalog, tx, job, now);
     }
     let existing: bool = tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM oc_settings WHERE square=?1)",
@@ -130,7 +146,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
         return reply(
             tx,
             job,
-            "OC設定の保存上限に達しています。運用者へ確認してください。",
+            message!(message_catalog, "commands.execute_04"),
             now,
         );
     }
@@ -144,9 +160,16 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
     match name {
         "setup" => {
             if arg == "status" {
-                return reply(tx, job, status(&value), now);
+                return reply(tx, job, status(message_catalog, &value), now);
             }
-            return session(tx, job, Session::Setup, setup_menu(&value), now);
+            return session(
+                message_catalog,
+                tx,
+                job,
+                Session::Setup,
+                setup_menu(message_catalog, &value),
+                now,
+            );
         }
         "modroom" => match arg {
             "set" | "on" => value.mod_room = Some(identity(&job.event).1.into()),
@@ -158,16 +181,33 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
                         &job.event,
                         "mod-test",
                         &chat,
-                        "副官部屋の通知テストです。".into(),
+                        message!(message_catalog, "commands.execute_05").into(),
                         TextDelivery::default(),
                         now,
                     )?;
                 } else {
-                    return reply(tx, job, "副官部屋が未設定です。!oc modroom set", now);
+                    return reply(
+                        tx,
+                        job,
+                        message!(message_catalog, "commands.execute_06"),
+                        now,
+                    );
                 }
-                return reply(tx, job, "副官部屋のテスト送信を登録しました。", now);
+                return reply(
+                    tx,
+                    job,
+                    message!(message_catalog, "commands.execute_07"),
+                    now,
+                );
             }
-            _ => return reply(tx, job, "!oc modroom set / off / test", now),
+            _ => {
+                return reply(
+                    tx,
+                    job,
+                    message!(message_catalog, "commands.modroom_usage"),
+                    now,
+                );
+            }
         },
         "main" => {
             if matches!(arg, "set" | "here") {
@@ -197,13 +237,18 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
                     return reply(
                         tx,
                         job,
-                        "HTTPS URLと範囲を指定してください。\n!oc url add URL [exact|path|prefix|domain]",
+                        message!(message_catalog, "commands.execute_08"),
                         now,
                     );
                 };
                 if !value.rules.contains(&rule) {
                     if value.rules.len() >= 100 {
-                        return reply(tx, job, "URLルールは100件までです。", now);
+                        return reply(
+                            tx,
+                            job,
+                            message!(message_catalog, "commands.execute_09"),
+                            now,
+                        );
                     }
                     value.rules.push(rule);
                 }
@@ -222,7 +267,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
                     return reply(
                         tx,
                         job,
-                        "削除する番号を !oc url list で確認してください。",
+                        message!(message_catalog, "commands.execute_10"),
                         now,
                     );
                 }
@@ -242,9 +287,11 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
                     .skip((page - 1) * 5)
                     .take(5)
                     .map(|(index, rule)| format!("{} {} {}", index + 1, rule.scope, rule.url))
-                    .chain(std::iter::once(format!(
-                        "ページ {page}/{}（!oc url list ページ番号）",
-                        value.rules.len().div_ceil(5).max(1)
+                    .chain(std::iter::once(message!(
+                        message_catalog,
+                        "commands.execute_11",
+                        page = page,
+                        arg0 = value.rules.len().div_ceil(5).max(1)
                     )))
                     .collect::<Vec<_>>()
                     .join("\n");
@@ -252,7 +299,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
                     tx,
                     job,
                     if lines.is_empty() {
-                        "URL許可ルールはありません。".into()
+                        message!(message_catalog, "commands.execute_12").into()
                     } else {
                         lines
                     },
@@ -263,10 +310,11 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
                 return reply(
                     tx,
                     job,
-                    format!(
-                        "URL監視: {} / {}ルール\n!oc url on / off\n!oc url add HTTPS-URL [exact|path|prefix|domain]\n!oc url list / remove 番号|all",
-                        value.url,
-                        value.rules.len()
+                    message!(
+                        message_catalog,
+                        "commands.execute_13",
+                        arg0 = value.url,
+                        arg1 = value.rules.len()
                     ),
                     now,
                 );
@@ -275,20 +323,41 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
         "media" => match arg {
             "" | "on" => value.media = true,
             "off" | "del" => value.media = false,
-            _ => return reply(tx, job, "!oc media on / off", now),
+            _ => {
+                return reply(
+                    tx,
+                    job,
+                    message!(message_catalog, "commands.media_usage"),
+                    now,
+                );
+            }
         },
         "watch" => {
             let enabled = match job.input.args.get(1).map(String::as_str) {
                 Some("on") => true,
                 Some("off") => false,
-                _ => return reply(tx, job, "!oc watch early|danger|cohort|report on|off", now),
+                _ => {
+                    return reply(
+                        tx,
+                        job,
+                        message!(message_catalog, "commands.watch_usage"),
+                        now,
+                    );
+                }
             };
             match arg {
                 "early" => value.left = enabled,
                 "danger" => value.danger = enabled,
                 "cohort" => value.cohort = enabled,
                 "report" => value.report = enabled,
-                _ => return reply(tx, job, "!oc watch early|danger|cohort|report on|off", now),
+                _ => {
+                    return reply(
+                        tx,
+                        job,
+                        message!(message_catalog, "commands.watch_usage"),
+                        now,
+                    );
+                }
             }
         }
         "join" | "leave" => {
@@ -306,7 +375,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
                             "{}\nmention={} / id={}",
                             template.text, template.mention, template.show_id
                         ),
-                        None => "入退室メッセージは未設定です。".into(),
+                        None => message!(message_catalog, "commands.execute_14").into(),
                     },
                     now,
                 );
@@ -317,7 +386,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
                     return reply(
                         tx,
                         job,
-                        "通知本文を1〜1300文字で指定してください。\n!oc join set [--mention] [--id] 本文",
+                        message!(message_catalog, "commands.execute_15"),
                         now,
                     );
                 }
@@ -345,11 +414,16 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
                 return reply(
                     tx,
                     job,
-                    "入退室通知の保存上限に達しています。運用者へ確認してください。",
+                    message!(message_catalog, "commands.execute_16"),
                     now,
                 );
             }
-            return reply(tx, job, "このトークの入退室メッセージを保存しました。", now);
+            return reply(
+                tx,
+                job,
+                message!(message_catalog, "commands.execute_17"),
+                now,
+            );
         }
         "mute" => {
             if arg == "list" {
@@ -366,17 +440,22 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
                     .skip((page - 1) * 20)
                     .take(20)
                     .map(|(id, mute)| {
-                        format!(
-                            "{} ({id})\n期限: {}",
-                            mute.name,
-                            mute.until
-                                .map(|at| format!("{} JST", jst(at)))
-                                .unwrap_or("無期限".into())
+                        message!(
+                            message_catalog,
+                            "commands.execute_18",
+                            arg0 = mute.name,
+                            id = id,
+                            arg1 = mute
+                                .until
+                                .map(|at| format!("{} JST", jst(message_catalog, at)))
+                                .unwrap_or(message!(message_catalog, "common.unlimited").into())
                         )
                     })
-                    .chain(std::iter::once(format!(
-                        "ページ {page}/{}（!oc mute list ページ番号）",
-                        value.mutes.len().div_ceil(20).max(1)
+                    .chain(std::iter::once(message!(
+                        message_catalog,
+                        "commands.execute_19",
+                        page = page,
+                        arg0 = value.mutes.len().div_ceil(20).max(1)
                     )))
                     .collect::<Vec<_>>()
                     .join("\n\n");
@@ -384,7 +463,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
                     tx,
                     job,
                     if text.is_empty() {
-                        "ミュート中のメンバーはいません。".into()
+                        message!(message_catalog, "commands.execute_20").into()
                     } else {
                         text
                     },
@@ -397,15 +476,15 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
                 return reply(
                     tx,
                     job,
-                    "!oc mute @対象 170 / 0:17 / 8/7-0:17 / inf\n!oc mute @対象 off / list",
+                    message!(message_catalog, "commands.execute_21"),
                     now,
                 );
             }
-            return next_target(tx, job, now);
+            return next_target(message_catalog, tx, job, now);
         }
         "kick" => {
             if matches!(arg, "his" | "history") {
-                return show_history(tx, job, now);
+                return show_history(message_catalog, tx, job, now);
             }
             job.operation = "manual-ban".into();
             job.targets = targets(job);
@@ -413,17 +492,24 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
                 return reply(
                     tx,
                     job,
-                    "対象をメンションまたはMIDで指定してください。1回8人までです。\n!oc kick @対象 理由",
+                    message!(message_catalog, "commands.execute_22"),
                     now,
                 );
             }
-            return next_target(tx, job, now);
+            return next_target(message_catalog, tx, job, now);
         }
-        "history" => return show_history(tx, job, now),
-        _ => return reply(tx, job, "使い方: !help oc / !oc adminhelp", now),
+        "history" => return show_history(message_catalog, tx, job, now),
+        _ => {
+            return reply(
+                tx,
+                job,
+                message!(message_catalog, "commands.execute_23"),
+                now,
+            );
+        }
     }
     save_settings(tx, &context.square_id, &value)?;
-    reply(tx, job, status(&value), now)
+    reply(tx, job, status(message_catalog, &value), now)
 }
 fn template(input: &str) -> Result<Option<Template>> {
     let (first, tail) = word(input);
@@ -510,11 +596,11 @@ fn member_id(text: &str) -> bool {
         && text.starts_with('p')
         && text[1..].bytes().all(|c| c.is_ascii_hexdigit())
 }
-pub(super) fn reason(job: &Job) -> String {
+pub(super) fn reason(message_catalog: &crate::messages::Messages, job: &Job) -> String {
     match job.operation.as_str() {
-        "danger-kick" => return "初参加から2分以内の危険語".into(),
-        "left-ban" => return "初参加から5分以内のOC全体退出".into(),
-        "case-ban" => return "副官審議による再参加禁止".into(),
+        "danger-kick" => return message!(message_catalog, "commands.reason_01").into(),
+        "left-ban" => return message!(message_catalog, "commands.reason_02").into(),
+        "case-ban" => return message!(message_catalog, "commands.reason_03").into(),
         _ => {}
     }
     job.input
@@ -533,7 +619,12 @@ pub(super) fn reason(job: &Job) -> String {
         .take(300)
         .collect()
 }
-pub fn next_target(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
+pub fn next_target(
+    message_catalog: &crate::messages::Messages,
+    tx: &Transaction<'_>,
+    job: &mut Job,
+    now: i64,
+) -> Result<()> {
     if let Some(id) = job.targets.first().cloned() {
         request(
             tx,
@@ -544,13 +635,14 @@ pub fn next_target(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> 
         )
     } else {
         let text = if job.operation == "manual-ban" {
-            format!(
-                "強制退会・再参加禁止結果\n{}\n理由: {}",
-                job.results.join("\n"),
-                if reason(job).is_empty() {
-                    "未指定".into()
+            message!(
+                message_catalog,
+                "commands.next_target_01",
+                arg0 = job.results.join("\n"),
+                arg1 = if reason(message_catalog, job).is_empty() {
+                    message!(message_catalog, "common.not_specified").into()
                 } else {
-                    reason(job)
+                    reason(message_catalog, job)
                 }
             )
         } else {
@@ -565,16 +657,18 @@ pub fn next_target(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> 
                 &job.event,
                 &format!("result-log-{}", job.step),
                 &room,
-                format!(
-                    "{}\n実行トーク: {}\n実行者: {} ({})\n{text}",
-                    if job.operation == "manual-ban" {
-                        "【手動処分】OC再参加禁止"
+                message!(
+                    message_catalog,
+                    "commands.next_target_02",
+                    arg0 = if job.operation == "manual-ban" {
+                        message!(message_catalog, "commands.next_target_03")
                     } else {
-                        "【OC管理結果】"
+                        message!(message_catalog, "commands.next_target_04")
                     },
-                    identity(&job.event).1,
-                    context.actor.name,
-                    context.actor.member_id
+                    arg1 = identity(&job.event).1,
+                    arg2 = context.actor.name,
+                    arg3 = context.actor.member_id,
+                    text = text
                 ),
                 TextDelivery::default(),
                 now,
@@ -590,6 +684,7 @@ pub fn target(
     result: &ActionResult,
     now: i64,
 ) -> Result<()> {
+    let message_catalog = &runtime.content.messages;
     let member = result
         .oc_result
         .as_ref()
@@ -597,7 +692,12 @@ pub fn target(
         .ok_or("MissingOcMember")?;
     let context = job.context.as_ref().ok_or("MissingOcContext")?;
     if member.square_id != context.square_id || job.targets.first() != Some(&member.member_id) {
-        return reply(tx, job, "対象メンバーのOCが一致しません。", now);
+        return reply(
+            tx,
+            job,
+            message!(message_catalog, "commands.target_01"),
+            now,
+        );
     }
     job.target_member = Some(member.clone());
     if job.operation == "mute" {
@@ -619,7 +719,12 @@ pub fn target(
             value.mutes.remove(&member.member_id);
         } else if let Some(until) = policy::mute_until(duration, now) {
             if value.mutes.len() >= 100 && !value.mutes.contains_key(&member.member_id) {
-                return reply(tx, job, "ミュートはOCごと100人までです。", now);
+                return reply(
+                    tx,
+                    job,
+                    message!(message_catalog, "commands.target_02"),
+                    now,
+                );
             }
             value.mutes.insert(
                 member.member_id.clone(),
@@ -633,27 +738,41 @@ pub fn target(
             return reply(
                 tx,
                 job,
-                "期限を確認してください。170 / 0:17 / 8/7-0:17 / inf / off",
+                message!(message_catalog, "commands.target_03"),
                 now,
             );
         }
         save_settings(tx, &context.square_id, &value)?;
-        history(tx, job, &member.member_id, "saved", duration, now)?;
+        history(
+            message_catalog,
+            tx,
+            job,
+            &member.member_id,
+            "saved",
+            duration,
+            now,
+        )?;
         let period = value.mutes.get(&member.member_id).map(|mute| {
-            mute.until.map_or("無期限".into(), |until| {
-                format!(
-                    "{} JSTまで（残り{}）",
-                    jst(until),
-                    policy::duration(until - now)
-                )
-            })
+            mute.until.map_or(
+                message!(message_catalog, "common.unlimited").into(),
+                |until| {
+                    message!(
+                        message_catalog,
+                        "commands.target_04",
+                        arg0 = jst(message_catalog, until),
+                        arg1 = policy::duration(message_catalog, until - now)
+                    )
+                },
+            )
         });
         let text = period.as_ref().map_or(
-            format!("{} のミュートを解除しました。", member.name),
+            message!(message_catalog, "commands.target_05", arg0 = member.name),
             |period| {
-                format!(
-                    "{} をミュートしました。\n期間: {period}\n対象の新規発言は削除されます。",
-                    member.name
+                message!(
+                    message_catalog,
+                    "commands.target_06",
+                    arg0 = member.name,
+                    period = period
                 )
             },
         );
@@ -663,13 +782,15 @@ pub fn target(
                 &job.event,
                 "mute-log",
                 &room,
-                format!(
-                    "【OCミュート】\n実行トーク: {}\n実行者: {} ({})\n対象: {} ({})\n{text}",
-                    identity(&job.event).1,
-                    context.actor.name,
-                    context.actor.member_id,
-                    member.name,
-                    member.member_id
+                message!(
+                    message_catalog,
+                    "commands.target_07",
+                    arg0 = identity(&job.event).1,
+                    arg1 = context.actor.name,
+                    arg2 = context.actor.member_id,
+                    arg3 = member.name,
+                    arg4 = member.member_id,
+                    text = text
                 ),
                 TextDelivery::default(),
                 now,
@@ -689,18 +810,20 @@ pub fn target(
             )
             > 0
     {
-        job.results.push(format!(
-            "{} ({}): 権限未確認または保護対象のため未処分",
-            member.name, member.member_id
+        job.results.push(message!(
+            message_catalog,
+            "commands.target_08",
+            arg0 = member.name,
+            arg1 = member.member_id
         ));
         job.targets.remove(0);
-        return next_target(tx, job, now);
+        return next_target(message_catalog, tx, job, now);
     }
     if job.operation == "left-ban" && !matches!(member.state.as_str(), "LEFT" | "4") {
         return Ok(());
     }
     if job.operation == "left-check" {
-        return moderation::confirm_left(tx, job, &member, now);
+        return moderation::confirm_left(message_catalog, tx, job, &member, now);
     }
     let state = if job.operation == "danger-kick" {
         "KICK_OUT"
@@ -721,22 +844,25 @@ pub fn target(
     )
 }
 pub fn mutation(
+    message_catalog: &crate::messages::Messages,
     tx: &Transaction<'_>,
     job: &mut Job,
     result: &ActionResult,
     now: i64,
 ) -> Result<()> {
     let target = job.targets.first().cloned().ok_or("MissingOcTarget")?;
-    let label = match result.status {
+    let status = match result.status {
         DeliveryStatus::Sent => "成功",
         DeliveryStatus::Unknown => "結果不明（自動再試行しません）",
         DeliveryStatus::Failed => "失敗",
     };
+    let label = message_catalog.status(status);
     history(
+        message_catalog,
         tx,
         job,
         &target,
-        label,
+        status,
         &format!("{} / {}", result.code, job.input.body),
         now,
     )?;
@@ -750,10 +876,16 @@ pub fn mutation(
                 .map(|context| &context.actor)
                 .filter(|member| member.member_id == target)
         })
-        .map_or("メンバー", |member| member.name.as_str());
-    job.results.push(format!(
-        "{label}: {name} ({target}){}",
-        if result.code == "OK" {
+        .map_or(message!(message_catalog, "common.member"), |member| {
+            member.name.as_str()
+        });
+    job.results.push(message!(
+        message_catalog,
+        "commands.mutation_result",
+        status = label,
+        name = name,
+        target = target,
+        detail = if result.code == "OK" {
             String::new()
         } else {
             format!(" / {}", result.code)
@@ -784,44 +916,56 @@ pub fn mutation(
             .optional()?;
         let (word, body) = if let CoreEvent::MessageReceived { text, .. } = &job.event {
             (
-                policy::danger_word(text).unwrap_or("未取得"),
+                policy::danger_word(text)
+                    .unwrap_or(message!(message_catalog, "common.unavailable")),
                 text.chars().take(300).collect::<String>(),
             )
         } else {
-            ("未取得", String::new())
+            (
+                message!(message_catalog, "common.unavailable"),
+                String::new(),
+            )
         };
-        let elapsed = joined.map_or("未取得".into(), |joined| {
-            policy::duration(identity(&job.event).4 - joined)
-        });
+        let elapsed = joined.map_or(
+            message!(message_catalog, "common.unavailable").into(),
+            |joined| policy::duration(message_catalog, identity(&job.event).4 - joined),
+        );
         moderation::case(
+            message_catalog,
             tx,
             job,
             Some(&target),
             None,
-            &format!(
-                "【自動処分】初参加直後の危険語\n参加から: {elapsed}\n検出語: {word}\n本文: {body}\n処分: メッセージ削除 + 強制退会（再参加禁止は未実行）\n結果: {label}\n{}\n誤検知の可能性があります。再参加禁止 / 無視 / 解除で審議できます。",
-                job.results.join("\n")
+            &message!(
+                message_catalog,
+                "commands.mutation_02",
+                elapsed = elapsed,
+                word = word,
+                body = body,
+                label = label,
+                arg0 = job.results.join("\n")
             ),
             now,
         )?;
         return reply(
             tx,
             job,
-            format!(
-                "スパムフィルターによる強制退会: {label}\n参加直後に「チート」「代行」を含む投稿を検知しました。宣伝・不正行為勧誘の可能性があると判定しました。誤検知の可能性もあるため、副官がログを確認してください。"
-            ),
+            message!(message_catalog, "commands.mutation_03", label = label),
             now,
         );
     }
     if job.operation == "left-ban" {
         moderation::case(
+            message_catalog,
             tx,
             job,
             Some(&target),
             None,
-            &format!(
-                "【自動処分】参加後5分以内の退会\n処分: 再参加禁止\n結果: {label}\n{}",
-                job.results.join("\n")
+            &message!(
+                message_catalog,
+                "commands.mutation_04",
+                label = label,
+                arg0 = job.results.join("\n")
             ),
             now,
         )?;
@@ -834,9 +978,11 @@ pub fn mutation(
                 &job.event,
                 "left-main-notice",
                 &main,
-                format!(
-                    "自動再参加禁止: {label}\n判断理由: 初参加から5分以内の即抜け\n{}",
-                    job.results.join("\n")
+                message!(
+                    message_catalog,
+                    "commands.mutation_05",
+                    label = label,
+                    arg0 = job.results.join("\n")
                 ),
                 TextDelivery::default(),
                 now,
@@ -844,9 +990,14 @@ pub fn mutation(
         }
         return Ok(());
     }
-    next_target(tx, job, now)
+    next_target(message_catalog, tx, job, now)
 }
-fn show_history(tx: &Transaction<'_>, job: &Job, now: i64) -> Result<()> {
+fn show_history(
+    message_catalog: &crate::messages::Messages,
+    tx: &Transaction<'_>,
+    job: &Job,
+    now: i64,
+) -> Result<()> {
     let square = &job.context.as_ref().ok_or("MissingOcContext")?.square_id;
     let kick_only = job.input.name == "kick";
     let mut query=tx.prepare("SELECT target,operation,status,detail,at,target_name,actor_name,reason,actor FROM oc_history WHERE square=?1 AND (?2=0 OR operation IN ('manual-ban','danger-kick','left-ban','case-ban')) ORDER BY id DESC LIMIT ?3")?;
@@ -854,24 +1005,26 @@ fn show_history(tx: &Transaction<'_>, job: &Job, now: i64) -> Result<()> {
         .query_map(
             params![square, kick_only, if kick_only { 10 } else { 15 }],
             |r| {
-                Ok(format!(
-                    "{} {}\n操作: {}\n対象: {} ({})\n実行者: {} ({})\n理由: {}\n詳細: {}",
-                    jst(r.get(4)?),
-                    r.get::<_, String>(2)?,
-                    match r.get::<_, String>(1)?.as_str() {
-                        "danger-kick" => "強制退会",
-                        "manual-ban" => "強制退会 + 再参加禁止",
-                        "left-ban" | "case-ban" => "再参加禁止",
-                        "bot-name" => "Botの名前変更",
+                Ok(message!(
+                    message_catalog,
+                    "commands.show_history_01",
+                    at = jst(message_catalog, r.get(4)?),
+                    status = message_catalog.status(&r.get::<_, String>(2)?),
+                    operation = match r.get::<_, String>(1)?.as_str() {
+                        "danger-kick" => message!(message_catalog, "commands.show_history_02"),
+                        "manual-ban" => message!(message_catalog, "commands.show_history_03"),
+                        "left-ban" | "case-ban" =>
+                            message!(message_catalog, "commands.show_history_04"),
+                        "bot-name" => message!(message_catalog, "commands.show_history_05"),
                         operation => operation,
                     }
                     .to_owned(),
-                    r.get::<_, String>(5)?,
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(6)?,
-                    r.get::<_, String>(8)?,
-                    r.get::<_, String>(7)?,
-                    r.get::<_, String>(3)?
+                    target_name = r.get::<_, String>(5)?,
+                    target = r.get::<_, String>(0)?,
+                    actor_name = r.get::<_, String>(6)?,
+                    actor = r.get::<_, String>(8)?,
+                    reason = r.get::<_, String>(7)?,
+                    detail = r.get::<_, String>(3)?
                 ))
             },
         )?
@@ -880,14 +1033,14 @@ fn show_history(tx: &Transaction<'_>, job: &Job, now: i64) -> Result<()> {
         tx,
         job,
         if rows.is_empty() {
-            "処分・操作履歴はありません。".into()
+            message!(message_catalog, "commands.show_history_06").into()
         } else {
             format!(
                 "{}\n\n{}",
                 if kick_only {
-                    "強制退会・再参加禁止履歴"
+                    message!(message_catalog, "commands.show_history_07")
                 } else {
-                    "OC操作履歴"
+                    message!(message_catalog, "commands.show_history_08")
                 },
                 rows.join("\n\n")
             )
@@ -895,12 +1048,18 @@ fn show_history(tx: &Transaction<'_>, job: &Job, now: i64) -> Result<()> {
         now,
     )
 }
-fn jst(at: i64) -> String {
+fn jst(message_catalog: &crate::messages::Messages, at: i64) -> String {
     chrono::DateTime::from_timestamp_millis(at + 9 * 3600000)
         .map(|date| date.format("%Y/%m/%d %H:%M").to_string())
-        .unwrap_or("不明".into())
+        .unwrap_or(message!(message_catalog, "common.unknown").into())
 }
-pub fn chats(tx: &Transaction<'_>, job: &mut Job, result: &ActionResult, now: i64) -> Result<()> {
+pub fn chats(
+    message_catalog: &crate::messages::Messages,
+    tx: &Transaction<'_>,
+    job: &mut Job,
+    result: &ActionResult,
+    now: i64,
+) -> Result<()> {
     let chats = result
         .oc_result
         .as_ref()
@@ -908,12 +1067,7 @@ pub fn chats(tx: &Transaction<'_>, job: &mut Job, result: &ActionResult, now: i6
         .chats
         .clone();
     if chats.is_empty() || chats.len() > 64 {
-        return reply(
-            tx,
-            job,
-            "候補を取得できませんでした。対象トークから直接設定してください。",
-            now,
-        );
+        return reply(tx, job, message!(message_catalog, "commands.chats_01"), now);
     }
     let template = if job.operation == "main" {
         None
@@ -926,31 +1080,47 @@ pub fn chats(tx: &Transaction<'_>, job: &mut Job, result: &ActionResult, now: i6
         template,
         page: 0,
     };
-    session(tx, job, value.clone(), chat_page(&value), now)
+    session(
+        message_catalog,
+        tx,
+        job,
+        value.clone(),
+        chat_page(message_catalog, &value),
+        now,
+    )
 }
-fn chat_page(value: &Session) -> String {
+fn chat_page(message_catalog: &crate::messages::Messages, value: &Session) -> String {
     let Session::Chats { chats, page, .. } = value else {
         return String::new();
     };
-    let mut lines = vec!["送信先を選び、このメッセージへ番号をリプライしてください。".into()];
+    let mut lines = vec![message!(message_catalog, "commands.chat_page_01").into()];
     for (index, chat) in chats.iter().skip(page * 8).take(8).enumerate() {
         lines.push(format!(
             "{} {}{}",
             index + 1,
-            if chat.is_main { "本OC: " } else { "" },
+            if chat.is_main {
+                message!(message_catalog, "commands.chat_page_02")
+            } else {
+                ""
+            },
             chat.name
         ));
     }
     if (page + 1) * 8 < chats.len() {
-        lines.push("9 次へ".into());
+        lines.push(message!(message_catalog, "commands.chat_page_03").into());
     }
     if *page > 0 {
-        lines.push("0 前へ".into());
+        lines.push(message!(message_catalog, "commands.chat_page_04").into());
     }
-    lines.push("cancel 終了".into());
+    lines.push(message!(message_catalog, "commands.chat_page_05").into());
     lines.join("\n")
 }
-fn session_reply(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
+fn session_reply(
+    message_catalog: &crate::messages::Messages,
+    tx: &Transaction<'_>,
+    job: &mut Job,
+    now: i64,
+) -> Result<()> {
     let id = job.input.args.first().ok_or("MissingOcSession")?;
     let stored:Option<(String,Option<String>)>=tx.query_row("SELECT payload,prompt FROM oc_sessions WHERE id=?1 AND chat=?2 AND owner=?3 AND expires>?4",params![id,identity(&job.event).1,identity(&job.event).3,now],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
     let Some((payload, prompt)) = stored else {
@@ -973,7 +1143,12 @@ fn session_reply(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
                 now,
             )?;
         }
-        return reply(tx, job, "OC設定の操作を終了しました。", now);
+        return reply(
+            tx,
+            job,
+            message!(message_catalog, "commands.session_reply_01"),
+            now,
+        );
     }
     let value: Session = serde_json::from_str(&payload)?;
     let context = job.context.as_ref().ok_or("MissingOcContext")?.clone();
@@ -993,13 +1168,18 @@ fn session_reply(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
                 return reply(
                     tx,
                     job,
-                    "番号1〜11を指定してください。例: 1 2 / off 1 2",
+                    message!(message_catalog, "commands.session_reply_02"),
                     now,
                 );
             };
             if numbers.contains(&11) {
                 if numbers.len() != 1 {
-                    return reply(tx, job, "本OCの選択は11だけで指定してください。", now);
+                    return reply(
+                        tx,
+                        job,
+                        message!(message_catalog, "commands.session_reply_03"),
+                        now,
+                    );
                 }
                 job.operation = "main".into();
                 return request(
@@ -1045,7 +1225,14 @@ fn session_reply(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
                 }
             }
             save_settings(tx, &context.square_id, &settings)?;
-            session(tx, job, Session::Setup, setup_menu(&settings), now)
+            session(
+                message_catalog,
+                tx,
+                job,
+                Session::Setup,
+                setup_menu(message_catalog, &settings),
+                now,
+            )
         }
         Session::Chats {
             chats,
@@ -1064,7 +1251,12 @@ fn session_reply(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
                     .filter(|i| *i < 8)
                     .and_then(|i| chats.get(page * 8 + i))
                 else {
-                    return reply(tx, job, "表示中の候補番号を指定してください。", now);
+                    return reply(
+                        tx,
+                        job,
+                        message!(message_catalog, "commands.session_reply_04"),
+                        now,
+                    );
                 };
                 if operation == "main" {
                     let mut settings = settings(tx, &context.square_id)?;
@@ -1083,7 +1275,7 @@ fn session_reply(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
                         return reply(
                             tx,
                             job,
-                            "入退室通知の保存上限に達しています。運用者へ確認してください。",
+                            message!(message_catalog, "commands.execute_16"),
                             now,
                         );
                     }
@@ -1101,7 +1293,11 @@ fn session_reply(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
                 return reply(
                     tx,
                     job,
-                    format!("{} の設定を保存しました。", chat.name),
+                    message!(
+                        message_catalog,
+                        "commands.session_reply_05",
+                        arg0 = chat.name
+                    ),
                     now,
                 );
             }
@@ -1111,18 +1307,35 @@ fn session_reply(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
                 template,
                 page,
             };
-            session(tx, job, value.clone(), chat_page(&value), now)
+            session(
+                message_catalog,
+                tx,
+                job,
+                value.clone(),
+                chat_page(message_catalog, &value),
+                now,
+            )
         }
     }
 }
-fn case_reply(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
+fn case_reply(
+    message_catalog: &crate::messages::Messages,
+    tx: &Transaction<'_>,
+    job: &mut Job,
+    now: i64,
+) -> Result<()> {
     let id = job.input.args.first().ok_or("MissingOcCase")?.clone();
     let stored:Option<(String,String,Option<String>)>=tx.query_row("SELECT square,target,url FROM oc_cases WHERE id=?1 AND chat=?2 AND state='open' AND expires>?3",params![id,identity(&job.event).1,now],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
     let Some((square, target, url)) = stored else {
         return Ok(());
     };
     if square != job.context.as_ref().ok_or("MissingOcContext")?.square_id {
-        return reply(tx, job, "このOCの審議ではありません。", now);
+        return reply(
+            tx,
+            job,
+            message!(message_catalog, "commands.case_reply_01"),
+            now,
+        );
     };
     let input = job
         .input
@@ -1141,7 +1354,7 @@ fn case_reply(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
                 return reply(
                     tx,
                     job,
-                    "URL審議は1 完全一致 / 2 パス / 3 配下 / 4 ドメイン / 5 却下",
+                    message!(message_catalog, "commands.case_reply_02"),
                     now,
                 );
             }
@@ -1151,14 +1364,19 @@ fn case_reply(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
                 return reply(
                     tx,
                     job,
-                    "HTTPS以外のURLは許可できません。5で却下できます。",
+                    message!(message_catalog, "commands.case_reply_03"),
                     now,
                 );
             };
             let mut value = settings(tx, &square)?;
             if !value.rules.contains(&rule) {
                 if value.rules.len() >= 100 {
-                    return reply(tx, job, "URLルールは100件までです。", now);
+                    return reply(
+                        tx,
+                        job,
+                        message!(message_catalog, "commands.execute_09"),
+                        now,
+                    );
                 }
                 value.rules.push(rule);
             }
@@ -1168,7 +1386,7 @@ fn case_reply(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
         job.operation = "case-ban".into();
         job.case_id = Some(id);
         job.targets = vec![target];
-        return next_target(tx, job, now);
+        return next_target(message_catalog, tx, job, now);
     } else if !matches!(
         input.as_str(),
         "ignore" | "無視" | "対応不要" | "不要" | "unban" | "解除" | "再参加禁止解除"
@@ -1176,7 +1394,7 @@ fn case_reply(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
         return reply(
             tx,
             job,
-            "審議は 再参加禁止 / 無視 / 解除（依頼の記録のみ）",
+            message!(message_catalog, "commands.case_reply_04"),
             now,
         );
     }
@@ -1194,7 +1412,7 @@ fn case_reply(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
     reply(
         tx,
         job,
-        "審議を記録しました。削除済み投稿の復元や再参加禁止の自動解除は行いません。",
+        message!(message_catalog, "commands.case_reply_05"),
         now,
     )
 }

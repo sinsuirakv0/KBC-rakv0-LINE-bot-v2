@@ -2,6 +2,8 @@
 
 状態: 実装済み。読み込みはRustの `commands/content.rs`。
 
+返信・一覧・通知・利用者向けエラーの共通文面は`messages/<用途>.txt`の`key = 本文`で編集する。権限案内などはcommon.txtを共有する。[形式・差し込み項目・追加方法](../../crates/kbc-core/docs/MESSAGES.md)。定型応答とhelp本文は以下のtxtを使う。
+
 `responses/<name>.txt` を追加すると `!<name>` が使える。`help/<name>.txt` は `!help <name>` の案内になる。応答txtがなくてもhelp txtだけで案内を追加できる。helpがなければ応答本文を案内として使う。`help/index.txt` は全体案内の冒頭で、実装済みコマンドの一覧はCoreが追加する。
 
 日本語を含むtxtはBOM付きUTF-8、表示はプレーンテキスト。コードブロックと空ファイルは起動時に拒否する。1ファイルは8KiB・1,500 UTF-16単位まで、各フォルダ128ファイルまで。ファイル名は英小文字・数字・`_`・`-` の32文字以内。`help`、`ut`、`tut`、`st`、その別名、`test-notify`、`test`、`oc`、`oc-admin`、`id`、`bot` は処理を持つためresponsesの名前に使えない。

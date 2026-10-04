@@ -8,7 +8,7 @@
 
 `--version <数字>`と`--option <STKOPT>`は順不同で各1回。versionの既定値は1、STKOPTは省略可能。セットID・スタンプID・versionはASCII数字1〜64文字、STKOPTはASCII英数字・アンダースコア1〜64文字に限定する。引数不足・重複・未知の引数ではAPI操作を登録しない。
 
-対象スタンプへのリプライで`!id sticker`を使い、受信したID・version・STKOPTを参照できる。STKTXTは代替文「[スタンプ]」とする。送信先は実行トークに固定し、リプライmetadata・別トーク指定・複数送信を追加しない。allow登録・--applyは不要で、コマンド実行が送信指示になる。
+対象スタンプへのリプライで`!id sticker`を使い、受信したID・version・STKOPTを参照できる。STKTXTはcontent/messages/test.txtのtest.sticker_altから取得する（既定「[スタンプ]」）。送信先は実行トークに固定し、リプライmetadata・別トーク指定・複数送信を追加しない。allow登録・--applyは不要で、コマンド実行が送信指示になる。
 
 ## 関数と配送
 

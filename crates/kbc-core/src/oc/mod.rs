@@ -1,4 +1,5 @@
-﻿mod bot;
+﻿use crate::messages::message;
+mod bot;
 mod commands;
 mod id;
 mod legacy;
@@ -232,6 +233,17 @@ struct TextDelivery {
     prompt: bool,
     related_message_id: Option<String>,
 }
+
+// 文面の編集やサロゲートペアを含む名前でも、送信本文のUTF-16位置を使う。
+fn mention_span(text: &str, label: &str, member_id: &str) -> Option<MessageMention> {
+    let offset = text.find(label)?;
+    let start = text[..offset].encode_utf16().count() as u32;
+    Some(MessageMention {
+        member_id: member_id.into(),
+        start,
+        end: start + label.encode_utf16().count() as u32,
+    })
+}
 fn text_action(
     tx: &Transaction<'_>,
     event: &CoreEvent,
@@ -356,6 +368,7 @@ fn request(
     Ok(())
 }
 fn history(
+    message_catalog: &crate::messages::Messages,
     tx: &Transaction<'_>,
     job: &Job,
     target: &str,
@@ -385,7 +398,7 @@ fn history(
     } else {
         identity(&job.event).3
     };
-    tx.execute("INSERT INTO oc_history(square,target,actor,operation,status,detail,at,target_name,actor_name,reason) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",params![context.square_id,target,actor_id,job.operation,status,detail.chars().take(300).collect::<String>(),now,target_name,actor_name,commands::reason(job)])?;
+    tx.execute("INSERT INTO oc_history(square,target,actor,operation,status,detail,at,target_name,actor_name,reason) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",params![context.square_id,target,actor_id,job.operation,status,detail.chars().take(300).collect::<String>(),now,target_name,actor_name,commands::reason(message_catalog, job)])?;
     tx.execute("DELETE FROM oc_history WHERE id IN (SELECT id FROM oc_history ORDER BY id DESC LIMIT -1 OFFSET 2048)",[])?;
     Ok(())
 }
@@ -524,6 +537,7 @@ pub fn complete(
     resolving: bool,
     now: i64,
 ) -> Result<()> {
+    let message_catalog = &runtime.content.messages;
     let CoreAction::OcApi {
         continuation,
         request: api,
@@ -546,13 +560,14 @@ pub fn complete(
     }
     let mut job: Job = serde_json::from_str(continuation)?;
     if job.input.name == "test" && matches!(job.phase, Phase::Mutation) {
-        return test::mutated(tx, &job, action, result, resolving, now);
+        return test::mutated(message_catalog, tx, &job, action, result, resolving, now);
     }
     if matches!(job.phase, Phase::TestInspect) {
         return test::inspected(runtime, tx, &mut job, result, now);
     }
     if resolving {
         history(
+            message_catalog,
             tx,
             &job,
             job.targets.first().map(String::as_str).unwrap_or(""),
@@ -565,17 +580,15 @@ pub fn complete(
     if api.is_read() && !matches!(result.status, DeliveryStatus::Sent) {
         if matches!(job.phase, Phase::Target) && !job.targets.is_empty() {
             let target = job.targets.remove(0);
-            job.results
-                .push(format!("{target}: 情報を確認できず未処分"));
-            return commands::next_target(tx, &mut job, now);
+            job.results.push(message!(
+                message_catalog,
+                "mod.complete_01",
+                target = target
+            ));
+            return commands::next_target(message_catalog, tx, &mut job, now);
         }
         if job.input.name != "moderate" {
-            reply(
-                tx,
-                &job,
-                "OC情報を取得できませんでした。権限・接続状態を確認して再度お試しください。",
-                now,
-            )?;
+            reply(tx, &job, message!(message_catalog, "mod.complete_02"), now)?;
         }
         return Ok(());
     }
@@ -591,16 +604,11 @@ pub fn complete(
                 || square(&job.event).is_some_and(|square| square != context.square_id)
                 || !matches!(context.actor.state.as_str(), "JOINED" | "2")
             {
-                return reply(tx, &job, "OCの所属・実行者を確認できませんでした。", now);
+                return reply(tx, &job, message!(message_catalog, "mod.complete_03"), now);
             }
             job.context = Some(context);
             if identity(&job.event).4 < now - 60000 {
-                return reply(
-                    tx,
-                    &job,
-                    "操作の受付期限を過ぎました。もう一度実行してください。",
-                    now,
-                );
+                return reply(tx, &job, message!(message_catalog, "mod.complete_04"), now);
             }
             if job.input.name == "bot-name" {
                 bot::execute(runtime, tx, &mut job, now)
@@ -618,12 +626,7 @@ pub fn complete(
         }
         Phase::Target => {
             if job.input.name != "signal" && identity(&job.event).4 < now - 60000 {
-                return reply(
-                    tx,
-                    &job,
-                    "権限確認からの待機が長くなったため、操作していません。もう一度実行してください。",
-                    now,
-                );
+                return reply(tx, &job, message!(message_catalog, "mod.complete_05"), now);
             }
             if job.input.name == "bot-name" {
                 bot::target(runtime, tx, &mut job, result, now)
@@ -631,11 +634,13 @@ pub fn complete(
                 commands::target(runtime, tx, &mut job, result, now)
             }
         }
-        Phase::Mutation if job.input.name == "bot-name" => bot::mutation(tx, &job, result, now),
-        Phase::Mutation => commands::mutation(tx, &mut job, result, now),
-        Phase::Chats => commands::chats(tx, &mut job, result, now),
-        Phase::Report => moderation::after_report(tx, &mut job, result, now),
-        Phase::Id => id::complete(tx, &mut job, result, now),
+        Phase::Mutation if job.input.name == "bot-name" => {
+            bot::mutation(message_catalog, tx, &job, result, now)
+        }
+        Phase::Mutation => commands::mutation(message_catalog, tx, &mut job, result, now),
+        Phase::Chats => commands::chats(message_catalog, tx, &mut job, result, now),
+        Phase::Report => moderation::after_report(message_catalog, tx, &mut job, result, now),
+        Phase::Id => id::complete(message_catalog, tx, &mut job, result, now),
         Phase::TestInspect => unreachable!(),
     }
 }
@@ -722,7 +727,14 @@ fn sent_prompt(
     };
     Ok(())
 }
-fn session(tx: &Transaction<'_>, job: &Job, value: Session, text: String, now: i64) -> Result<()> {
+fn session(
+    message_catalog: &crate::messages::Messages,
+    tx: &Transaction<'_>,
+    job: &Job,
+    value: Session,
+    text: String,
+    now: i64,
+) -> Result<()> {
     let (id, chat, _, owner, _) = identity(&job.event);
     let existing: bool = tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM oc_sessions WHERE chat=?1 AND owner=?2)",
@@ -734,12 +746,7 @@ fn session(tx: &Transaction<'_>, job: &Job, value: Session, text: String, now: i
             r.get::<_, i64>(0)
         })? >= 128
     {
-        return reply(
-            tx,
-            job,
-            "設定操作が混み合っています。少し待って再実行してください。",
-            now,
-        );
+        return reply(tx, job, message!(message_catalog, "mod.session_01"), now);
     }
     let old: Option<String> = tx
         .query_row(

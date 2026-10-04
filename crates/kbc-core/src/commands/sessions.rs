@@ -1,4 +1,5 @@
-﻿use kbc_protocol::CoreEvent;
+﻿use crate::messages::message;
+use kbc_protocol::CoreEvent;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use super::{
@@ -73,6 +74,7 @@ fn apply_inner(
     catalog: &SearchCatalog,
     now: i64,
 ) -> Result<Vec<Response>> {
+    let message_catalog = catalog.messages();
     let CoreEvent::MessageReceived {
         event_id,
         chat_id,
@@ -98,11 +100,19 @@ fn apply_inner(
                 )?;
             }
             if session.query.is_empty() {
-                return Ok(vec![("検索語を指定してください。".into(), now, None)]);
+                return Ok(vec![(
+                    message!(message_catalog, "search.apply_inner_01").into(),
+                    now,
+                    None,
+                )]);
             }
             if session.results.is_empty() {
                 return Ok(vec![(
-                    format!("該当する{}が見つかりませんでした。", label(&session.kind)),
+                    message!(
+                        message_catalog,
+                        "search.apply_inner_02",
+                        arg0 = label(message_catalog, &session.kind)
+                    ),
                     now,
                     None,
                 )]);
@@ -132,8 +142,7 @@ fn apply_inner(
             let count: i64 = tx.query_row("SELECT count(*) FROM sessions", [], |row| row.get(0))?;
             if count >= 128 {
                 return Ok(vec![(
-                    "検索の受付が混み合っています。IDで指定するか、少し待って再度お試しください。"
-                        .into(),
+                    message!(message_catalog, "search.apply_inner_03").into(),
                     now,
                     None,
                 )]);
@@ -159,7 +168,11 @@ fn apply_inner(
             let input = text.trim();
             if matches!(input, "終了" | "取消" | "cancel") {
                 tx.execute("DELETE FROM sessions WHERE id=?1", [id])?;
-                return Ok(vec![("検索の受付を終了しました。".into(), now, None)]);
+                return Ok(vec![(
+                    message!(message_catalog, "search.apply_inner_04").into(),
+                    now,
+                    None,
+                )]);
             }
             let is_number = !input.is_empty() && input.bytes().all(|byte| byte.is_ascii_digit());
             let is_page = matches!(input, "次" | "前")
@@ -167,7 +180,11 @@ fn apply_inner(
                     !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
                 });
             if pending.is_some() && (is_number || is_page) {
-                return Ok(vec![("一覧を切り替えています。新しい一覧が届いてから、その一覧へリプライしてください。".into(), now, None)]);
+                return Ok(vec![(
+                    message!(message_catalog, "search.apply_inner_05").into(),
+                    now,
+                    None,
+                )]);
             }
             if is_page {
                 let pages = count.div_ceil(PAGE_SIZE);
@@ -181,9 +198,7 @@ fn apply_inner(
                 };
                 let Some(page) = page.filter(|page| *page < pages) else {
                     return Ok(vec![(
-                        format!(
-                            "移動できません。ページは1〜{pages}です。次・前、または3pのようにリプライしてください。"
-                        ),
+                        message!(message_catalog, "search.apply_inner_06", pages = pages),
                         now,
                         None,
                     )]);
@@ -213,7 +228,11 @@ fn apply_inner(
                 }
             }
             if is_number {
-                return Ok(vec![("この一覧の候補番号（1〜10）をリプライしてください。ページ移動は次・前、または3pのように指定できます。終了で受付を終えます。".into(), now, None)]);
+                return Ok(vec![(
+                    message!(message_catalog, "search.apply_inner_07").into(),
+                    now,
+                    None,
+                )]);
             }
             Ok(Vec::new())
         }
@@ -228,6 +247,7 @@ fn selected(
     index: usize,
     now: i64,
 ) -> Result<Vec<Response>> {
+    let message_catalog = catalog.messages();
     use crate::media::MediaRequest;
     if let Some(files) = &session.files {
         let file = &files[index];
@@ -260,7 +280,7 @@ fn selected(
         Operation::Motion(request) => {
             responses[0]
                 .0
-                .push_str("\nモーション生成を受け付けました。");
+                .push_str(message!(message_catalog, "search.selected_01"));
             motion_plan(entry, &session.kind, request)
                 .map(|plan| MediaRequest::Motion(Box::new(plan)))
         }
@@ -276,7 +296,7 @@ fn selected(
             };
             let Some(owner) = sender_id else {
                 return Ok(vec![(
-                    "ファイル選択には送信者情報が必要です。".into(),
+                    message!(message_catalog, "search.selected_02").into(),
                     now,
                     None,
                 )]);
@@ -284,19 +304,24 @@ fn selected(
             let count: i64 = tx.query_row("SELECT count(*) FROM sessions", [], |row| row.get(0))?;
             if count >= 128 {
                 return Ok(vec![(
-                    "検索の受付が混み合っています。少し待って再度お試しください。".into(),
+                    message!(message_catalog, "search.selected_03").into(),
                     now,
                     None,
                 )]);
             }
             let mut next = session.clone();
-            next.files = Some(file_options(entry, &session.kind, form.as_deref()));
+            next.files = Some(file_options(
+                message_catalog,
+                entry,
+                &session.kind,
+                form.as_deref(),
+            ));
             next.results = vec![session.results[index].clone()];
             next.page = 0;
             tx.execute("INSERT INTO sessions (id,chat,owner,action,payload,expires,revision) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![event_id, chat_id, owner, format!("{event_id}:1"), serde_json::to_string(&next)?, now + SESSION_TTL_MS, catalog.session_revision()])?;
             responses[0]
                 .0
-                .push_str("\n利用できるファイルを確認しています。");
+                .push_str(message!(message_catalog, "search.selected_04"));
             Some(MediaRequest::FileList {
                 session_id: event_id.clone(),
             })
@@ -307,7 +332,7 @@ fn selected(
     } else {
         responses[0]
             .0
-            .push_str("\n指定した形態の素材はありません。");
+            .push_str(message!(message_catalog, "search.selected_05"));
     }
     Ok(responses)
 }
