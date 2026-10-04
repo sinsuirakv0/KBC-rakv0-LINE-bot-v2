@@ -3,16 +3,20 @@
 pub fn parse(text: &str) -> Option<Input> {
     let mut input = text;
     let command = test_reply::take_word(&mut input);
+    let end = input.find(char::is_whitespace).unwrap_or(input.len());
     if (!command.eq_ignore_ascii_case("!bot") && !command.eq_ignore_ascii_case("o.bot"))
-        || !test_reply::take_word(&mut input).eq_ignore_ascii_case("name")
+        || !input[..end].eq_ignore_ascii_case("name")
     {
         return None;
     }
-    // 名前の途中の空白は保ち、前後だけ除く。
+    // name直後の区切り用スペース1個だけを除き、残りの文字列はそのまま渡す。
     Some(Input {
         name: "bot-name".into(),
         args: vec![],
-        body: input.trim().into(),
+        body: input[end..]
+            .strip_prefix(' ')
+            .unwrap_or(&input[end..])
+            .into(),
     })
 }
 
@@ -21,13 +25,8 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
         return reply(tx, job, "Botの名前変更はBOT管理者専用です。", now);
     }
     let name = &job.input.body;
-    if name.is_empty() || name.encode_utf16().count() > 20 || name.chars().any(char::is_control) {
-        return reply(
-            tx,
-            job,
-            "使い方: !bot name 名前\n名前は20文字以内（絵文字は2文字分の場合があります）。改行・制御文字は使えません。",
-            now,
-        );
+    if name.is_empty() {
+        return reply(tx, job, "使い方: !bot name 名前", now);
     }
     let member_id = job
         .context
@@ -63,11 +62,19 @@ pub fn target(
     {
         return reply(tx, job, "このOCに参加中のBotを確認できませんでした。", now);
     }
-    if member.name == job.input.body {
+    if result
+        .oc_result
+        .as_ref()
+        .and_then(|value| value.raw_member_name.as_deref())
+        == Some(job.input.body.as_str())
+    {
         return reply(
             tx,
             job,
-            format!("Botの名前はすでに「{}」です。", member.name),
+            format!(
+                "Botの名前はすでに「{}」です。",
+                display_name(&job.input.body)
+            ),
             now,
         );
     }
@@ -104,7 +111,8 @@ pub fn mutation(tx: &Transaction<'_>, job: &Job, result: &ActionResult, now: i64
         match result.status {
             DeliveryStatus::Sent => format!(
                 "Botの名前を変更しました。\n{} → {}",
-                member.name, job.input.body
+                display_name(&member.name),
+                display_name(&job.input.body)
             ),
             DeliveryStatus::Failed => {
                 format!("Botの名前を変更できませんでした。\nAPI: {}", result.code)
@@ -115,5 +123,19 @@ pub fn mutation(tx: &Transaction<'_>, job: &Job, result: &ActionResult, now: i64
             ),
         },
         now,
+    )
+}
+
+fn display_name(name: &str) -> String {
+    // 結果表示だけを短縮・可視化する。変更APIへ渡す名前は加工しない。
+    let preview = name.chars().take(80).collect::<String>();
+    format!(
+        "{}{}",
+        preview.escape_debug(),
+        if name.chars().nth(80).is_some() {
+            "…"
+        } else {
+            ""
+        }
     )
 }

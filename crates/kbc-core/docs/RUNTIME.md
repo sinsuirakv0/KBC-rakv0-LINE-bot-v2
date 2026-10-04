@@ -33,7 +33,7 @@ txtと同梱検索を受付でAction化する。検索の走査は不変snapshot
 
 ## Bridge
 
-`kbc-protocol`のRust型から`apps/line/src/protocol/generated/`を生成する。本人・返信先・送信ID・画像URLとOC操作を追加したLINE専用Protocol v9。NativeとAdapterを同時に更新し、旧Adapterと混在させない。`kbc-node`は変換とRuntime呼出だけを行う。
+`kbc-protocol`のRust型から`apps/line/src/protocol/generated/`を生成する。本人・返信先・送信ID・画像URLとOC操作を追加したLINE専用Protocol v10。NativeとAdapterを同時に更新し、旧Adapterと混在させない。`kbc-node`は変換とRuntime呼出だけを行う。
 
 JSからNativeへの設定・Batch・結果は型付きDTOをJSON文字列化して渡す。N-APIのserde Value変換では整数の時刻がf64として入ってi64の復元に失敗したため、この小さな境界では整数表現を保つ。出力はplain DTO。大きな画像・SDKオブジェクトをこの経路へ渡さない。
 
@@ -62,3 +62,5 @@ Protocol v7はID照会用Members / JoinedChatsと参加退出のsource・取得�
 Protocol v8はInspect（読み取り）・Roles / Post / Delete（変更）とOcResultの送信IDを追加する。inspectをis_read・次の照会Actionを選ぶSQLへ同時に追加し、照会Workerへ渡す。許可OC tableは最大64件で共通DB・snapshotに含め、操作のcontinuationと結果は既存Outbox・oc_historyだけを使う。[関数・期限・許可の境界](../src/oc/docs/TEST_OC.md)。
 
 Protocol v9はProfile変更要求を追加する。BOT管理者の!bot nameは既存Context / Member照会・変更配送・oc_historyを共有し、専用Queueや定期処理は持たない。[Botの表示名更新](../src/oc/docs/BOT.md)。
+
+Protocol v10はOcResultのrawMemberNameを追加し、Bot名の完全一致判定へ未加工のLINEプロフィール名を使う。表示用DTOの短縮・改行整形とAPI確認を分ける。Bot固有の20文字・改行・制御文字制限は利用者指定で撤廃し、共通の入力・結果byte上限を維持する。

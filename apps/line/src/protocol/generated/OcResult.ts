@@ -3,4 +3,4 @@ import type { OcChat } from "./OcChat.js";
 import type { OcContext } from "./OcContext.js";
 import type { OcMember } from "./OcMember.js";
 
-export type OcResult = { messageId?: string, context?: OcContext, member?: OcMember, chats: Array<OcChat>, members: Array<OcMember>, continuationToken?: string, };
+export type OcResult = { messageId?: string, context?: OcContext, member?: OcMember, rawMemberName?: string, chats: Array<OcChat>, members: Array<OcMember>, continuationToken?: string, };

@@ -114,19 +114,21 @@ try {
     await message("!bot name 未許可", actor); assert(texts(await drain()).includes("BOT管理者専用"));
   }
   assert.equal(profileCalls.length, 0);
-  for (const name of ["", "名前\n改行", "🙂".repeat(11)]) {
-    await message(`!bot name ${name}`, owner); assert(texts(await drain()).includes("使い方"));
-  }
+  await message("!bot name", owner); assert(texts(await drain()).includes("使い方"));
   assert.equal(profileCalls.length, 0);
-  await message("!bot name   KBC  Bot🙂  ", owner, undefined, sub);
+  const rawName = " \n\t\u0000\u001b\u0085" + "長い名前🙂".repeat(20) + "\r\n ";
+  await message(`!bot name ${rawName}`, owner, undefined, sub);
   const renamed = await drain(); assert(texts(renamed).includes("名前を変更しました"));
-  assert.deepEqual(profileCalls.at(-1), { member: bot, square, name: "KBC  Bot🙂", revision: 7n });
+  assert(!/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/u.test(texts(renamed)));
+  assert.deepEqual(profileCalls.at(-1), { member: bot, square, name: rawName, revision: 7n });
   assert.equal(roles.get(bot), "CO_ADMIN"); assert.equal(states.get(bot), undefined); assert.equal(names.get(labBot), undefined);
   assert(renamed.filter(a => a.type === "sendMessage").every(a => a.relatedMessageId === ""));
-  await message("o.bot name KBC  Bot🙂", owner); assert(texts(await drain()).includes("すでに")); assert.equal(profileCalls.length, 1);
+  await message(`o.bot name ${rawName}`, owner); assert(texts(await drain()).includes("すでに")); assert.equal(profileCalls.length, 1);
+  const formattedName = Array.from(rawName.replace(/[\r\n]/g, " ")).slice(0, 80).join("");
+  await message(`!bot name ${formattedName}`, owner); assert(texts(await drain()).includes("名前を変更しました")); assert.equal(profileCalls.length, 2);
   const profileUnknown = core.stats().unknownActions;
   failMutation = true; await message("o.bot name 新しい名前", owner); assert(texts(await drain()).includes("結果不明")); failMutation = false;
-  await drain(); assert.equal(profileCalls.length, 2); assert.equal(core.stats().unknownActions, profileUnknown + 1);
+  await drain(); assert.equal(profileCalls.length, 3); assert.equal(core.stats().unknownActions, profileUnknown + 1);
   const unknownProfile = db.prepare("SELECT id FROM actions WHERE status='unknown' AND json_extract(payload,'$.request.type')='profile'").get() as { id: string };
   core.resolveAction({ actionId: unknownProfile.id, status: "failed", code: "ConfirmedUnchangedInFixture" });
   assert.equal(core.stats().unknownActions, profileUnknown);
