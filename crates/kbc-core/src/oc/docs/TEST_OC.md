@@ -2,6 +2,16 @@
 
 2026-10-04。利用者が管理する検証OCで、実行元と対象トークを変えたときのメンション・削除・強制退会・副官設定・管理人移行のAPI結果を確認する。実LINEのadmin試験でILLEGAL_ARGUMENTと変更なしの利用者報告があり、正規権限での成功とエラー原因の切り分けは未確認。通常の管理機能へ転用する前に結果を記録する。
 
+## OC AとOC Bの権限チェックを調べる目的
+
+利用者が明示した構想は、BotがOC Aの管理人、OC Bでは必要な権限を持たない状態で、Aの権限を根拠にBの管理操作が成立するかを、利用者が管理する検証OCで確認すること。旧アカウントの復旧とは別の検証目的として扱う。以前の一般メンバーの管理人化は、利用者によれば乗っ取りのような事例であり、時期・API・手順は未確認。公式の自動移行だったと断定せず、現在のAPIで再現できる根拠にも扱わない。
+
+現実装はAでの入力・BOT管理者権限確認と結果通知を保持するが、対象InspectでBの親OC・Bot・メンバー・revisionを取得し、Rolesの内容をBの所属で統一する。外側のCoreAction.chat_idはAの受付・継続用で、SquareDirectoryのroles分岐はこれをSDK引数へ渡さない。LINEJS 3.4.2のupdateSquareMembers要求はupdatedAttrsとmembersで、各memberのsquareMid / squareMemberMid / revision / roleへBの値を設定する。送信の認証は共通BaseClientのBotアカウント。Aの管理人MID・role・revisionを変更要求へ混ぜたり、Aの権限を示す認可情報を送ったりはしていない。getSquareAuthorityもOCの操作ごとの必要roleを返す設定で、別OCへ渡す認可tokenとして実装されていない。
+
+このため、現在の実試験は「AからBへの操作指示」であって、「Aを権限確認先、Bを変更先にした要求」の検証済みとは扱わない。Aの現在のBotのOC roleを必須前提として記録する仕組みもまだない。BOT adminとLINEのOC ADMINを混同しない。現在の同一所属の照合は維持する。
+
+切り分けはまず正規権限のある検証OCで同じAPI要求が正常に通ることを確認し、その後、権限のない検証OCへの要求と送信内容・変更前後の状態を比較する。ILLEGAL_ARGUMENTだけで権限境界の判定結果や全経路の不可能性を断定しない。LINE側の認可実装はSDKの要求形式からは確定できない。正常系・OC間の認可情報共有・権限回避の成立はいずれも未確認。
+
 ## 登録と実行
 
 BOT admin（実行OCまたは実行トークのrank 2）だけが利用する。OC ADMIN / CO_ADMIN、BOT modでは登録も操作もできない。共通Contextで実行者のMID・OC・JOINEDを確認する。
