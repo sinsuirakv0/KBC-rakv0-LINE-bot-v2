@@ -24,9 +24,10 @@ LINE側が受理するかと、端末で表示されるかは実環境で確認�
 !test deputy off <pMID>
 !test admin <移行先の副官pMID>
 対象トーク変更: --target-chat <mMID>
+mentionではpMIDの所属を照会するトークです。送信先は実行トークです。
 sMIDは対象トークに指定できません。!id talkでmMIDを取得します。
 現在の管理人指定: --from <pMID>（admin専用）
-省略時は実行トーク。adminの移行元は対象OCのBot。
+指定省略時は実行トークを照会。adminの移行元は対象OCのBot。
 管理下の実行元・対象OCの両方をallowに登録します。
 指定だけでは対象確認。--applyを付けると実行します。
 本文指定の -- より前に --apply 等を置いてください。

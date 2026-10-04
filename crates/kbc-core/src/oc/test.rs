@@ -393,8 +393,9 @@ pub fn inspected(
                     now,
                 );
             }
+            // 指定トークはメンバーの所属確認に使い、投稿は実行トークへ返す。
             OcRequest::Post {
-                chat_id: test.chat.clone(),
+                chat_id: identity(&job.event).1.into(),
                 text,
                 mention: MessageMention {
                     member_id: member.member_id.clone(),
@@ -503,7 +504,11 @@ pub fn inspected(
                 if test.operation == "delete" {
                     format!("メッセージID: {}", test.message)
                 } else if test.operation == "mention" {
-                    format!("\n本文: {}", test.text)
+                    format!(
+                        "\n送信先トーク: {}\n本文: {}",
+                        identity(&job.event).1,
+                        test.text
+                    )
                 } else if test.operation == "admin" {
                     "\n現在の管理人→副官、対象の副官→管理人".into()
                 } else if test.operation == "kick" {
@@ -559,7 +564,9 @@ pub fn mutated(
             .as_ref()
             .and_then(|value| value.message_id.as_deref())
             .map_or(String::new(), |id| format!("\n送信メッセージID: {id}"));
-        let ids = if test.operation == "sticker" {
+        let ids = if test.operation == "mention" {
+            format!("\n送信先トーク: {}", identity(&job.event).1)
+        } else if test.operation == "sticker" {
             format!("\n{}", test.message)
         } else {
             String::new()
@@ -568,8 +575,13 @@ pub fn mutated(
             tx,
             job,
             format!(
-                "【テスト結果】{}: {status}\n対象トーク: {}{ids}\nAPI: {}{message}{}",
+                "【テスト結果】{}: {status}\n{}: {}{ids}\nAPI: {}{message}{}",
                 test.operation,
+                if test.operation == "mention" {
+                    "メンバー照会トーク"
+                } else {
+                    "対象トーク"
+                },
                 test.chat,
                 result.code,
                 if matches!(result.status, DeliveryStatus::Unknown) {

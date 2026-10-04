@@ -20,4 +20,6 @@ help/test.txtは!test / !test help / 各操作のhelp / !help testの共通案�
 
 同じhelpに[!test sticker](../../crates/kbc-core/src/oc/docs/TEST_STICKER.md)のセットID・スタンプID・任意version / STKOPTを案内する。実行トークへの1回送信で、allow登録・--applyを要求しない。
 
+!test mentionの--target-chatはメンバーの所属照会先と案内する。実行トークでメンションし、他の管理操作の対象トーク指定と区別する。
+
 help/bot.txtは!bot / !bot help / !help botの共通案内。botは必須help・コマンド一覧へ登録し、[表示名変更](../../crates/kbc-core/src/oc/docs/BOT.md) の実処理はRust OC基盤で行う。

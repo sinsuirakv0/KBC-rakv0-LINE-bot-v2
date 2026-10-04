@@ -75,4 +75,4 @@ Bridgeの非同期受付は最大4受付・実処理1件。外部素材の取得
 
 ## 検証OCの操作
 
-!test allowは検証OCのsMIDを複数登録・解除する。BOT adminだけに許可し、!test mention / delete / kick / deputy / adminは対象確認後、--apply付きで1回の実操作を登録する。--target-chatは対象トーク、!test replyの--chatは返信元。txtの案内・共通Context・既存Outboxを使う。[仕様・関数・上限](../../oc/docs/TEST_OC.md)。
+!test allowは検証OCのsMIDを複数登録・解除する。BOT adminだけに許可し、!test mention / delete / kick / deputy / adminは対象確認後、--apply付きで1回の実操作を登録する。mentionの--target-chatはpMIDの所属OCの照会先で、投稿先は実行トーク。管理操作の--target-chatは操作対象トーク、!test replyの--chatは返信元。txtの案内・共通Context・既存Outboxを使う。[仕様・関数・上限](../../oc/docs/TEST_OC.md)。

@@ -22,14 +22,14 @@ BOT admin（実行OCまたは実行トークのrank 2）だけが利用する。
 
 | 入力 | 操作 |
 | --- | --- |
-| !test mention <pMID> -- <本文> | 指定メンバーをメンション。本文省略は「メンション通知テスト」 |
+| !test mention <pMID> -- <本文> | 指定メンバーを実行トークでメンション。本文省略は「メンション通知テスト」 |
 | !test delete <数字のメッセージID> | 管理者削除。取り消しではない |
 | !test kick <pMID> | KICK_OUT。再参加可能な強制退会 |
 | !test deputy on <pMID> | 一般メンバーへCO_ADMINを付与 |
 | !test deputy off <pMID> | CO_ADMINをMEMBERへ戻す |
 | !test admin <副官pMID> | 現管理人をCO_ADMIN、指定副官をADMINへ同じ要求で変更 |
 
-全操作に--target-chat <mMID>を付けると対象トークを変える。省略時は実行トーク。--applyなしでは未実行の対象確認、付けた場合だけ実通信を登録する。mentionの本文を指定する--より前にこれらの引数を置く。o.testも同じ。管理操作の対象は1件で、許可OCの複数登録とは別の指定である。
+--target-chat <mMID>は対象トークを指定し、省略時は実行トーク。mentionの場合はpMIDの所属OCを確認するための照会先であり、投稿先は常にコマンドを実行したトークとする。deleteなどの管理操作は指定先へ作用する。--applyなしでは未実行の対象確認、付けた場合だけ実通信を登録する。mentionの本文を指定する--より前にこれらの引数を置く。o.testも同じ。管理操作の対象は1件で、許可OCの複数登録とは別の指定である。
 
 --target-chatはmから始まるトークMID専用。sから始まるOC MIDを受け付けない。対象トークの!id talkでmMIDと親OCのsMIDを確認する。allowには両方のOCのsMIDを登録し、mMIDを混ぜない。admin / deputy / kickは入力トークから解決した親OCに作用するため、同じOCのサブトークごとの権限移行ではない。
 
@@ -37,7 +37,7 @@ BOT admin（実行OCまたは実行トークのrank 2）だけが利用する。
 
 adminの移行元は対象OCのBot。Botが対象OCの管理人でない場合は、--from <現在の管理人pMID>を明示して権限不足の試験も行える。現在ADMINとCO_ADMINである2者のrevisionを取得し、同じ対象OCであることを照合する。副官の「譲渡」はon/offとして役割の付与・解除を試す。kickは一般メンバーだけが対象で、Bot・ADMIN・CO_ADMIN・未知roleを除外する。
 
-各操作はAPI上で対象トークまたは対象OCを指定する。実行元トークの権限を引き継ぐ引数はない。対象側に権限がない場合の可否はサーバーの判定と実観測で確認し、権限回避が成立すると仮定しない。メンションの描画・metadataの付与と端末通知は別に観測する。管理人移行の一般仕様は[LINE公式](https://help.line.me/line/smartphone?contentId=20005393&lang=ja)で現在の副官への移行・旧管理人の副官化を確認した。
+管理操作はAPI上で対象トークまたは対象OCを指定する。実行元トークの権限を引き継ぐ引数はない。対象側に権限がない場合の可否はサーバーの判定と実観測で確認し、権限回避が成立すると仮定しない。メンションは照会先OCのpMIDを実行トークのMENTIONへ設定する実験で、描画・API受理・端末通知は別に観測する。管理人移行の一般仕様は[LINE公式](https://help.line.me/line/smartphone?contentId=20005393&lang=ja)で現在の副官への移行・旧管理人の副官化を確認した。
 
 !test replyの--chatは返信元トークを表す。今回の--target-chatと混同しない。replyの既存仕様・権限は変えず、allow・--applyも要求しない。[リプライ表示の実験](TEST_REPLY.md)。
 
@@ -48,6 +48,10 @@ adminの移行元は対象OCのBot。Botが対象OCの管理人でない場合�
 2026-10-04のnpm再確認でも公開版はLINEJS 3.4.2。採用lockを維持する。SquareMemberAttribute.ROLEは6、役割はADMIN=1 / CO_ADMIN=2 / MEMBER=10。updateSquareMembersのupdatedAttrs=[ROLE]とmembersを使用し、squareMid・squareMemberMid・revision・roleだけを送る。SDK配布物の型・Thrift serializerで要求と返値を確認した。返されたmembersで対象・OC・役割を照合できなければ成功と推定しない。
 
 メンションは既存MessageMentionと同じUTF-16位置でMENTION.MENTIONEESを設定し、relatedMessageIdを付けない。ラベルは@表示名。本文込み1,500 UTF-16単位を超える入力を分割送信しない。削除はdestroyMessage(squareChatMid, messageId)、退会は既存updateSquareMember(updatedAttrs=[5], KICK_OUT)を再利用する。
+
+2026-10-04、利用者の訂正でmentionの送信先を修正した。test::planのchatは照会先として保持し、test::inspectedでInspectの所属・JOINED・allowを確認後、OcRequest::Post.chat_idだけを元のJob.eventの実行トークへ設定する。確認表示に送信先、test::mutatedの結果にメンバー照会トークと送信先を表示する。Plan・Protocol・保存形式は変更しない。oc_historyのOCキーは従来どおり照会対象OCで、他の管理操作・権限・期限・unknownの再送抑止は維持する。
+
+同じsmoke:ocで、別OCのpMIDを指定先でInspectしながら実行トークへ投稿すること、サブトークでの実行・Mutation登録後の再起動・指定省略時の同OCメンションを確認した。既存の所属不一致拒否・対象OC登録・delete / kick / rolesの対象指定も通過した。build、型検査、smoke:oc / smoke:commands、Clippyが通過。helpは1,317 UTF-16単位。実LINEの別OCメンション表示・通知は未確認。
 
 Protocol v8のInspect / Roles / Post / Deleteを既存OcApiへ追加する。独立したQueue・Worker・HTTP・常駐巡回は作らない。Inspectは既存1照会Worker、変更は既存2配送Worker・ApiSchedulerの共通2枠を使う。1要求のInspectはトーク・Bot・最大2メンバーを取得する。参加者一覧や未知OCの常時照会は増やさない。
 

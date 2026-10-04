@@ -188,11 +188,25 @@ try {
   await message(`!test allow ${mid("s", "f")} ${chat}`, owner); await drain();
   assert.equal((db.prepare("SELECT count(*) AS n FROM oc_test_squares").get() as { n: number }).n, 2);
   await message(`!test mention ${labUser} --target-chat ${labChat}`, owner); const preview = texts(await drain());
-  assert(preview.includes("未実行") && preview.includes(labBot) && preview.includes("MEMBER"));
+  assert(preview.includes("未実行") && preview.includes(labBot) && preview.includes("MEMBER") && preview.includes(`送信先トーク: ${chat}`));
   assert.equal(mentionSends.length, 0);
   await message(`!test mention ${labUser} --target-chat ${labChat} --apply -- 本文🙂\n連続  空白`, owner);
-  const mentionResult = texts(await drain()); assert(mentionResult.includes("テスト結果") && mentionResult.includes("成功"));
-  assert.deepEqual(mentionSends.at(-1), { chat: labChat, text: "@メンバー\n本文🙂\n連続  空白", metadata: JSON.stringify({ MENTIONEES: [{ S: "0", E: "5", M: labUser }] }) });
+  const mentionActions = await drain(), mentionResult = texts(mentionActions);
+  assert(mentionResult.includes("成功") && mentionResult.includes(`メンバー照会トーク: ${labChat}`) && mentionResult.includes(`送信先トーク: ${chat}`));
+  assert(mentionActions.some(action => action.type === "ocApi" && action.request.type === "inspect" && action.request.chatId === labChat));
+  assert.deepEqual(mentionSends.at(-1), { chat, text: "@メンバー\n本文🙂\n連続  空白", metadata: JSON.stringify({ MENTIONEES: [{ S: "0", E: "5", M: labUser }] }) });
+  // 別OCのpMIDを参照した後に再起動しても、実行サブトークへ投稿する。
+  await message(`o.test mention ${labUser} --target-chat ${labChat} --apply`, owner, undefined, sub);
+  for (let index = 0; index < 2; index++) {
+    const query = await core.nextQueryAction(); assert(query?.type === "ocApi");
+    await deliverAction(client, core, gate, query, service);
+  }
+  core.shutdown(); core = createCore(config); await drain();
+  assert.equal(mentionSends.at(-1)?.chat, sub);
+  assert.equal(JSON.parse(mentionSends.at(-1)!.metadata).MENTIONEES[0].M, labUser);
+  await message(`!test mention ${user} --apply`, owner); await drain();
+  assert.equal(mentionSends.at(-1)?.chat, chat);
+  assert.equal(JSON.parse(mentionSends.at(-1)!.metadata).MENTIONEES[0].M, user);
   const deletedBefore = deleted.length;
   await message(`!test delete 1234567890 --target-chat ${labChat}`, owner); await drain(); assert.equal(deleted.length, deletedBefore);
   await message(`!test delete 1234567890 --target-chat ${labChat} --apply`, owner); assert(texts(await drain()).includes("成功"));
