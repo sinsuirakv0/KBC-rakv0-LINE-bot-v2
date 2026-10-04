@@ -1,4 +1,3 @@
-use crate::messages::message;
 use std::{collections::BTreeMap, path::Path};
 
 use crate::Result;
@@ -72,34 +71,11 @@ impl ContentCatalog {
     }
 
     pub fn command_help(&self, name: &str) -> Option<String> {
-        let message_catalog = &self.messages;
         if name == "oc-admin" {
             return None;
         }
         if name == "help" {
-            let mut names = vec![
-                "help",
-                "bot",
-                "oc",
-                "id",
-                "test",
-                "ut",
-                "tut",
-                "st",
-                "test-notify",
-            ];
-            names.extend(self.responses.keys().map(String::as_str));
-            names.sort_unstable();
-            return Some(message!(
-                message_catalog,
-                "search.command_help_01",
-                arg0 = self.help["index"],
-                arg1 = names
-                    .into_iter()
-                    .map(|name| message!(message_catalog, "search.command_help_02", name = name))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            ));
+            return self.help.get("index").cloned();
         }
         self.help
             .get(name)

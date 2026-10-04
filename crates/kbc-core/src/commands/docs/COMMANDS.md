@@ -54,6 +54,7 @@ motionはpng/mp4/gif、f/c/s/u（utだけ）、a=攻撃・w=歩行・i=待機・
 | 関数・型 | 働きと後続 |
 | --- | --- |
 | ContentCatalog::load | txtを検証し応答・helpを起動時登録 |
+| ContentCatalog::command_help | 全体helpはindex.txtの本文だけを返す。個別helpは対象txtまたは応答txtを参照し、自動の一覧追加は行わない |
 | commands::prepare | prefix・alias・help・入力上限を判定。SearchCatalogへ検索を依頼 |
 | SearchCatalog::load/search | snapshot検証・正規化索引とID索引を構築。matchした名称番号もSessionへ保存 |
 | SearchCatalog::detail/page | ヒット形態・ダミー別称・ID解決によるURLと、検索/ファイルページをLINE向け整形 |

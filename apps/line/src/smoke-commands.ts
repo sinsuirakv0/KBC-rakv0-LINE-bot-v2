@@ -1,5 +1,5 @@
 ﻿import assert from "node:assert/strict";
-import { cp, mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -12,6 +12,8 @@ import { createCore, PROTOCOL_VERSION, type CoreAction } from "./protocol/native
 
 const directory = await mkdtemp(join(tmpdir(), "kbc-command-smoke-"));
 await cp("content", join(directory, "content"), { recursive: true });
+const helpIndex = "手動で記載する一覧\n・!ping\n!help コマンド名で確認";
+await writeFile(join(directory, "content/help/index.txt"), `\ufeff${helpIndex}\r\n`);
 await writeFile(join(directory, "content/responses/sample.txt"), "\ufeff追加した応答\r\n");
 await writeFile(join(directory, "content/help/sample.txt"), "\ufeff追加した案内\r\n");
 await writeFile(join(directory, "content/help/guide-only.txt"), "\ufeff案内txtだけで追加\n");
@@ -52,13 +54,16 @@ async function notifyReaction(messageId: string, type: "NICE" | "LOVE", chatId =
 }
 
 try {
-  // txt追加だけで応答と案内・一覧が登録される。BOMとCRLFは出力へ持ち込まない。
+  // txt追加で応答と個別案内が登録される。全体一覧はindex.txtの本文だけを使う。
   await submit("o.sample"); let action = await take(); assert.equal(action.text, "追加した応答"); sent(action);
   await submit("o.help SAMPLE"); action = await take(); assert.equal(action.text, "追加した案内"); sent(action);
   await submit("!help guide-only"); action = await take(); assert.equal(action.text, "案内txtだけで追加"); sent(action);
   await submit("o.sample help"); action = await take(); assert.equal(action.text, "追加した応答"); sent(action);
-  await submit("o.help"); action = await take(); assert(action.text.includes("!sample") && action.text.includes("!ut") && action.text.includes("!bot")); sent(action);
-  await submit("!help bot"); action = await take(); assert(action.text.includes("!bot name") && action.text.includes("BOT管理者")); sent(action);
+  for (const input of ["!help", "o.help"]) {
+    await submit(input); action = await take(); assert.equal(action.text, helpIndex); sent(action);
+  }
+  await submit("!help bot"); action = await take();
+  assert.equal(action.text, (await readFile(join(directory, "content/help/bot.txt"), "utf8")).replace(/^\ufeff/, "").replaceAll("\r\n", "\n").trim()); sent(action);
   assert.equal((await submit("!bot help")).actionsCreated, 0);
   for (const [command, expected] of [["o.unit 0", "ネコ"], ["o.st N0", "id=0"], ["o.tut 0", "わんこ"], ["o.st N000-000", "大地を揺るがす"], ["o.st 3000-000", "長崎県"]]) {
     await submit(command); action = await take(); assert(action.text.includes(expected) && action.text.includes("https://jarjarblink.github.io/JDB/"), action.text); sent(action);

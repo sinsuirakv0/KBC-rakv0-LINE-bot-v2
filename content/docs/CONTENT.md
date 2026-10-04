@@ -4,7 +4,7 @@
 
 返信・一覧・通知・利用者向けエラーの共通文面は`messages/<用途>.txt`の`key = 本文`で編集する。権限案内などはcommon.txtを共有する。[形式・差し込み項目・追加方法](../../crates/kbc-core/docs/MESSAGES.md)。定型応答とhelp本文は以下のtxtを使う。
 
-`responses/<name>.txt` を追加すると `!<name>` が使える。`help/<name>.txt` は `!help <name>` の案内になる。応答txtがなくてもhelp txtだけで案内を追加できる。helpがなければ応答本文を案内として使う。`help/index.txt` は全体案内の冒頭で、実装済みコマンドの一覧はCoreが追加する。
+`responses/<name>.txt` を追加すると `!<name>` が使える。`help/<name>.txt` は `!help <name>` の案内になる。応答txtがなくてもhelp txtだけで案内を追加できる。helpがなければ応答本文を案内として使う。`!help` / `o.help`は`help/index.txt`の本文だけを表示する。コマンド一覧はこのファイルへ手動で記載し、txt追加による自動追加は行わない。
 
 日本語を含むtxtはBOM付きUTF-8、表示はプレーンテキスト。コードブロックと空ファイルは起動時に拒否する。1ファイルは8KiB・1,500 UTF-16単位まで、各フォルダ128ファイルまで。ファイル名は英小文字・数字・`_`・`-` の32文字以内。`help`、`ut`、`tut`、`st`、その別名、`test-notify`、`test`、`oc`、`oc-admin`、`id`、`bot` は処理を持つためresponsesの名前に使えない。
 
@@ -26,4 +26,6 @@ help/test.txtは!test / !help testの共通案内。!test replyは [送信テス
 
 2026-10-04、helpの入口を!help <name>へ統一した。Command Smokeでhelp txtだけの追加、大文字の対象名、静的応答のhelp引数が応答本文になること、旧!bot helpを案内として扱わないことを確認した。通常の管理・リプライ・検索・IDのOC Smoke、build、型検査、Clippyも通過。公開helpと、権限確認後だけ返すOC内部案内の区別は維持する。
 
-help/bot.txtは!bot / !help botの共通案内。botは必須help・コマンド一覧へ登録し、[表示名変更](../../crates/kbc-core/src/oc/docs/BOT.md) の実処理はRust OC基盤で行う。
+help/bot.txtは!bot / !help botの共通案内。botは必須helpへ登録し、[表示名変更](../../crates/kbc-core/src/oc/docs/BOT.md) の実処理はRust OC基盤で行う。
+
+2026-10-04、全体helpをindex.txtの本文だけに変更した。Command Smokeでresponsesと個別helpを追加した状態の!help / o.helpが手動のindex本文と一致し、個別helpと応答の追加は引き続き使えることを確認。buildと型検査も通過した。
