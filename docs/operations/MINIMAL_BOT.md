@@ -144,3 +144,15 @@ ut / tut / stとファイル一覧の番号リプライを項目選択へ限定�
 build、型検査、smoke / smoke:commands / smoke:oc、Clippy、BOM / LF / 資料リンク検査を通過した。実LINEの通知47の到達とgetMessageReactionsの受理は利用者の操作で確認する。スタンプは受信metadataと送信経路を調査・記録した段階で、送信コマンドは今回追加していない。
 
 15:27 JST、起動約21秒でhealth 200 / receiving、PUSH session / sign-on各1、12トークの定期取得・優先4、補完・定期取得・一覧取得の失敗0。API requests 20 / errors 0 / rateLimits 0、GitHub退避1回 / failures 0、RSS約121MiB。Core完了191件・既存unknown 15件を復元し、待機・照会・送信中0、新規配送の失敗・unknown0を確認した。NorthflankはRunning / 1 / 1、起動約1分でrestart 0を確認。旧unknownは推測で再送しない。新起動後のログ同期周期と実Command配送はこの初期観測では未実施。
+
+## 2026-10-04のLINE標準絵文字・装飾ID配備
+
+d99b74f / hearty-page-3421のLinux buildは2分10秒で成功。旧instanceを0にして0 / 0の停止を確認後、Protocol v12のNativeとAdapterを同時に配備し、1 instanceへ戻した。0.2vCPU / 512MB、Volume追加なし、CD OFFを維持する。
+
+一覧とHelpのページ案内にLINE標準絵文字の装飾metadataを付ける。操作は一覧メッセージを長押しして付ける実リアクション（NICEで次、LOVEで前）で、数字リプライは項目選択のみ。標準セットのproductIdと143 / 165は公式一覧と実画像を確認したが、Squareでの装飾表示は未確認。[metadata・受信通知・検証範囲](../../apps/line/docs/REACTIONS_AND_STICKERS.md)。
+
+`!id sticker`（`stamp`も可）・`!id emoji`を追加し、新たに受信した投稿から必要なID・version・表示位置だけを保存する。対象へのリプライ、受信済みmessage IDと同じOCの`--chat`指定、コマンド自身のLINE絵文字に対応する。以前の保存参照には装飾IDがないため、配備後に対象を新しく送る。Unicode絵文字にはLINE装飾IDがない。[入力・関数・保持上限](../../crates/kbc-core/src/oc/docs/ID.md)。
+
+16:06 JST、起動約20秒でhealth 200 / receiving、PUSH session / sign-on各1、12トークの定期取得・優先4、補完・定期取得・一覧取得の失敗0。API requests 22 / errors 0 / rateLimits 0、GitHub退避1回 / failures 0、RSS約123MiB。Core完了193件・既存unknown 15件を復元し、待機・照会・送信中0、新規配送の失敗・unknown0を確認した。NorthflankはRunning / 1 / 1、起動約1分でrestart 0を確認。ログ1行は5分同期の待機中。実LINEの装飾表示・新しいIDコマンドの応答・ページ移動成功はこの初期観測では未確認。
+
+build、型検査、smoke / smoke:commands / smoke:oc、Clippyを通過した。装飾のUTF-16位置、mock送信metadata、IDの再起動復元・不正入力・20件上限・別OC参照拒否を既存Smokeで確認した。前版の実受信で通知47を1件観測したが、対象SessionがなくgetMessageReactionsは呼ばれておらず、ページ移動成功の証明とは扱わない。
