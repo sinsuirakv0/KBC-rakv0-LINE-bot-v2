@@ -1,5 +1,6 @@
 use crate::messages::message;
 pub mod content;
+pub mod pagination;
 pub mod search;
 pub mod sessions;
 

@@ -92,6 +92,8 @@ enum Session {
         operation: String,
         template: Option<Template>,
         page: usize,
+        #[serde(default)]
+        page_size: usize,
     },
 }
 pub fn initialize(db: &Connection) -> Result<()> {

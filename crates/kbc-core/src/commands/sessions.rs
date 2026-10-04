@@ -166,7 +166,8 @@ fn apply_inner(
                 .as_ref()
                 .map_or(session.results.len(), Vec::len);
             let input = text.trim();
-            if matches!(input, "終了" | "取消" | "cancel") {
+            let page_input = super::pagination::parse(input, session.page);
+            if matches!(page_input, super::pagination::Input::Finish) {
                 tx.execute("DELETE FROM sessions WHERE id=?1", [id])?;
                 return Ok(vec![(
                     message!(message_catalog, "search.apply_inner_04").into(),
@@ -174,11 +175,8 @@ fn apply_inner(
                     None,
                 )]);
             }
-            let is_number = !input.is_empty() && input.bytes().all(|byte| byte.is_ascii_digit());
-            let is_page = matches!(input, "次" | "前")
-                || input.strip_suffix('p').is_some_and(|value| {
-                    !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
-                });
+            let is_number = matches!(page_input, super::pagination::Input::Select(_));
+            let is_page = matches!(page_input, super::pagination::Input::Move(_));
             if pending.is_some() && (is_number || is_page) {
                 return Ok(vec![(
                     message!(message_catalog, "search.apply_inner_05").into(),
@@ -186,19 +184,11 @@ fn apply_inner(
                     None,
                 )]);
             }
-            if is_page {
+            if let super::pagination::Input::Move(page) = page_input {
                 let pages = count.div_ceil(PAGE_SIZE);
-                let page = match input {
-                    "次" => session.page.checked_add(1),
-                    "前" => session.page.checked_sub(1),
-                    _ => input
-                        .strip_suffix('p')
-                        .and_then(|value| value.parse::<usize>().ok())
-                        .and_then(|page| page.checked_sub(1)),
-                };
                 let Some(page) = page.filter(|page| *page < pages) else {
                     return Ok(vec![(
-                        message!(message_catalog, "search.apply_inner_06", pages = pages),
+                        message!(message_catalog, "navigation.invalid_page", pages = pages),
                         now,
                         None,
                     )]);
@@ -218,9 +208,7 @@ fn apply_inner(
                 )?;
                 return Ok(vec![(catalog.page(&session, true), now, None)]);
             }
-            if let Ok(number @ 1..=PAGE_SIZE) = input.parse::<usize>()
-                && input == number.to_string()
-            {
+            if let super::pagination::Input::Select(number @ 1..=PAGE_SIZE) = page_input {
                 let index = session.page * PAGE_SIZE + number - 1;
                 if index < count {
                     tx.execute("DELETE FROM sessions WHERE id=?1", [id])?;

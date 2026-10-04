@@ -1,4 +1,5 @@
-﻿use crate::messages::message;
+﻿pub use super::pagination::PAGE_SIZE;
+use crate::messages::message;
 use crate::{
     Result,
     motion::{
@@ -13,7 +14,6 @@ use std::{
     path::Path,
 };
 use unicode_normalization::UnicodeNormalization;
-pub const PAGE_SIZE: usize = 10;
 pub const SESSION_TTL_MS: i64 = 600000;
 
 #[derive(Deserialize)]
@@ -478,20 +478,14 @@ impl SearchCatalog {
                     message!(message_catalog, "common.details")
                 }
             ));
-            let mut moves = Vec::new();
-            if end < count {
-                moves.push(message!(message_catalog, "search.page_04"));
-            }
-            if start > 0 {
-                moves.push(message!(message_catalog, "search.page_05"));
-            }
-            if !moves.is_empty() {
-                lines.push(message!(
+            if count > PAGE_SIZE {
+                lines.push(super::pagination::navigation(
                     message_catalog,
-                    "search.page_06",
-                    arg0 = moves.join("　")
+                    s.page,
+                    count.div_ceil(PAGE_SIZE),
                 ));
             }
+            lines.push(message!(message_catalog, "navigation.finish").into());
             lines.push(message!(message_catalog, "search.page_07").into());
         } else {
             lines.push(message!(message_catalog, "search.page_08").into());

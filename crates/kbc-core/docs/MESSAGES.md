@@ -25,7 +25,7 @@
 
 ## 文面ファイルと追加の原則
 
-256キーを11ファイルに分けた。common.txtは権限案内・未設定・状態など、search.txtは検索・素材選択、media.txtは素材失敗、bot.txtは名前変更、commands.txtはOC設定・処分履歴、id.txtはID表示、mod.txtはOC共通照会、moderation.txtは入退室・ミュート・調査案内、policy.txtは期間表示、test.txtとtest_reply.txtは検証コマンド。
+文面を11ファイルに分けた。common.txtは権限案内・未設定・状態・共通ページ案内など、search.txtは検索・素材選択、media.txtは素材失敗、bot.txtは名前変更、commands.txtはOC設定・処分履歴、id.txtはID表示、mod.txtはOC共通照会、moderation.txtは入退室・ミュート・調査案内、policy.txtは期間表示、test.txtとtest_reply.txtは検証コマンド。
 
 新しいコードは既存の共通キーを優先する。用途が異なる文章を無理に共通化しない。新しい文面キーが必要なら、同じ変更でmessages.schema.jsonの許可変数・用途別txtの既定文・message!呼出を追加する。例: `message!(message_catalog, "common.bot_admin_only")`。文面変更だけならtxtの値を編集する。`arg0`などの番号付き変数はそのキーの既存の差し込み項目で、自由に名前を変えない。
 
@@ -36,3 +36,5 @@
 build・型検査・Command Smoke・OC Smoke・Message Smokeを確認した。Message Smokeは再起動後の文面反映、登録済みOutboxの本文維持、Runtime間の設定独立、未知・重複・不足キーと不正変数の起動拒否を確認する。OC Smokeは共通の権限文を名前変更とスタンプで利用し、ミュート文の先頭へ絵文字付き案内を追加してUTF-16メンション位置を検証する。名前に含まれる波括弧は再展開しない。
 
 初回実装時に文面schemaと280か所のmessage!呼出の差し込み項目を照合した。その後、help一覧の自動生成廃止で2キー・2呼出を削除した。受信・API制限・通知検知の挙動を変更する実験は行っていない。本環境での表示確認は配備後に行う。
+
+番号選択付き一覧の操作は[共通仕様](../src/commands/docs/PAGINATION.md)へ固定した。navigation.*はcommon.txtを共有し、次・前・3p・終了の判定はキーの文章から独立する。OC固有のページヘッダーはcommands.txt、通知の名前が取得できなかった場合のMID付き案内はmoderation.txtへ置く。

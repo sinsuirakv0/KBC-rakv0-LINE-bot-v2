@@ -22,9 +22,6 @@
   "commands.case_reply_05": [],
   "commands.chat_page_01": [],
   "commands.chat_page_02": [],
-  "commands.chat_page_03": [],
-  "commands.chat_page_04": [],
-  "commands.chat_page_05": [],
   "commands.chats_01": [],
   "commands.execute_01": [],
   "commands.execute_02": [
@@ -334,9 +331,6 @@
   "search.apply_inner_03": [],
   "search.apply_inner_04": [],
   "search.apply_inner_05": [],
-  "search.apply_inner_06": [
-    "pages"
-  ],
   "search.apply_inner_07": [],
   "search.entry_label_01": [
     "n"
@@ -386,11 +380,6 @@
   "search.page_03": [
     "arg0",
     "arg1"
-  ],
-  "search.page_04": [],
-  "search.page_05": [],
-  "search.page_06": [
-    "arg0"
   ],
   "search.page_07": [],
   "search.page_08": [],
@@ -549,5 +538,19 @@
   "moderation.member_name_unknown": [
     "member",
     "status"
-  ]
+  ],
+  "navigation.next": [],
+  "navigation.previous": [],
+  "navigation.jump": [
+    "moves"
+  ],
+  "navigation.finish": [],
+  "navigation.invalid_page": [
+    "pages"
+  ],
+  "commands.chat_page_count": [
+    "page",
+    "pages"
+  ],
+  "commands.chat_page_expired": []
 }

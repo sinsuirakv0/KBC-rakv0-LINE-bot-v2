@@ -36,7 +36,7 @@
 
 joinmes / joinmsg / joinmessage、leavemes / leftmes / exitmes系、link / linkurl / adlink、mediadel / mediaburstはalias。kicktestは処分APIを呼ばず、kickの使い方案内だけを返す。`!oc url`へのURL直書きは行わず、addで範囲を明示する。期限は単一引数の `YYYY/M/D-H:MM` にも対応する。
 
-setupは1 URL、2 media、3副官部屋、4 early、5 danger、6 cohort、7基本項目一括ON（通報を除く）、8自動処理OFF、9状態、10通報、11本OC選択。OFF指定の7も一括解除する。副官部屋からjoin / leaveを設定すると送信先を8件ずつ番号選択する。取得できなかったトークでは、そのトークから直接設定できる。
+setupは1 URL、2 media、3副官部屋、4 early、5 danger、6 cohort、7基本項目一括ON（通報を除く）、8自動処理OFF、9状態、10通報、11本OC選択。OFF指定の7も一括解除する。副官部屋からjoin / leaveを設定すると送信先を10件ずつ番号選択する。次・前・3pのリプライによるページ移動は[共通仕様](../../commands/docs/PAGINATION.md)を使う。取得できなかったトークでは、そのトークから直接設定できる。
 
 対話は本人・トーク・送信済みの最新promptに結び付ける。通常の数字、別人、別トーク、古いpromptには反応しない。設定継続時は新prompt送信成功後に旧promptを管理者削除し、10分後の共通清掃も使う。終了・送信先確定時は設定を閉じ、promptの清掃を前倒しする。削除失敗で保存済み設定や新promptを巻き戻さない。
 
@@ -65,8 +65,8 @@ URLはNFKCで抽出し、同じorigin（scheme・host・port）のHTTPSだけを
 | request / complete | OcRequestとJobを既存Outboxへ保存。結果登録と後続Action・設定を同一transactionで確定 |
 | commands::target / mutation | 現在の対象MID・OC・役割・revisionを照合し、処分結果を履歴へ記録。複数対象は直列 |
 | moderation::candidate / execute | 安価な候補と現在roleを分離。処分候補以外の通常Commandは既存apply_commandへ渡す |
-| moderation::member_name / complete_notice / send_notice | OC単位の観測名を参照。不足する通知対象だけ既存Member照会を依頼し、再起動後も同じ通知本文を生成 |
 | moderation::member_event / confirm_left | トーク状態・参加回数・初参加・一斉参加を保存し、退会照会後に処分を判断 |
+| moderation::member_name / complete_notice / send_notice | OC単位の観測名を参照。不足する通知対象だけ既存Member照会を依頼し、再起動後も同じ通知本文を生成 |
 | SquareDirectory.chat / execute | OC対応だけを有限cache、roleは現在照会。SDK返値を検査し、BigInt revisionを文字列DTOへ変換 |
 | normalizeEvent / Receiver.accept | テキスト・媒体・参加退出を正規化し、Core commit後にcursorを確定。baselineより古い履歴ではOC追加取得を省く |
 | Runtime::next_query_action | 既存actionsから読み取りだけをqueryingへ。Adapterの1照会loopで処理し、同じトークの通常配送枠を使わない |

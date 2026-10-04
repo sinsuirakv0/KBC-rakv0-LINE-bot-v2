@@ -1,4 +1,5 @@
 ﻿use super::*;
+use crate::commands::pagination::{self, PAGE_SIZE};
 use crate::messages::message;
 use unicode_normalization::UnicodeNormalization;
 
@@ -1079,6 +1080,7 @@ pub fn chats(
         operation: job.operation.clone(),
         template,
         page: 0,
+        page_size: PAGE_SIZE,
     };
     session(
         message_catalog,
@@ -1094,7 +1096,19 @@ fn chat_page(message_catalog: &crate::messages::Messages, value: &Session) -> St
         return String::new();
     };
     let mut lines = vec![message!(message_catalog, "commands.chat_page_01").into()];
-    for (index, chat) in chats.iter().skip(page * 8).take(8).enumerate() {
+    let count = chats.len().div_ceil(PAGE_SIZE);
+    lines.push(message!(
+        message_catalog,
+        "commands.chat_page_count",
+        page = page + 1,
+        pages = count
+    ));
+    for (index, chat) in chats
+        .iter()
+        .skip(page * PAGE_SIZE)
+        .take(PAGE_SIZE)
+        .enumerate()
+    {
         lines.push(format!(
             "{} {}{}",
             index + 1,
@@ -1106,13 +1120,10 @@ fn chat_page(message_catalog: &crate::messages::Messages, value: &Session) -> St
             chat.name
         ));
     }
-    if (page + 1) * 8 < chats.len() {
-        lines.push(message!(message_catalog, "commands.chat_page_03").into());
+    if count > 1 {
+        lines.push(pagination::navigation(message_catalog, *page, count));
     }
-    if *page > 0 {
-        lines.push(message!(message_catalog, "commands.chat_page_04").into());
-    }
-    lines.push(message!(message_catalog, "commands.chat_page_05").into());
+    lines.push(message!(message_catalog, "navigation.finish").into());
     lines.join("\n")
 }
 fn session_reply(
@@ -1239,17 +1250,49 @@ fn session_reply(
             operation,
             template,
             mut page,
+            page_size,
         } => {
-            let number = body.parse::<usize>().unwrap_or(usize::MAX);
-            if number == 9 && (page + 1) * 8 < chats.len() {
-                page += 1;
-            } else if number == 0 && page > 0 {
-                page -= 1;
-            } else {
+            if page_size != PAGE_SIZE {
+                tx.execute("DELETE FROM oc_sessions WHERE id=?1", [id])?;
+                return reply(
+                    tx,
+                    job,
+                    message!(message_catalog, "commands.chat_page_expired"),
+                    now,
+                );
+            }
+            let number = match pagination::parse(&job.input.body, page) {
+                pagination::Input::Move(target) => {
+                    let pages = chats.len().div_ceil(PAGE_SIZE);
+                    let Some(target) = target.filter(|target| *target < pages) else {
+                        return reply(
+                            tx,
+                            job,
+                            message!(message_catalog, "navigation.invalid_page", pages = pages),
+                            now,
+                        );
+                    };
+                    if target == page {
+                        return Ok(());
+                    }
+                    page = target;
+                    None
+                }
+                pagination::Input::Select(number) => Some(number),
+                _ => {
+                    return reply(
+                        tx,
+                        job,
+                        message!(message_catalog, "commands.session_reply_04"),
+                        now,
+                    );
+                }
+            };
+            if let Some(number) = number {
                 let Some(chat) = number
                     .checked_sub(1)
-                    .filter(|i| *i < 8)
-                    .and_then(|i| chats.get(page * 8 + i))
+                    .filter(|i| *i < PAGE_SIZE)
+                    .and_then(|i| chats.get(page * PAGE_SIZE + i))
                 else {
                     return reply(
                         tx,
@@ -1306,6 +1349,7 @@ fn session_reply(
                 operation,
                 template,
                 page,
+                page_size: PAGE_SIZE,
             };
             session(
                 message_catalog,

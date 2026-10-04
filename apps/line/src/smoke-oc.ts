@@ -433,5 +433,32 @@ try {
   assert(!fallbackNotice.includes("メンバーさん"));
   assert.equal(memberLookups.filter(id => id === unresolved).length, 1);
   assert.equal((await drain()).length, 0);
+  // 送信先を23件にして、数字選択とページ操作を混同しないことを確認する。
+  const chatChoices = Array.from({ length: 23 }, (_, index) => ({ squareChatMid: index === 0 ? chat : index === 1 ? sub : "m" + String(index).padStart(32, "0"),
+    squareMid: square, name: `候補${String(index + 1).padStart(2, "0")}`, type: index === 0 ? "SQUARE_DEFAULT" : "SQUARE_MULTI" }));
+  client.square.fetchMyEvents = async () => ({ syncToken: "fixture-directory", events: chatChoices.map(value => ({
+    type: "NOTIFIED_CREATE_SQUARE_CHAT_MEMBER", payload: { notifiedCreateSquareChatMember: { chat: value } } }))
+  }) as unknown as Awaited<ReturnType<typeof client.square.fetchMyEvents>>;
+  await message("!oc main"); const chatList = texts(await drain());
+  assert(chatList.includes("1 / 3ページ") && chatList.includes("9 候補09") && chatList.includes("10 候補10") && !chatList.includes("候補11"));
+  const previousPrompt = currentPrompt();
+  await message("次", admin, previousPrompt); assert(texts(await drain()).includes("2 / 3ページ"));
+  await message("1", admin, previousPrompt); assert.equal((await drain()).length, 0);
+  await message("2p", admin, currentPrompt()); assert.equal(texts(await drain()), "");
+  await message("3p", admin, currentPrompt()); assert(texts(await drain()).includes("候補23"));
+  await message("前", admin, currentPrompt()); assert(texts(await drain()).includes("2 / 3ページ"));
+  for (const input of ["0p", "4p", "999999999999999999999p"]) {
+    await message(input, admin, currentPrompt()); assert(texts(await drain()).includes("ページは1〜3"));
+  }
+  await message("9", admin, currentPrompt()); await drain(); assert.equal(settings().main, chatChoices[18]!.squareChatMid);
+  await message("!oc main"); await drain(); await message("10", admin, currentPrompt()); await drain();
+  assert.equal(settings().main, chatChoices[9]!.squareChatMid);
+  await message("!oc main"); await drain();
+  const legacySession = db.prepare("SELECT id,payload FROM oc_sessions WHERE chat=? AND owner=?").get(chat, admin) as { id: string; payload: string };
+  const legacyPayload = JSON.parse(legacySession.payload); delete legacyPayload.Chats.page_size;
+  db.prepare("UPDATE oc_sessions SET payload=? WHERE id=?").run(JSON.stringify(legacyPayload), legacySession.id);
+  core.shutdown(); core = createCore(config);
+  await message("9", admin, currentPrompt()); assert(texts(await drain()).includes("仕様が更新されました"));
+  assert.equal(settings().main, chatChoices[9]!.squareChatMid);
   console.log(JSON.stringify({ ok: true, scenarios: ["permissions-session-query-restart-unknown", "mute-url-media", "push-notification-oc-leave"] }));
 } finally { controller.abort(); core.shutdown(); db.close(); }
