@@ -42,7 +42,8 @@ try {
   // txt追加だけで応答と案内・一覧が登録される。BOMとCRLFは出力へ持ち込まない。
   await submit("o.sample"); let action = await take(); assert.equal(action.text, "追加した応答"); sent(action);
   await submit("o.sample help"); action = await take(); assert.equal(action.text, "追加した案内"); sent(action);
-  await submit("o.help"); action = await take(); assert(action.text.includes("!sample") && action.text.includes("!ut")); sent(action);
+  await submit("o.help"); action = await take(); assert(action.text.includes("!sample") && action.text.includes("!ut") && action.text.includes("!bot")); sent(action);
+  await submit("!bot help"); action = await take(); assert(action.text.includes("!bot name") && action.text.includes("BOT管理者")); sent(action);
   for (const [command, expected] of [["o.unit 0", "ネコ"], ["o.st N0", "id=0"], ["o.tut 0", "わんこ"], ["o.st N000-000", "大地を揺るがす"], ["o.st 3000-000", "長崎県"]]) {
     await submit(command); action = await take(); assert(action.text.includes(expected) && action.text.includes("https://jarjarblink.github.io/JDB/"), action.text); sent(action);
   }

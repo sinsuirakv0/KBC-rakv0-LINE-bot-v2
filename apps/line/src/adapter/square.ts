@@ -146,6 +146,17 @@ export class SquareDirectory {
       result.member = memberDto(response.squareMember);
       if (result.member.memberId !== request.memberId || result.member.squareId !== request.squareId) throw new Error("UnconfirmedMembershipTarget");
       if (![request.state, request.state === "BANNED" ? "6" : "5"].includes(result.member.state)) throw new Error("UnconfirmedMembershipChange");
+    } else if (request.type === "profile") {
+      if (!request.name.trim() || request.name !== request.name.trim() || request.name.length > 20
+          || /[\u0000-\u001f\u007f-\u009f]/u.test(request.name) || !/^[0-9]{1,19}$/.test(request.revision)) throw new Error("InvalidBotName");
+      const chat = await this.chat(chatId);
+      // 実行OCのBot自身の表示名だけを更新する。他人・他OC・roleは対象にしない。
+      if (chat.squareChat.squareMid !== request.squareId || chat.squareChatMember.squareMemberMid !== request.memberId) throw new Error("BotProfileScopeMismatch");
+      const response = await this.client.square.updateSquareMember({ request: { updatedAttrs: ["DISPLAY_NAME"], updatedPreferenceAttrs: [],
+        squareMember: { squareMemberMid: request.memberId, squareMid: request.squareId, revision: BigInt(request.revision), displayName: request.name } } });
+      result.member = memberDto(response.squareMember);
+      if (result.member.memberId !== request.memberId || result.member.squareId !== request.squareId
+          || result.member.name !== request.name || !["JOINED", "2"].includes(result.member.state)) throw new Error("UnconfirmedBotNameChange");
     } else if (request.type === "roles") {
       if (!/^s[0-9a-f]{8,63}$/i.test(request.squareId) || request.members.length < 1 || request.members.length > 2
           || new Set(request.members.map(member => member.memberId)).size !== request.members.length

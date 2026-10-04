@@ -22,7 +22,9 @@ impl ContentCatalog {
         if responses.keys().any(|key| {
             matches!(
                 key.as_str(),
-                "oc" | "oc-admin"
+                "bot"
+                    | "oc"
+                    | "oc-admin"
                     | "id"
                     | "test"
                     | "help"
@@ -40,6 +42,7 @@ impl ContentCatalog {
         let help = read_folder(&root.join("help"))?;
         for key in [
             "index",
+            "bot",
             "oc",
             "oc-admin",
             "id",
@@ -65,7 +68,17 @@ impl ContentCatalog {
             return None;
         }
         if name == "help" {
-            let mut names = vec!["help", "oc", "id", "test", "ut", "tut", "st", "test-notify"];
+            let mut names = vec![
+                "help",
+                "bot",
+                "oc",
+                "id",
+                "test",
+                "ut",
+                "tut",
+                "st",
+                "test-notify",
+            ];
             names.extend(self.responses.keys().map(String::as_str));
             names.sort_unstable();
             return Some(format!(

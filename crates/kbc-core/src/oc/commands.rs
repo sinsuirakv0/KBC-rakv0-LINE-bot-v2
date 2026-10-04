@@ -855,13 +855,14 @@ fn show_history(tx: &Transaction<'_>, job: &Job, now: i64) -> Result<()> {
             params![square, kick_only, if kick_only { 10 } else { 15 }],
             |r| {
                 Ok(format!(
-                    "{} {}\n処分: {}\n対象: {} ({})\n実行者: {} ({})\n理由: {}\n詳細: {}",
+                    "{} {}\n操作: {}\n対象: {} ({})\n実行者: {} ({})\n理由: {}\n詳細: {}",
                     jst(r.get(4)?),
                     r.get::<_, String>(2)?,
                     match r.get::<_, String>(1)?.as_str() {
                         "danger-kick" => "強制退会",
                         "manual-ban" => "強制退会 + 再参加禁止",
                         "left-ban" | "case-ban" => "再参加禁止",
+                        "bot-name" => "Botの名前変更",
                         operation => operation,
                     }
                     .to_owned(),

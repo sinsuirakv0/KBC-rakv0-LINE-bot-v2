@@ -21,6 +21,8 @@ const labChat = mid("m", "b"), labSquare = mid("s", "b"), labBot = mid("p", "c")
 const roles = new Map([[admin, "ADMIN"], [co, "CO_ADMIN"], [mod, "MEMBER"], [user, "MEMBER"], [bot, "CO_ADMIN"]]);
 for (const [id, role] of [[labBot, "MEMBER"], [labUser, "MEMBER"], [labAdmin, "ADMIN"], [labCo, "CO_ADMIN"]]) roles.set(id!, role!);
 const states = new Map<string, string>();
+const names = new Map<string, string>();
+const profileCalls: Array<{ member: string; square: string; name: string; revision: bigint }> = [];
 await writeFile(join(directory, "permissions.json"), JSON.stringify({ version: 1, roles: [
   { chatMid: square, userMid: mod, chatType: "SQUARE", role: "mod" },
   { chatMid: square, userMid: owner, chatType: "SQUARE", role: "admin" },
@@ -30,7 +32,7 @@ let core = createCore(config);
 const db = new DatabaseSync(config.databasePath);
 const controller = new AbortController(), gate = new ApiScheduler(controller.signal, 2, 1);
 const client = new BaseClient({ device: "DESKTOPWIN" });
-const member = (id: string) => ({ squareMemberMid: id, squareMid: [labBot, labUser, labAdmin, labCo].includes(id) ? labSquare : square, displayName: id === user ? "参加者🙂" : "メンバー",
+const member = (id: string) => ({ squareMemberMid: id, squareMid: [labBot, labUser, labAdmin, labCo].includes(id) ? labSquare : square, displayName: names.get(id) ?? (id === user ? "参加者🙂" : "メンバー"),
   role: roles.get(id) ?? "MEMBER", membershipState: states.get(id) ?? "JOINED", revision: 7n });
 let failMutation = false;
 client.square.getSquareChat = async ({ squareChatMid }) => ({ squareChat: { squareChatMid, squareMid: squareChatMid === labChat ? labSquare : square, name: "検証", type: "SQUARE_DEFAULT" },
@@ -39,9 +41,17 @@ client.square.getSquareMember = async ({ squareMemberMid }) => ({ squareMember: 
 client.square.searchSquareMembers = async () => ({ members: [member(user)] }) as Awaited<ReturnType<typeof client.square.searchSquareMembers>>;
 client.square.updateSquareMember = async options => gate.run("updateSquareMember", async () => {
   const updated = options?.request?.squareMember; assert(updated?.squareMemberMid);
+  const profile = options?.request?.updatedAttrs?.includes("DISPLAY_NAME");
+  if (profile) {
+    assert.deepEqual(options?.request?.updatedAttrs, ["DISPLAY_NAME"]);
+    assert.deepEqual(options?.request?.updatedPreferenceAttrs, []);
+    assert.equal(updated.role, undefined); assert.equal(updated.membershipState, undefined);
+    profileCalls.push({ member: updated.squareMemberMid, square: updated.squareMid!, name: updated.displayName!, revision: BigInt(updated.revision!) });
+  }
   gate.beforeFetch(); assert.equal(core.stats().sendingActions, 1);
   if (failMutation) throw new Error("DisconnectedAfterRequest");
-  states.set(updated.squareMemberMid, String(updated.membershipState));
+  if (profile) names.set(updated.squareMemberMid, updated.displayName!);
+  else states.set(updated.squareMemberMid, String(updated.membershipState));
   return { squareMember: member(updated.squareMemberMid) } as Awaited<ReturnType<typeof client.square.updateSquareMember>>;
 });
 let denyRole = false;
@@ -99,6 +109,27 @@ async function signal(id: string, state: string, scope = "square", targetChat = 
     displayName: "参加者🙂", state, scope, memberCreatedAtMs: at, createdAtMs: at });
 }
 try {
+  // OC管理人・副官・BOTモデレーターにも許可せず、実行OCのBot名だけを更新する。
+  for (const actor of [admin, co, mod, user]) {
+    await message("!bot name 未許可", actor); assert(texts(await drain()).includes("BOT管理者専用"));
+  }
+  assert.equal(profileCalls.length, 0);
+  for (const name of ["", "名前\n改行", "🙂".repeat(11)]) {
+    await message(`!bot name ${name}`, owner); assert(texts(await drain()).includes("使い方"));
+  }
+  assert.equal(profileCalls.length, 0);
+  await message("!bot name   KBC  Bot🙂  ", owner, undefined, sub);
+  const renamed = await drain(); assert(texts(renamed).includes("名前を変更しました"));
+  assert.deepEqual(profileCalls.at(-1), { member: bot, square, name: "KBC  Bot🙂", revision: 7n });
+  assert.equal(roles.get(bot), "CO_ADMIN"); assert.equal(states.get(bot), undefined); assert.equal(names.get(labBot), undefined);
+  assert(renamed.filter(a => a.type === "sendMessage").every(a => a.relatedMessageId === ""));
+  await message("o.bot name KBC  Bot🙂", owner); assert(texts(await drain()).includes("すでに")); assert.equal(profileCalls.length, 1);
+  const profileUnknown = core.stats().unknownActions;
+  failMutation = true; await message("o.bot name 新しい名前", owner); assert(texts(await drain()).includes("結果不明")); failMutation = false;
+  await drain(); assert.equal(profileCalls.length, 2); assert.equal(core.stats().unknownActions, profileUnknown + 1);
+  const unknownProfile = db.prepare("SELECT id FROM actions WHERE status='unknown' AND json_extract(payload,'$.request.type')='profile'").get() as { id: string };
+  core.resolveAction({ actionId: unknownProfile.id, status: "failed", code: "ConfirmedUnchangedInFixture" });
+  assert.equal(core.stats().unknownActions, profileUnknown);
   // 管理下の検証OCを複数登録し、確認だけでは変更せず、明示実行を既存配送へ渡す。
   await message(`!test allow ${square} ${labSquare}`, admin); assert(texts(await drain()).includes("BOT管理者専用"));
   await message(`!test admin ${labCo} --target-chat ${labSquare} --apply`, owner);

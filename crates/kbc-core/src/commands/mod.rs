@@ -62,7 +62,7 @@ pub fn prepare(
     let args: Vec<&str> = parts.collect();
     let known = matches!(
         name,
-        "oc" | "id" | "test" | "help" | "ut" | "tut" | "st" | "test-notify"
+        "bot" | "oc" | "id" | "test" | "help" | "ut" | "tut" | "st" | "test-notify"
     ) || content.responses.contains_key(name);
     if !known {
         return CommandPlan::Ignore;
@@ -106,8 +106,8 @@ pub fn prepare(
             )])
         };
     }
-    if name == "oc" {
-        return CommandPlan::Text(vec![(content.command_help("oc").unwrap_or_default(), now)]);
+    if matches!(name, "bot" | "oc") {
+        return CommandPlan::Text(vec![(content.command_help(name).unwrap_or_default(), now)]);
     }
     if matches!(name, "ut" | "tut" | "st") {
         if args.is_empty() {

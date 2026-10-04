@@ -16,6 +16,8 @@
 
 現在のOC所属と実行者の役割をSDKで照会してからRustが判断する。既定prefixは `!`、`o.` も受け付ける。Bot管理権限は `BOT_PERMISSIONS_PATH` で指定した機密ファイルの `version: 1`、`roles[].chatType/chatMid/userMid/role` からSQUAREのadmin/modだけを読み、squareMidと現在トークの旧aliasを照合する。ファイル未指定ならBOT権限なし。旧コードの初期管理者MIDは公開ソースへコピーしない。権限ファイルは起動時に読み、更新後は再起動する。旧ファイルのban・停止設定は今回取り込まない。
 
+`!bot name` はこの所属照会・BOT権限・OC Outboxを共有するBOT管理者専用機能。OC管理人・副官の権限だけでは実行できない。[Bot名の更新と関数](BOT.md)。
+
 | 新しい入力 | 動作 |
 | --- | --- |
 | !oc setup | 送信済みメニューに番号をリプライ。複数は `1 2`、解除は `off 1 2` |

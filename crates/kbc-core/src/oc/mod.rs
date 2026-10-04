@@ -1,4 +1,5 @@
-﻿mod commands;
+﻿mod bot;
+mod commands;
 mod id;
 mod legacy;
 mod moderation;
@@ -412,6 +413,7 @@ pub fn ingest(
         return Ok(true);
     }
     let input = if let Some(input) = commands::parse(text)
+        .or_else(|| bot::parse(text))
         .or_else(|| id::parse(text))
         .or_else(|| test_reply::parse(text))
         .or_else(|| test::parse(text))
@@ -584,7 +586,9 @@ pub fn complete(
                     now,
                 );
             }
-            if job.input.name == "id" {
+            if job.input.name == "bot-name" {
+                bot::execute(runtime, tx, &mut job, now)
+            } else if job.input.name == "id" {
                 id::execute(runtime, tx, &mut job, now)
             } else if job.input.name == "test-reply" {
                 test_reply::execute(runtime, tx, &job, now)
@@ -601,12 +605,17 @@ pub fn complete(
                 return reply(
                     tx,
                     &job,
-                    "権限確認からの待機が長くなったため、未処分です。もう一度実行してください。",
+                    "権限確認からの待機が長くなったため、操作していません。もう一度実行してください。",
                     now,
                 );
             }
-            commands::target(runtime, tx, &mut job, result, now)
+            if job.input.name == "bot-name" {
+                bot::target(runtime, tx, &mut job, result, now)
+            } else {
+                commands::target(runtime, tx, &mut job, result, now)
+            }
         }
+        Phase::Mutation if job.input.name == "bot-name" => bot::mutation(tx, &job, result, now),
         Phase::Mutation => commands::mutation(tx, &mut job, result, now),
         Phase::Chats => commands::chats(tx, &mut job, result, now),
         Phase::Report => moderation::after_report(tx, &mut job, result, now),

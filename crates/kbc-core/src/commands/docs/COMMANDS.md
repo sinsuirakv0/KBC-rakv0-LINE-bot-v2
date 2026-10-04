@@ -23,6 +23,7 @@
 | !ut 0 motion mp4 f w 0~~5 a 0~~5 | 歩行6＋攻撃6FrameをMP4生成 |
 | !tut 0 motion gif a | 敵の攻撃全FrameをGIF生成 |
 | !test-notify 5 | 別の入力なしで期限通知が配送される確認 |
+| !bot name 名前 | BOT管理者限定で実行OCのBotの表示名を変更。[仕様・関数・更新API](../../oc/docs/BOT.md) |
 | !test reply メッセージID [--chat 返信元トークMID] 本文 | BOT管理者限定。実行トークへ返信し、別OCの投稿も参照試験できる |
 
 prefixは `!` を既定とし、`o.` も受け付ける。コマンド名はASCII大文字小文字を区別しない。`unit / enemy / stage` は別名。検索引数は16語・512byteまで。通常はDiscordと同じNFKC・小文字・かな・長音・波線の正規化。空白区切りの語は一つの名称内でAND照合する。形態名と別称を連結して語を跨がせない。utの通常検索は正式形態名を優先し、その後に別称を調べる。
