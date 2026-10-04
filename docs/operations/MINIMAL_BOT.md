@@ -134,3 +134,13 @@ b76f157 / next-story-1765のLinux buildは2分6秒で成功。旧instanceの0 / 
 bc805ff / worthy-office-3638のLinux build成功後、旧instanceを0へ変更して0 / 0を確認し、新版を配備して1 instanceへ戻した。Protocol v10のNativeとAdapterを同時に更新。0.2vCPU / 512MB、Volume追加なし、CD OFFを維持する。起動約15秒のhealthは200 / receiving、PUSH session / sign-on各1、API requests 18 / errors 0 / rateLimits 0、待機・照会・送信中0、配送失敗0 / unknown0、GitHub退避1回 / failures 0、RSS約120MiB、restart 0だった。CoreのunknownActions 13は旧状態からの累積値であり、新起動後に増えていない。
 
 build、型検査、smoke:oc、変更検査、git diff --checkは通過済み。今回の切替後は実LINEの名前変更コマンドをまだ発行していないため、任意の名前が実際に受理されることは未確認。利用者が`!bot name 名前`または`o.bot name 名前`で確認する。
+
+## 2026-10-04の検索リアクションページ配備
+
+b1e9dc5 / august-sheep-2077のLinux buildは2分10秒で成功。旧instanceを0へ変更して0 / 0を確認後、新版を配備して1 instanceへ戻した。Protocol v11のNativeとAdapterを同時に更新した。0.2vCPU / 512MB、Volume追加なし、CD OFFを維持する。
+
+ut / tut / stとファイル一覧の番号リプライを項目選択へ限定し、一覧メッセージの👍（NICE）を次ページ、❤️（LOVE）を前ページにした。リアクション通知に利用者MIDがないため、対象の最新一覧だけ既存OutboxとAPI制御で取得し、検索者を確認する。送信成功まで旧ページを保持し、配送中の選択・通知の連打・旧一覧への操作を区別する。[SDK仕様・関数・検証範囲](../../apps/line/docs/REACTIONS_AND_STICKERS.md)。
+
+build、型検査、smoke / smoke:commands / smoke:oc、Clippy、BOM / LF / 資料リンク検査を通過した。実LINEの通知47の到達とgetMessageReactionsの受理は利用者の操作で確認する。スタンプは受信metadataと送信経路を調査・記録した段階で、送信コマンドは今回追加していない。
+
+15:27 JST、起動約21秒でhealth 200 / receiving、PUSH session / sign-on各1、12トークの定期取得・優先4、補完・定期取得・一覧取得の失敗0。API requests 20 / errors 0 / rateLimits 0、GitHub退避1回 / failures 0、RSS約121MiB。Core完了191件・既存unknown 15件を復元し、待機・照会・送信中0、新規配送の失敗・unknown0を確認した。NorthflankはRunning / 1 / 1、起動約1分でrestart 0を確認。旧unknownは推測で再送しない。新起動後のログ同期周期と実Command配送はこの初期観測では未実施。
