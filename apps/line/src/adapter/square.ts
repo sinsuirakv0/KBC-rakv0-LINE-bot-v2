@@ -153,8 +153,10 @@ export class SquareDirectory {
       const chat = await this.chat(chatId);
       // 実行OCのBot自身の表示名だけを更新する。他人・他OC・roleは対象にしない。
       if (chat.squareChat.squareMid !== request.squareId || chat.squareChatMember.squareMemberMid !== request.memberId) throw new Error("BotProfileScopeMismatch");
-      const response = await this.client.square.updateSquareMember({ request: { updatedAttrs: ["DISPLAY_NAME"], updatedPreferenceAttrs: [],
+      await this.client.square.updateSquareMember({ request: { updatedAttrs: ["DISPLAY_NAME"], updatedPreferenceAttrs: [],
         squareMember: { squareMemberMid: request.memberId, squareMid: request.squareId, revision: BigInt(request.revision), displayName: request.name } } });
+      // 更新応答は完全なプロフィールとは限らないため、1回の読み取りで実際の変更を確認する。
+      const response = await this.client.square.getSquareMember({ squareMemberMid: request.memberId });
       result.member = memberDto(response.squareMember);
       if (result.member.memberId !== request.memberId || result.member.squareId !== request.squareId
           || response.squareMember.displayName !== request.name || !["JOINED", "2"].includes(result.member.state)) throw new Error("UnconfirmedBotNameChange");

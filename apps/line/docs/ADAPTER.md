@@ -50,7 +50,7 @@ Protocol v10。通常返信の実送信IDをCoreへ渡し、候補promptへ結�
 
 normalizeEventは本文なしの画像・動画、OC全体のmember状態、トーク内の参加退出を正規化する。時刻・scope・状態を分け、関連member作成時刻がない場合は初参加と推定しない。SquareDirectoryはchat→OC/botを512件・10分でcacheし、32件まで同じ照会をまとめる。roleはcacheから許可せず現在のgetSquareMemberで確認する。SDK返値のMIDとrevisionを検査する。baseline以前の履歴ではOC追加取得をしない。
 
-Profile要求は実行トークのOC / Bot MIDと照合して、updateSquareMemberのDISPLAY_NAMEだけを更新する。引数なしとrevisionを検査する。Bot独自の文字数・改行・制御文字の制限は設けず、未加工の名前を渡す。Member照会では表示用DTOとは別のrawMemberNameを返し、Profile更新もSDKの未加工displayNameと比較して成功を確認する。[Bot名変更の入力・権限・関数](../../../crates/kbc-core/src/oc/docs/BOT.md)。
+Profile要求は実行トークのOC / Bot MIDと照合して、updateSquareMemberのDISPLAY_NAMEだけを更新する。引数なしとrevisionを検査する。Bot独自の文字数・改行・制御文字の制限は設けず、未加工の名前を渡す。Member照会では表示用DTOとは別のrawMemberNameを返す。Profile更新応答は完全なDTOとして扱わず、その後にgetSquareMemberを1回行い、SDKの未加工displayName・所属・参加状態と比較して成功を確認する。[Bot名変更の入力・権限・関数](../../../crates/kbc-core/src/oc/docs/BOT.md)。
 
 context / member / chats / members / joinedChatsはnextQueryActionから1本の照会loopで取得する。通常配送は2本のままで、全RPCは既存ApiSchedulerの同じ上限を共有する。membershipはupdateSquareMember(updatedAttrs=[5], revision付き)、通報はreportSquareMessage(SCAM)。更新・通報も実fetch直前にsendingを保存し、通信後失敗を自動再試行しない。読み取りはfailedで確定でき、再起動は再取得する。
 

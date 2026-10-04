@@ -52,7 +52,7 @@ client.square.updateSquareMember = async options => gate.run("updateSquareMember
   if (failMutation) throw new Error("DisconnectedAfterRequest");
   if (profile) names.set(updated.squareMemberMid, updated.displayName!);
   else states.set(updated.squareMemberMid, String(updated.membershipState));
-  return { squareMember: member(updated.squareMemberMid) } as Awaited<ReturnType<typeof client.square.updateSquareMember>>;
+  return (profile ? {} : { squareMember: member(updated.squareMemberMid) }) as Awaited<ReturnType<typeof client.square.updateSquareMember>>;
 });
 let denyRole = false;
 const roleCalls: Array<Array<{ id: string; square: string; role: string; revision: bigint }>> = [];

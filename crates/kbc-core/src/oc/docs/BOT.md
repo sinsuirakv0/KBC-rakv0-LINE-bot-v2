@@ -18,7 +18,7 @@
 | oc::ingest / complete | 既存Context照会で実行者と所属を確認し、bot::executeへ渡す |
 | bot::execute | BOT管理者と入力を確認し、Member照会へ進む |
 | bot::target | Bot自身・OC・JOINED・未加工の現在名を確認。完全一致なら更新しない。再度BOT権限を確認し、Profile変更Actionを発行 |
-| SquareDirectory.execute(member / profile) | Member照会のrawMemberNameで未加工の現在名を渡す。Profile変更は実行トークの親OCとBot MIDを照合し、updateSquareMemberへ渡す。返されたMID・OC・未加工の名前・JOINEDを確認して成功を返す |
+| SquareDirectory.execute(member / profile) | Member照会のrawMemberNameで未加工の現在名を渡す。Profile変更は実行トークの親OCとBot MIDを照合し、updateSquareMemberへ渡す。その後にgetSquareMemberを1回行い、MID・OC・未加工の名前・JOINEDを確認して成功を返す |
 | bot::mutation | 共通oc_historyへ旧名・新名・結果を記録し、実行トークへ通常送信で報告 |
 | bot::display_name | 結果メッセージ用に80文字へ短縮し制御文字を可視化。APIへ渡す本文には使わない |
 
@@ -31,3 +31,5 @@ Protocol v9のProfileは変更要求。v10はOcResultに任意のrawMemberName�
 smoke:ocはOC管理人・副官・BOT mod・一般参加者の拒否、BOT管理者の成功、サブトークの親OC解決、日本語・空白・絵文字、同名の更新省略、roleとmembershipStateの非変更、通信後unknownの非再実行を検証する。制限撤廃後は80文字を超える名前・前後の空白・CR / LF・TAB・NUL・ESC・U+0085を混ぜた入力がAPIへ完全一致で渡り、成功判定されること、再入力時の同名更新省略、表示整形後の文字列へ実際に改名できることを同じシナリオで確認する。API契約はモック検証であり、実LINEでの改名成功・禁止文字の挙動とは区別する。
 
 2026-10-04の制限撤廃後にnpm run build、smoke:oc、smoke:commands、既存smoke、cargo clippy --workspace --all-targets --release --locked -- -D warnings、BOM / LF / 資料リンク検査を通過した。
+
+初回のv10配備後に実LINEでupdateSquareMemberが呼ばれ、API errors 0のままInvalidSquareMemberResponseでunknownとなる配送を2件観測した。更新応答をgetSquareMemberと同じ完全なDTOとして扱っていたため、Profile更新後にgetSquareMemberを1回行う確認へ修正した。更新要求は再実行せず、読み取りが失敗・所属や名前が不一致ならunknownを維持する。追加取得は手動改名時だけで、定期処理には追加しない。Smokeの更新応答を空のオブジェクトとして、この返答形でも読み取りで成功確認できることを検証する。
