@@ -60,6 +60,11 @@ impl NativeCore {
     }
 
     #[napi]
+    pub async fn run_store_monitors(&self) -> Result<()> {
+        convert(self.runtime.run_store_monitors().await)
+    }
+
+    #[napi]
     pub async fn run_media_jobs(&self) -> Result<()> {
         convert(self.runtime.run_media_jobs().await)
     }

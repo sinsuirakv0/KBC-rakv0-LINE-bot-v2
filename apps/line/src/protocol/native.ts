@@ -18,6 +18,7 @@ export interface NativeCore {
   submitBatchAsync(batch: ReceivedBatch): Promise<BatchReceipt>;
   prepareImage(actionId: string): Promise<Buffer | null>;
   runMediaJobs(): Promise<void>;
+  runStoreMonitors(): Promise<void>;
   prepareAttachment(actionId: string): Promise<Buffer | null>;
   nextAction(): Promise<CoreAction | null>;
   nextQueryAction(): Promise<CoreAction | null>;
@@ -45,6 +46,7 @@ export function createCore(config: CoreConfig): NativeCore {
     submitBatchAsync: batch => handle.submitBatchAsync(JSON.stringify(batch)),
     prepareImage: actionId => handle.prepareImage(actionId),
     runMediaJobs: () => handle.runMediaJobs(),
+    runStoreMonitors: () => handle.runStoreMonitors(),
     prepareAttachment: actionId => handle.prepareAttachment(actionId),
     nextAction: () => handle.nextAction(),
     nextQueryAction: () => handle.nextQueryAction(),

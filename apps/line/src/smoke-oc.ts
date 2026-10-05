@@ -135,6 +135,41 @@ async function signal(id: string, state: string, scope = "square", targetChat = 
     displayName: "参加者🙂", state, scope, memberCreatedAtMs: at, createdAtMs: at });
 }
 try {
+  // 通知設定はトーク単位。副官・一般参加者は不可、OC管理者とBOT管理権限は可。
+  for (const actor of [co, user]) {
+    await message("!pushsetting android,ios", actor); assert(texts(await drain()).includes("権限が必要"));
+  }
+  await message("!pushsetting android,ios", admin); assert(texts(await drain()).includes("ON"));
+  await message("!pushsetting android", admin); await drain();
+  assert.equal(db.prepare("SELECT count(*) AS n FROM store_subscriptions WHERE chat=?").get(chat)?.n, 2);
+  await message("o.pushsetting ios", mod, undefined, sub); await drain();
+  await message("!pushsetting android off", owner); await drain();
+  await message("!pushsetting status", admin); assert(texts(await drain()).includes("未確認"));
+  core.shutdown(); core = createCore(config);
+  assert.equal(db.prepare("SELECT count(*) AS n FROM store_subscriptions").get()?.n, 2);
+  await message("!pushsetting android,ios off", admin); await drain();
+  await message("!pushsetting ios off", mod, undefined, sub); await drain();
+  assert.equal(db.prepare("SELECT count(*) AS n FROM store_subscriptions").get()?.n, 0);
+  const idleMonitors = core.runStoreMonitors(); core.shutdown(); await idleMonitors; core = createCore(config);
+  // 廃止前の保存DTO: 未通信は取消し、unknownの明示照合で後続を作らない。
+  const retiredEvent: CoreEvent = { type: "messageReceived", eventId: "retired", chatId: chat, messageId: "old", text: "!test mention-label", createdAtMs: Date.now() };
+  const retiredContinuation = JSON.stringify({ event: retiredEvent, input: { name: "test", args: ["mention-label"], body: "" },
+    phase: "Mutation", step: 2, context: null, targets: [user], results: [], operation: "test-mention-label", case_id: null, deferred: null,
+    test: { operation: "mention-label", chat, members: [user], message: "", text: "試験", apply: true, context: null, separate: false } });
+  core.shutdown();
+  for (const status of ["queued", "unknown"]) {
+    const actionId = `retired-${status}`;
+    const payload = JSON.stringify({ type: "ocApi", actionId, eventId: "retired", chatId: chat, createdAtMs: Date.now(), continuation: retiredContinuation,
+      request: { type: "post", chatId: chat, text: "@試験", mention: { memberId: user, start: 0, end: 3 } } });
+    db.prepare("INSERT INTO actions(id,event_id,chat,payload,due,created,status) VALUES(?,'retired',?,?,0,0,?)").run(actionId, chat, payload, status);
+  }
+  core = createCore(config);
+  assert.equal(db.prepare("SELECT code FROM actions WHERE id='retired-queued'").get()?.code, "CommandRetired");
+  assert.equal(core.stats().unknownActions, 1);
+  core.resolveAction({ actionId: "retired-unknown", status: "sent", code: "Verified", messageId: "old-confirmed" });
+  assert.equal(core.stats().unknownActions, 0);
+  const beforeRetired = mentionSends.length;
+  await message("!test mention-label", owner); await drain(); assert.equal(mentionSends.length, beforeRetired);
   // OC管理人・副官・BOTモデレーターにも許可せず、実行OCのBot名だけを更新する。
   for (const actor of [admin, co, mod, user]) {
     await message("!bot name 未許可", actor); assert(texts(await drain()).includes("共通案内: BOT管理者専用"));

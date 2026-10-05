@@ -110,7 +110,7 @@ async function main(): Promise<void> {
       }
     };
     started = true;
-    tasks.push(receiver.run(), deliver(), deliver(), deliver(true), activeCore.runMediaJobs());
+    tasks.push(receiver.run(), deliver(), deliver(), deliver(true), activeCore.runMediaJobs(), activeCore.runStoreMonitors());
     tasks.push(searchData.run(controller.signal));
     if (persistence) tasks.push(persistence.run(activeCore, controller.signal));
     if (logs) tasks.push(logs.run(controller.signal));

@@ -176,3 +176,5 @@ BOT管理者専用の!test sticker <セットID> <スタンプID>を追加した
 切替直前はhealth 200 / receiving、Core完了208件・既存unknown 15件、待機・照会・送信中・pendingLogs 0。GitHub退避23回 / failures 0、ログ同期4周期・10行 / failures 0。17:00 JST、新版の起動約18秒でhealth 200 / receiving、PUSH session / sign-on各1、12トークの定期取得・優先4、補完・定期取得・一覧取得の失敗0。API requests 21 / errors 0 / rateLimits 0、GitHub退避1回 / failures 0、RSS約122MiB。Core完了208件・既存unknown 15件を復元し、待機・照会・送信中0、新規配送の失敗・unknown0を確認した。NorthflankはRunning / 1 / 1、restart 0を確認。ログ1行は5分同期の待機中で、同期完了はこの初期観測では未確認。
 
 build、型検査、3種類のSmoke、Clippy、BOM / LF / 資料リンク検査は通過。Codexから実OCへのスタンプ試験は発行していない。配備・受信開始・模擬SDK送信を実LINEでのスタンプ受理や表示の成功とは扱わず、利用者が!id stickerで取得した少数のIDを試す。
+
+2026-10-05、にゃんこストア更新通知を移植。追加環境変数は不要、初期登録は空。Protocol v16のNative/Adapterを同時に更新し、対象トークで!pushsetting android,iosを登録する。解除は同引数にoff、状態は!pushsetting status。基準・設定・通知は既存Core snapshotの退避対象。[状態と未確認点](../../crates/kbc-core/src/store_update/docs/STORE_UPDATE.md)。
