@@ -24,6 +24,7 @@ impl ContentCatalog {
             matches!(
                 key.as_str(),
                 "pushsetting"
+                    | "skd"
                     | "bot"
                     | "oc"
                     | "oc-admin"
@@ -45,6 +46,7 @@ impl ContentCatalog {
         for key in [
             "index",
             "pushsetting",
+            "skd",
             "bot",
             "oc",
             "oc-admin",

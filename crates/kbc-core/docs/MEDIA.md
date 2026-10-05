@@ -29,3 +29,5 @@ RenderContext.check_memoryはLinuxコンテナの使用量を共通Workerで確�
 利用者に送る素材取得・生成失敗・添付消失の案内は[Messages](MESSAGES.md)のmedia.txtで変更する。監視用のerror code・stderrと、現在配送しない内部のMotion進捗は文面設定の対象に含めない。
 
 2026-10-05、索引はMedia処理開始時だけ読み、revision照合と取得先の決定後に破棄する。FileListは確認後に再照合して一覧文面だけをfinish_mediaへ渡す。取得Clientと2 HTTP枠はRuntime全体で共有し、Commandやジョブごとに通信枠を増やさない。最新データの確認が2分を超える場合、新規準備は取得失敗案内へ変える。[更新の契約](../../../data/search/docs/SNAPSHOT.md)。
+
+2026-10-05、MediaRequest::Scheduleを追加した。描画・素材と同じ有限準備workerでHTTP取得・差分整形を行い、検索索引の読み込み・FFmpeg・素材revision照合を通さず本文付き親SendMessageへ変換する。HTTPは共通AssetService。Outbox容量はprepareMediaに最大33配送枠を保守的に予約する。スケジュールの本文は最大32×1,500 UTF-16単位。[処理と保存](../src/skd/docs/SKD.md)。

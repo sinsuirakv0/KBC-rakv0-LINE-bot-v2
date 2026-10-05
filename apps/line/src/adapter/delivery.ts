@@ -1,5 +1,6 @@
 ﻿import type { BaseClient } from "@evex/linejs/base";
 import type { CoreAction, NativeCore } from "../protocol/native.js";
+import { setTimeout as delay } from "node:timers/promises";
 import { ApiScheduler, errorCode, type SendAttempt } from "./api.js";
 import { SquareDirectory, messageMetadata } from "./square.js";
 
@@ -47,12 +48,21 @@ export async function deliverAction(client: BaseClient, core: NativeCore, gate: 
   if (message?.attachment && !bytes) return { status: "queued", code: "MediaUnavailable" };
   if (message?.imageUrl && !bytes) return { status: "queued", code: "ImageUnavailable" };
   let storeError: unknown;
-  const attempt: SendAttempt = { started: false, method: message ? bytes ? "uploadMedia" : "sendMessage" : "destroyMessage", beforeSend: () => {
+  const attempt: SendAttempt = { started: false, method: message ? bytes ? "uploadMedia" : message.threadRootId ? "sendSquareThreadMessage" : "sendMessage" : "destroyMessage", beforeSend: () => {
     try { core.markSending(action.actionId); }
     catch (error) { storeError = error; throw error; }
   } };
   let code = "OK";
   let messageId: string | undefined;
+  let threadMid: string | undefined;
+  if (message?.threadRootId) {
+    try { threadMid = await resolveThread(client, message.chatId, message.threadRootId); }
+    catch (error) {
+      const code = errorCode(error);
+      core.completeAction({ actionId: action.actionId, status: "failed", code });
+      return { status: "failed", code };
+    }
+  }
   try {
     if (action.type === "sendMessage") {
       if (bytes) {
@@ -65,7 +75,13 @@ export async function deliverAction(client: BaseClient, core: NativeCore, gate: 
         messageId = uploaded.objId;
         if (!messageId) throw new Error("MissingSentMessageId");
       } else {
-        const sent = await gate.withSendAttempt(attempt, () => client.square.sendMessage({ squareChatMid: action.chatId,
+        const sent = action.threadRootId ? await gate.withSendAttempt(attempt, async () => {
+          const sent = await client.square.sendSquareThreadMessage({ request: {
+            reqSeq: await client.getReqseq("sq"), chatMid: action.chatId, threadMid: threadMid!,
+            threadMessage: { message: { to: threadMid!, text: action.text, contentType: "NONE", toType: "SQUARE_THREAD" } },
+          } });
+          return { createdSquareMessage: sent.createdThreadMessage };
+        }) : await gate.withSendAttempt(attempt, () => client.square.sendMessage({ squareChatMid: action.chatId,
           relatedMessageId: action.relatedMessageId || undefined, text: action.text,
           contentMetadata: messageMetadata(action.mention, action.emojis) }));
         messageId = sent.createdSquareMessage?.message?.id;
@@ -88,4 +104,20 @@ export async function deliverAction(client: BaseClient, core: NativeCore, gate: 
   }
   core.completeAction({ actionId: action.actionId, status: "sent", code, messageId });
   return { status: "sent", code };
+}
+
+async function resolveThread(client: BaseClient, chatId: string, rootId: string): Promise<string> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await client.square.getSquareThreadMid({ request: { chatMid: chatId, messageId: rootId } });
+      if (!response.threadMid || response.threadMid.length > 256) throw new Error("MissingThreadMid");
+      // 親の送信後の待機はCoreのdueで保存する。照会直後にも旧Botと同じ300msを置く。
+      await delay(300);
+      return response.threadMid;
+    } catch (error) {
+      if (attempt === 2 || !["NOT_FOUND", "404", "MissingThreadMid", "TIMEOUT", "ETIMEDOUT", "500", "502", "503", "504"].includes(errorCode(error))) throw error;
+      await delay(300);
+    }
+  }
+  throw new Error("MissingThreadMid");
 }

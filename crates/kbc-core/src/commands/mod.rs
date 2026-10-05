@@ -44,6 +44,7 @@ pub fn split_responses(
 #[derive(serde::Serialize, serde::Deserialize)]
 pub enum CommandPlan {
     Text(Vec<(String, i64)>),
+    Prepare(Box<crate::media::MediaJob>),
     Search(SearchSession),
     Ignore,
 }
@@ -66,7 +67,17 @@ pub fn prepare(
     let args: Vec<&str> = parts.collect();
     let known = matches!(
         name,
-        "pushsetting" | "bot" | "oc" | "id" | "test" | "help" | "ut" | "tut" | "st" | "test-notify"
+        "skd"
+            | "pushsetting"
+            | "bot"
+            | "oc"
+            | "id"
+            | "test"
+            | "help"
+            | "ut"
+            | "tut"
+            | "st"
+            | "test-notify"
     ) || content.responses.contains_key(name);
     if !known {
         return CommandPlan::Ignore;
@@ -86,6 +97,17 @@ pub fn prepare(
     }
     if name == "id" {
         return CommandPlan::Ignore;
+    }
+    if name == "skd" {
+        return match crate::skd::parse_date(&args) {
+            Ok(date) => CommandPlan::Prepare(Box::new(crate::media::MediaJob {
+                catalog_revision: String::new(),
+                request: crate::media::MediaRequest::Schedule { date },
+            })),
+            Err(_) => {
+                CommandPlan::Text(vec![(content.command_help("skd").unwrap_or_default(), now)])
+            }
+        };
     }
     if matches!(name, "pushsetting" | "test" | "bot" | "oc") {
         return if args.is_empty() {

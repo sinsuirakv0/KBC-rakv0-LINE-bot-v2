@@ -10,6 +10,26 @@ use std::{cmp::Ordering, sync::Arc, time::Duration};
 mod source;
 const MAX_SUBSCRIPTIONS: i64 = 512;
 
+#[derive(Clone, Copy)]
+enum Topic {
+    Store(StorePlatform),
+    Schedule,
+}
+impl Topic {
+    fn key(self) -> &'static str {
+        match self {
+            Self::Store(platform) => platform.key(),
+            Self::Schedule => "skd",
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Self::Store(platform) => platform.label(),
+            Self::Schedule => "skd",
+        }
+    }
+}
+
 pub fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS store_subscriptions(platform TEXT NOT NULL,chat TEXT NOT NULL,PRIMARY KEY(platform,chat));
         CREATE TABLE IF NOT EXISTS store_versions(platform TEXT PRIMARY KEY,version TEXT NOT NULL,checked INTEGER NOT NULL,error TEXT NOT NULL DEFAULT '');")?;
@@ -25,23 +45,28 @@ pub fn configure(
     let catalog = &runtime.content.messages;
     let chat = identity(event).1;
     if args == ["status"] {
-        return [StorePlatform::Android, StorePlatform::Ios]
-            .into_iter()
-            .map(|platform| status(runtime, tx, platform, chat))
-            .collect::<Result<Vec<_>>>()
-            .map(|rows| rows.join("\n\n"));
+        return [
+            Topic::Store(StorePlatform::Android),
+            Topic::Store(StorePlatform::Ios),
+            Topic::Schedule,
+        ]
+        .into_iter()
+        .map(|platform| status(runtime, tx, platform, chat))
+        .collect::<Result<Vec<_>>>()
+        .map(|rows| rows.join("\n\n"));
     }
     let platforms = args
         .first()
         .and_then(|value| value.split(',').map(platform).collect::<Option<Vec<_>>>());
-    let Some(mut platforms) = platforms.filter(|values| !values.is_empty() && values.len() <= 2)
+    let Some(mut platforms) = platforms.filter(|values| !values.is_empty() && values.len() <= 3)
     else {
         return Ok(runtime
             .content
             .command_help("pushsetting")
             .unwrap_or_default());
     };
-    platforms.dedup();
+    platforms.sort_by_key(|platform| platform.key());
+    platforms.dedup_by_key(|platform| platform.key());
     let operation = args.get(1).map_or("on", String::as_str);
     if args.len() > 2 || !matches!(operation, "on" | "off" | "status") {
         return Ok(runtime
@@ -84,6 +109,10 @@ pub fn configure(
                 "DELETE FROM store_subscriptions WHERE platform=?1 AND chat=?2",
                 params![platform.key(), chat],
             )?;
+            if platform.key() == "skd" {
+                tx.execute("DELETE FROM schedule_targets WHERE chat=?1", [chat])?;
+                tx.execute("DELETE FROM schedule_updates WHERE NOT EXISTS(SELECT 1 FROM schedule_targets t WHERE t.timestamp=schedule_updates.timestamp)",[])?;
+            }
             // 未送信の通知だけ取消す。通信開始後の成否は従来のOutboxへ任せる。
             tx.execute(
                 "DELETE FROM actions WHERE status='queued' AND chat=?1 AND event_id LIKE ?2",
@@ -104,20 +133,16 @@ pub fn configure(
     Ok(rows.join("\n"))
 }
 
-fn platform(value: &str) -> Option<StorePlatform> {
+fn platform(value: &str) -> Option<Topic> {
     match value {
-        "android" => Some(StorePlatform::Android),
-        "ios" => Some(StorePlatform::Ios),
+        "android" => Some(Topic::Store(StorePlatform::Android)),
+        "ios" => Some(Topic::Store(StorePlatform::Ios)),
+        "skd" => Some(Topic::Schedule),
         _ => None,
     }
 }
 
-fn status(
-    runtime: &Runtime,
-    db: &Connection,
-    platform: StorePlatform,
-    chat: &str,
-) -> Result<String> {
+fn status(runtime: &Runtime, db: &Connection, platform: Topic, chat: &str) -> Result<String> {
     let catalog = &runtime.content.messages;
     let enabled: bool = db.query_row(
         "SELECT EXISTS(SELECT 1 FROM store_subscriptions WHERE platform=?1 AND chat=?2)",
@@ -139,7 +164,18 @@ fn status(
     if version.is_empty() {
         version = message!(catalog, "update.unobserved").into();
     }
-    let pending: i64 = db.query_row("SELECT count(*) FROM actions WHERE chat=?1 AND event_id LIKE ?2 AND status NOT IN ('sent','failed')",params![chat,format!("store:{}:%",platform.key())],|row|row.get(0))?;
+    if platform.key() == "skd" {
+        version = crate::skd::monitor::display_watermark(&version)
+            .unwrap_or_else(|| message!(catalog, "update.unobserved").into());
+    }
+    let mut pending: i64 = db.query_row("SELECT count(*) FROM actions WHERE chat=?1 AND event_id LIKE ?2 AND status NOT IN ('sent','failed')",params![chat,format!("store:{}:%",platform.key())],|row|row.get(0))?;
+    if platform.key() == "skd" {
+        pending += db.query_row(
+            "SELECT count(*) FROM schedule_targets WHERE chat=?1",
+            [chat],
+            |row| row.get::<_, i64>(0),
+        )?;
+    }
     Ok(message!(
         catalog,
         "update.status",
@@ -174,7 +210,8 @@ impl Runtime {
         }
         tokio::join!(
             self.store_loop(StorePlatform::Android),
-            self.store_loop(StorePlatform::Ios)
+            self.store_loop(StorePlatform::Ios),
+            self.schedule_loop()
         );
         self.store_worker_active
             .store(false, std::sync::atomic::Ordering::Release);
@@ -286,11 +323,7 @@ impl Runtime {
                     if !confirmed {
                         return Err("StoreVersionUnconfirmed".into());
                     }
-                    let pending: i64 = tx.query_row(
-                        "SELECT count(*) FROM actions WHERE status NOT IN ('sent','failed')",
-                        [],
-                        |row| row.get(0),
-                    )?;
+                    let pending = crate::skd::pending_count(&tx)?;
                     if pending + chats.len() as i64 > crate::MAX_ACTIONS {
                         return Err("StoreCapacity".into());
                     }
@@ -320,7 +353,7 @@ impl Runtime {
     }
 }
 
-fn detected_at(now: i64) -> Result<String> {
+pub(crate) fn detected_at(now: i64) -> Result<String> {
     let date: DateTime<Utc> = DateTime::from_timestamp_millis(now).ok_or("InvalidStoreTime")?;
     let date = date.with_timezone(&FixedOffset::east_opt(9 * 3600).ok_or("InvalidTimezone")?);
     let weekday =

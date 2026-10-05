@@ -13,6 +13,7 @@
     "smoke:commands": "node dist/smoke-commands.js",
     "smoke:messages": "node dist/smoke-messages.js",
     "smoke:oc": "node dist/smoke-oc.js",
+    "smoke:skd": "node dist/smoke-skd.js",
     "smoke:persistence": "node dist/smoke-persistence.js",
     "smoke:logs": "node dist/smoke-logs.js",
     "snapshot:search": "node scripts/search-snapshot.cjs",

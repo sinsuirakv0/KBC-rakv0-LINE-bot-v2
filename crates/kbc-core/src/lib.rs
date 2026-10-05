@@ -20,6 +20,7 @@ mod messages;
 mod motion;
 mod oc;
 mod permissions;
+mod skd;
 mod store_update;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -122,6 +123,7 @@ impl Runtime {
         commands::sessions::initialize(&db)?;
         logs::initialize(&db)?;
         store_update::initialize(&db)?;
+        skd::monitor::initialize(&db)?;
         oc::import_legacy(&mut db, config.legacy_oc_settings_path.as_deref())?;
         // 遠隔退避以後に送信された可能性がある。期限済みの副作用は照合まで再実行しない。
         if config.restored_from_backup.unwrap_or(false) {
@@ -370,11 +372,7 @@ impl Runtime {
             logs::check_capacity(&tx)?;
         }
         let event_count: i64 = tx.query_row("SELECT count(*) FROM events", [], |row| row.get(0))?;
-        let action_count: i64 = tx.query_row(
-            "SELECT count(*) FROM actions WHERE status IN ('queued','preparing','claimed','querying','sending','unknown')",
-            [],
-            |row| row.get(0),
-        )?;
+        let action_count = skd::pending_count(&tx)?;
         if event_count > i64::from(self.max_retained_events) || action_count > MAX_ACTIONS {
             return Err("StoreCapacity".into());
         }
@@ -492,6 +490,8 @@ impl Runtime {
                     related_message_id: String::new(),
                     emojis: None,
                     text: body,
+                    thread_root_id: None,
+                    thread_contents: None,
                     image_url: None,
                     attachment: None,
                     mention: None,
@@ -540,6 +540,10 @@ impl Runtime {
                     AND ?1=COALESCE(json_extract(a.payload,'$.type')='ocApi'
                         AND json_extract(a.payload,'$.request.type') IN ('context','member','chats','members','joinedChats','inspect','reactions'),0)
                     AND (?1=1 OR NOT EXISTS (SELECT 1 FROM actions b WHERE b.chat=a.chat AND b.status IN ('claimed','sending')))
+                    AND (json_extract(a.payload,'$.threadRootId') IS NULL OR NOT EXISTS
+                        (SELECT 1 FROM actions b WHERE b.event_id=a.event_id AND b.chat=a.chat AND b.rowid<a.rowid
+                         AND json_valid(b.payload) AND json_extract(b.payload,'$.threadRootId') IS NOT NULL
+                         AND b.status NOT IN ('sent','failed')))
                     ORDER BY a.due,a.rowid LIMIT 1", [query],
                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).optional()?;
                 match next {
@@ -709,6 +713,7 @@ impl Runtime {
                 [&result.action_id],
             )?;
         }
+        skd::complete(&tx, &completed, &result)?;
         oc::complete(
             self,
             &tx,

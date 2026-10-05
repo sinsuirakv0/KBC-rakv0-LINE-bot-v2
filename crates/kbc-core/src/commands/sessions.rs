@@ -89,6 +89,7 @@ fn apply_inner(
         return Ok(vec![]);
     };
     match plan {
+        CommandPlan::Prepare(job) => Ok(vec![(String::new(), now, Some(*job))]),
         CommandPlan::Text(messages) => Ok(messages
             .into_iter()
             .map(|(text, due)| (text, due, None))

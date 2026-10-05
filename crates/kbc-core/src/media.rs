@@ -20,6 +20,7 @@ pub const MAX_OUTPUT_BYTES: u64 = 8 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize)]
 pub enum MediaRequest {
+    Schedule { date: Option<String> },
     Download { path: String },
     FileList { session_id: String },
     Motion(Box<MotionPlan>),
@@ -155,6 +156,7 @@ impl Runtime {
                 return Err("InvalidMediaJob".into());
             };
             let job: MediaJob = serde_json::from_str(request)?;
+            let is_schedule = matches!(&job.request, MediaRequest::Schedule { .. });
             let workspace = self.media_root.join(format!("job-{row_id}"));
             tokio::fs::create_dir_all(&workspace).await?;
             let context = RenderContext {
@@ -164,6 +166,12 @@ impl Runtime {
                 memory_peak: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             };
             let future = async {
+                if let MediaRequest::Schedule { date } = &job.request {
+                    return self
+                        .prepare_schedule(date.clone())
+                        .await
+                        .map(MediaOutput::Thread);
+                }
                 let search = crate::commands::search::SearchCatalog::load(
                     &self.search_path,
                     Arc::clone(&self.content.messages),
@@ -198,7 +206,7 @@ impl Runtime {
                     },
                 }
             };
-            self.finish_media(action, outcome)?;
+            self.finish_media(action, outcome, is_schedule)?;
             let retained: bool = self.database.lock().map_err(|_|"DatabaseLock")?.query_row("SELECT EXISTS(SELECT 1 FROM actions WHERE id=?1 AND json_extract(CASE WHEN json_valid(payload) THEN payload ELSE '{}' END,'$.attachment') IS NOT NULL)",[&action_id],|row|row.get(0))?;
             if !retained {
                 tokio::fs::remove_dir_all(&workspace).await?;
@@ -237,6 +245,7 @@ impl Runtime {
         context: RenderContext,
     ) -> Result<MediaOutput> {
         match request {
+            MediaRequest::Schedule { .. } => Err("InvalidMediaRequest".into()),
             MediaRequest::FileList { session_id } => {
                 let stored: Option<String> = self
                     .database
@@ -337,7 +346,12 @@ impl Runtime {
             }
         }
     }
-    fn finish_media(&self, action: CoreAction, outcome: Result<MediaOutput>) -> Result<()> {
+    fn finish_media(
+        &self,
+        action: CoreAction,
+        outcome: Result<MediaOutput>,
+        is_schedule: bool,
+    ) -> Result<()> {
         let message_catalog = &self.content.messages;
         let CoreAction::PrepareMedia {
             action_id,
@@ -357,7 +371,12 @@ impl Runtime {
         let mut text = String::new();
         let mut attachment = None;
         let mut file_list_ready = false;
+        let mut thread_contents = None;
         match outcome {
+            Ok(MediaOutput::Thread(contents)) => {
+                text = message!(message_catalog, "skd.root").into();
+                thread_contents = Some(contents);
+            }
             Ok(MediaOutput::Superseded) => {
                 tx.execute("UPDATE actions SET status='failed',payload='',code='Superseded',completed=?2 WHERE id=?1 AND status='preparing'",params![action_id,now_ms()])?;
                 crate::trim_completed(&tx)?;
@@ -413,7 +432,9 @@ impl Runtime {
             }
             Err(error) => {
                 eprintln!("Media preparation failed: {error}");
-                text = if error.to_string() == "MediaMemoryBudgetExceeded" {
+                text = if is_schedule {
+                    message!(message_catalog, "skd.failed")
+                } else if error.to_string() == "MediaMemoryBudgetExceeded" {
                     message!(message_catalog, "media.finish_media_02")
                 } else if error.to_string() == "MissingFfmpeg" {
                     message!(message_catalog, "media.finish_media_03")
@@ -438,6 +459,8 @@ impl Runtime {
             related_message_id,
             emojis: None,
             text,
+            thread_root_id: None,
+            thread_contents,
             image_url: None,
             attachment,
             mention: None,
@@ -484,6 +507,7 @@ impl Runtime {
     }
 }
 enum MediaOutput {
+    Thread(Vec<String>),
     Superseded,
     FileList {
         session_id: String,

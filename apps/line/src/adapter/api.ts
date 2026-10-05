@@ -10,7 +10,7 @@ export function errorCode(error: unknown): string {
 }
 
 type Job = { execute: () => Promise<unknown>; resolve: (value: unknown) => void; reject: (error: unknown) => void };
-export type SendAttempt = { started: boolean; method?: "sendMessage" | "destroyMessage" | "uploadMedia" | "updateSquareMember" | "updateSquareMembers" | "reportSquareMessage"; beforeSend: () => void };
+export type SendAttempt = { started: boolean; method?: "sendMessage" | "sendSquareThreadMessage" | "destroyMessage" | "uploadMedia" | "updateSquareMember" | "updateSquareMembers" | "reportSquareMessage"; beforeSend: () => void };
 
 export class ApiScheduler {
   private queue: Job[] = [];

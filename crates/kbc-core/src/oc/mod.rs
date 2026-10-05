@@ -279,6 +279,8 @@ fn text_action(
             related_message_id: related_message_id.clone().unwrap_or_default(),
             emojis: None,
             text,
+            thread_root_id: None,
+            thread_contents: None,
             image_url: None,
             attachment: None,
             mention: if index == 0 {

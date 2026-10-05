@@ -1,7 +1,7 @@
 ﻿use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTOCOL_VERSION: u32 = 16;
+pub const PROTOCOL_VERSION: u32 = 17;
 
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -144,6 +144,12 @@ pub enum CoreAction {
         chat_id: String,
         related_message_id: String,
         text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        thread_root_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        thread_contents: Option<Vec<String>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         mention: Option<MessageMention>,

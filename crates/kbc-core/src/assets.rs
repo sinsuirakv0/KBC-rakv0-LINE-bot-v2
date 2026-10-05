@@ -120,7 +120,7 @@ impl AssetService {
             .map_err(|e| AssetError::new("GET", e))?;
         read_body(response).await
     }
-    // 素材・ストア監視でClient、HTTP上限2枠、15秒timeout、4MiB上限を共有する。
+    // 素材・ストア・スケジュールでClient、HTTP上限2枠、15秒timeout、4MiB上限を共有する。
     pub(crate) async fn get_text(&self, url: &str) -> Result<String, AssetError> {
         self.request_text(reqwest::Method::GET, url, None).await
     }
@@ -132,7 +132,18 @@ impl AssetService {
     ) -> Result<String, AssetError> {
         let url = Url::parse(url).map_err(|e| AssetError::new("URL", e))?;
         if url.scheme() != "https"
-            || !matches!(url.host_str(), Some("play.google.com" | "itunes.apple.com"))
+            || !(matches!(url.host_str(), Some("play.google.com" | "itunes.apple.com"))
+                || (url.host_str() == Some("raw.githubusercontent.com")
+                    && [
+                        "/sinsuirakv0/KBC-rakv0-event/",
+                        "/sinsuirakv0/KBC-rakv0-assets/",
+                    ]
+                    .iter()
+                    .any(|prefix| url.path().starts_with(prefix)))
+                || (url.host_str() == Some("api.github.com")
+                    && url
+                        .path()
+                        .starts_with("/repos/sinsuirakv0/KBC-rakv0-event/git/")))
         {
             return Err(AssetError::new("store", "invalid host"));
         }
@@ -143,8 +154,16 @@ impl AssetService {
             .map_err(|e| AssetError::new("permit", e))?;
         let mut request = self
             .client
-            .request(method, url)
-            .header(reqwest::header::CACHE_CONTROL, "no-cache");
+            .request(method, url.clone())
+            .header(reqwest::header::CACHE_CONTROL, "no-cache")
+            .header(reqwest::header::USER_AGENT, "KBC-LINEbot-v2");
+        if url.host_str() == Some("api.github.com")
+            && let Ok(token) = std::env::var("GITHUB_TOKEN")
+                .or_else(|_| std::env::var("PUSH_SUBSCRIPTIONS_GITHUB_TOKEN"))
+            && !token.is_empty()
+        {
+            request = request.bearer_auth(token);
+        }
         if let Some(body) = body {
             request = request
                 .header(

@@ -33,7 +33,7 @@ txtと同梱検索を受付でAction化する。検索の走査は不変snapshot
 
 ## Bridge
 
-`kbc-protocol`のRust型から`apps/line/src/protocol/generated/`を生成する。本人・返信先・送信ID・画像URLとOC操作を追加したLINE専用Protocol v16。NativeとAdapterを同時に更新し、旧Adapterと混在させない。`kbc-node`は変換とRuntime呼出だけを行う。
+`kbc-protocol`のRust型から`apps/line/src/protocol/generated/`を生成する。本人・返信先・送信ID・画像URLとOC操作を追加したLINE専用Protocol v17。NativeとAdapterを同時に更新し、旧Adapterと混在させない。`kbc-node`は変換とRuntime呼出だけを行う。
 
 JSからNativeへの設定・Batch・結果は型付きDTOをJSON文字列化して渡す。N-APIのserde Value変換では整数の時刻がf64として入ってi64の復元に失敗したため、この小さな境界では整数表現を保つ。出力はplain DTO。大きな画像・SDKオブジェクトをこの経路へ渡さない。
 
@@ -78,3 +78,5 @@ Protocol v14はOcRequest::Stickerに送信ID・version・任意STKOPTを追加�
 Runtimeはsearch_path / search_liveと共通AssetServiceのClient・2枠だけを保持する。索引はprepare・検索Session処理・Media準備時だけ読み込み、処理後に破棄する。通常入力は読み込まない。searchDataLive=trueの本番では確認から120秒以上のデータを拒否し、取得失敗でBot全体を停止しない。Sessionは起動時に期限だけを削除し、データのrevisionは操作時に照合する。CoreConfigに任意searchDataLiveを追加したがEvent / ActionのProtocol v14は維持する。[取得の契約](../../../data/search/docs/SNAPSHOT.md)。
 
 Protocol v16。2026-10-05、run_store_monitorsを追加し、Android/iOSのストア監視を既存Lifecycleへ接続した。検知版・トークごとの登録・Outboxを同じDBへ保存し、GitHub snapshotから復元する。[監視・容量・配送の契約](../src/store_update/docs/STORE_UPDATE.md)。
+
+Protocol v17はSendMessageの任意threadRootId / threadContentsを追加する。親送信の成功と1秒以降の本文Actionの登録を結果transactionで保存する。unknownの本文は同じスレッドの後続を止め、確定failedならqueuedの後続を取消す。通常返信は継続する。run_store_monitorsへSKD確認を接続し、schedule_updates / schedule_targetsと予約を含むOutbox容量を既存SQLite・GitHub snapshotで扱う。[SKDの状態と上限](../src/skd/docs/SKD.md)。
