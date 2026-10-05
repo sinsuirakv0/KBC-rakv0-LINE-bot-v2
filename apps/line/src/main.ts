@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import { AuthStorage } from "./adapter/storage.js";
 import { GitHubPersistence } from "./adapter/persistence.js";
 import { LogSync } from "./adapter/logs.js";
+import { SearchDataUpdater } from "./adapter/search-data.js";
 import { ApiScheduler, errorCode, installApiScheduler } from "./adapter/api.js";
 import { Receiver } from "./adapter/receiver.js";
 import { deliverAction } from "./adapter/delivery.js";
@@ -23,6 +24,8 @@ async function main(): Promise<void> {
   const controller = new AbortController();
   const authPath = resolve(process.env.LINE_STORAGE_FILE ?? "storage/auth.json");
   const databasePath = resolve(process.env.CORE_DATABASE_PATH ?? "storage/core.sqlite");
+  const searchDataPath = resolve(process.env.SEARCH_DATA_PATH ?? "storage/search/catalog.json");
+  const searchData = new SearchDataUpdater(searchDataPath);
   const persistence = GitHubPersistence.fromEnvironment(authPath, databasePath);
   const restoredFromBackup = await persistence?.restore() ?? false;
   const permissionsPath = process.env.BOT_PERMISSIONS_PATH?.trim() ? resolve(process.env.BOT_PERMISSIONS_PATH) :
@@ -63,7 +66,7 @@ async function main(): Promise<void> {
     response.writeHead(request.url === "/health" ? (healthy ? 200 : 503) : 404, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ state: receiver?.status ?? "starting", core: core?.stats(), api: gate.metrics,
       receiver: receiver?.metrics, deliveries, backup: persistence?.metrics,
-      logs: logs?.metrics,
+      logs: logs?.metrics, searchData: searchData.metrics,
       rssBytes: process.memoryUsage().rss, uptimeSeconds: process.uptime() }));
   });
   await new Promise<void>((resolve, reject) => {
@@ -76,7 +79,7 @@ async function main(): Promise<void> {
     const cpu = process.cpuUsage(cpuStart);
     console.log(JSON.stringify({ kind: "metrics", state: receiver?.status, core: core?.stats(), api: gate.metrics,
       receiver: receiver?.metrics, deliveries, cpuCorePercent: (cpu.user + cpu.system) / ((Date.now() - wallStart) * 10),
-      memory: process.memoryUsage() }));
+      searchData: searchData.metrics, memory: process.memoryUsage() }));
   }, 60000);
   const tasks: Promise<void>[] = [];
   try {
@@ -87,7 +90,7 @@ async function main(): Promise<void> {
       logsEnabled: Boolean(persistence) && process.env.OC_LOGS_ENABLED === "1",
       maxRetainedEvents: integerSetting("CORE_MAX_RETAINED_EVENTS", 131072, 8192, 524288),
       contentDirectory: resolve(process.env.CONTENT_DIRECTORY ?? "content"),
-      searchDataPath: resolve(process.env.SEARCH_DATA_PATH ?? "data/search/catalog.json"),
+      searchDataPath, searchDataLive: true,
       permissionsPath, legacyOcSettingsPath,
       ffmpegPath: process.env.FFMPEG_PATH?.trim() || (process.platform === "linux" ? "/usr/bin/ffmpeg" : undefined) });
     const directory = new SquareDirectory(client);
@@ -108,6 +111,7 @@ async function main(): Promise<void> {
     };
     started = true;
     tasks.push(receiver.run(), deliver(), deliver(), deliver(true), activeCore.runMediaJobs());
+    tasks.push(searchData.run(controller.signal));
     if (persistence) tasks.push(persistence.run(activeCore, controller.signal));
     if (logs) tasks.push(logs.run(controller.signal));
     await Promise.all(tasks);

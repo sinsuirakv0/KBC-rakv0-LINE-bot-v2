@@ -23,7 +23,7 @@ npm start
 
 コマンドは`!ping`→`pong!`、`!test-notify 5`→受付案内と5秒後の確認通知。確認通知が来るまで次のコマンドを送らず、自律的な起床を観測する。テスト通知は1〜60秒に限定した確認用機能で、旧`push`通知の移植ではない。
 
-`!help`と`!ut / !tut / !st`も実装済み。[Command仕様](../../crates/kbc-core/src/commands/docs/COMMANDS.md)を参照。Dockerには`content/`と`data/search/`を同梱する。txtと検索データの変更は再起動・再配備で反映する。
+`!help`と`!ut / !tut / !st`も実装済み。[Command仕様](../../crates/kbc-core/src/commands/docs/COMMANDS.md)を参照。Dockerには`content/`と`data/search/`を同梱する。txtの変更は再起動・再配備で反映する。検索データは公開mainを90秒周期で自動確認し、2分で失効する。SEARCH_DATA_PATHは更新用の書込可能path（既定storage/search/catalog.json）を指定する。初回取得中や公開データ障害でも受信・pingは継続する。[更新の運用](../../scripts/docs/SEARCH_DATA.md)。
 
 `motion`のMP4/GIFにはFFmpegが必要。DockerfileはFFmpegを同梱し、Linuxの既定pathは`/usr/bin/ffmpeg`。Windowsでは`FFMPEG_PATH`へ実行ファイルの絶対pathを指定する。PNGはFFmpegなしでも生成できる。公開素材だけを使う`npm run verify:media`はLINE認証・通信を行わず、PNG/MP4/GIF・file選択と生成中のpingを検査する。[実験結果](../../experiments/commands/docs/MEDIA_VERIFICATION.md)を参照。
 

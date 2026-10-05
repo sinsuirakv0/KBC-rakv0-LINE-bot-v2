@@ -93,3 +93,7 @@ normalizeEventsのsourceはpush / chat / pollを区別する。MemberChangedに�
 Inspectはトークcacheを更新し、対象Botの現在roleと最大2メンバーのOC・MIDを確認する。RolesはROLE属性とrevisionでupdateSquareMembersを呼び、返値の変更対象・役割を確認する。Postはメンション付き通常投稿、Deleteは管理者削除。deliverActionは各API名に対応したSendAttemptを使い、実fetch直前のsending・30秒期限・unknownの契約を共有する。対象許可・引数・previewはRustに置く。既存の2配送・1照会・全RPC枠を共有し、背景APIを追加しない。[OCテストの仕様と検証](../../../crates/kbc-core/src/oc/docs/TEST_OC.md)。
 
 2026-10-04、利用者向け文面を[共通カタログ](../../../crates/kbc-core/docs/MESSAGES.md)へ分離した。Protocol v14のSticker.textはCoreで設定した代替文をSTKTXTへ渡すための項目。旧保存Actionは従来の代替文へ復元し、NativeとAdapterを同時に更新する。
+
+## 公開参照データ（2026-10-05）
+
+mainはSearchDataUpdater.runを独立taskとして開始し、90秒周期・同時1子プロセスで公開mainを確認する。子プロセスは90秒期限、各HTTPは20秒・4並列・10MiB。LINE API枠を使用しない。失敗はmetricsへ記録し受信を継続し、停止時はAbortSignalで子プロセスも終了する。CoreへはSDKオブジェクトや索引JSONを渡さず、原子的に更新するファイルpathとsearchDataLive=trueを渡す。Coreの利用時は120秒期限を検査する。[関数と検証](../../../scripts/docs/SEARCH_DATA.md)。
