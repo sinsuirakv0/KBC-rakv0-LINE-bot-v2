@@ -110,7 +110,7 @@ impl AssetService {
             .acquire()
             .await
             .map_err(|e| AssetError::new("permit", e))?;
-        let mut response = self
+        let response = self
             .client
             .get(url)
             .header(reqwest::header::CACHE_CONTROL, "no-cache")
@@ -118,23 +118,66 @@ impl AssetService {
             .await
             .and_then(reqwest::Response::error_for_status)
             .map_err(|e| AssetError::new("GET", e))?;
-        if response
-            .content_length()
-            .is_some_and(|n| n > MAX_ASSET_BYTES as u64)
+        read_body(response).await
+    }
+    // 素材・ストア監視でClient、HTTP上限2枠、15秒timeout、4MiB上限を共有する。
+    pub(crate) async fn get_text(&self, url: &str) -> Result<String, AssetError> {
+        self.request_text(reqwest::Method::GET, url, None).await
+    }
+    pub(crate) async fn request_text(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+        body: Option<Vec<u8>>,
+    ) -> Result<String, AssetError> {
+        let url = Url::parse(url).map_err(|e| AssetError::new("URL", e))?;
+        if url.scheme() != "https"
+            || !matches!(url.host_str(), Some("play.google.com" | "itunes.apple.com"))
         {
+            return Err(AssetError::new("store", "invalid host"));
+        }
+        let _permit = self
+            .permits
+            .acquire()
+            .await
+            .map_err(|e| AssetError::new("permit", e))?;
+        let mut request = self
+            .client
+            .request(method, url)
+            .header(reqwest::header::CACHE_CONTROL, "no-cache");
+        if let Some(body) = body {
+            request = request
+                .header(
+                    reqwest::header::CONTENT_TYPE,
+                    "application/x-www-form-urlencoded;charset=UTF-8",
+                )
+                .body(body);
+        }
+        let response = request
+            .send()
+            .await
+            .and_then(reqwest::Response::error_for_status)
+            .map_err(|e| AssetError::new("store", e))?;
+        String::from_utf8(read_body(response).await?).map_err(|e| AssetError::new("UTF8", e))
+    }
+}
+async fn read_body(mut response: reqwest::Response) -> Result<Vec<u8>, AssetError> {
+    if response
+        .content_length()
+        .is_some_and(|n| n > MAX_ASSET_BYTES as u64)
+    {
+        return Err(AssetError::new("asset", "too large"));
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| AssetError::new("body", e))?
+    {
+        if bytes.len() + chunk.len() > MAX_ASSET_BYTES {
             return Err(AssetError::new("asset", "too large"));
         }
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|e| AssetError::new("body", e))?
-        {
-            if bytes.len() + chunk.len() > MAX_ASSET_BYTES {
-                return Err(AssetError::new("asset", "too large"));
-            }
-            bytes.extend_from_slice(&chunk);
-        }
-        Ok(bytes)
+        bytes.extend_from_slice(&chunk);
     }
+    Ok(bytes)
 }

@@ -554,5 +554,14 @@
     "page",
     "pages"
   ],
-  "commands.chat_page_expired": []
+  "commands.chat_page_expired": [],
+  "update.on": [],
+  "update.off": [],
+  "update.permission": [],
+  "update.capacity": [],
+  "update.configured": ["platform", "state"],
+  "update.unobserved": [],
+  "update.no_error": [],
+  "update.status": ["platform", "state", "version", "checked", "pending", "error"],
+  "update.notification": ["platform", "version", "detected_at", "asset_url", "store", "store_url"]
 }

@@ -20,6 +20,7 @@ mod messages;
 mod motion;
 mod oc;
 mod permissions;
+mod store_update;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -44,6 +45,7 @@ pub struct Runtime {
     cancel: tokio_util::sync::CancellationToken,
     media_worker_active: AtomicBool,
     logs_enabled: bool,
+    store_worker_active: AtomicBool,
 }
 
 fn now_ms() -> i64 {
@@ -119,6 +121,7 @@ impl Runtime {
         oc::initialize(&db)?;
         commands::sessions::initialize(&db)?;
         logs::initialize(&db)?;
+        store_update::initialize(&db)?;
         oc::import_legacy(&mut db, config.legacy_oc_settings_path.as_deref())?;
         // 遠隔退避以後に送信された可能性がある。期限済みの副作用は照合まで再実行しない。
         if config.restored_from_backup.unwrap_or(false) {
@@ -161,6 +164,7 @@ impl Runtime {
             cancel: tokio_util::sync::CancellationToken::new(),
             media_worker_active: AtomicBool::new(false),
             logs_enabled: config.logs_enabled.unwrap_or(false),
+            store_worker_active: AtomicBool::new(false),
         })
     }
 
