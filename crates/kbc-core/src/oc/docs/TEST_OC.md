@@ -86,3 +86,7 @@ smoke:ocの同じSDK mockで、BOT権限、複数許可登録・不正入力の�
 誤入力の修正は同じSmokeで、実行OC未登録でも--target-chatのsMIDを先に拒否すること、対象だけ登録した場合の実行OCの案内、対象解除後の親OCとトークの案内を確認した。誤入力から役割変更を送らない。npm run build、smoke:oc、smoke:commands、Clippyの同じ設定が通過。help本文は974 UTF-16単位で、1,500単位の上限内。
 
 Windows / Node 24.15.0 / Rust GNU LLVMでnpm run build、smoke / smoke:commands / smoke:oc / smoke:persistence / smoke:logsとClippy（workspace・all-targets・release・locked・警告をエラー扱い）が通過。途中のオフライン検証でinspectを照会Action選択のSQLへ登録し忘れる待機を検出し、修正後に同じ経路の完了を確認した。BOM・LF・資料リンク・git diff --checkも確認した。
+
+## 自由な表示名と複数人の試験（2026-10-05）
+
+!test mention-labelを追加した。既定は一個の表示範囲へ最大9人のpMIDを設定、--separateは個別範囲の比較試験。従来のBOT admin・実行/照会先OCのallow・現在の所属・期限・Outboxを共有する。Inspectの上限を9人へ広げたが、kickやrolesなど既存操作の対象数は変えない。[入力・Protocol v15・仕組み・実機での確認項目](TEST_MENTION.md)。

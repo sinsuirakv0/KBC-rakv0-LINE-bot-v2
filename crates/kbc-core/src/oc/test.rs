@@ -11,6 +11,8 @@ pub(super) struct Plan {
     text: String,
     apply: bool,
     context: Option<OcContext>,
+    #[serde(default)]
+    separate: bool,
 }
 
 pub fn initialize(db: &Connection) -> Result<()> {
@@ -41,7 +43,7 @@ pub fn parse(text: &str) -> Option<Input> {
     let operation = take_word(&mut input).to_ascii_lowercase();
     if !matches!(
         operation.as_str(),
-        "allow" | "mention" | "delete" | "kick" | "deputy" | "admin" | "sticker"
+        "allow" | "mention" | "mention-label" | "delete" | "kick" | "deputy" | "admin" | "sticker"
     ) || input
         .split_whitespace()
         .next()
@@ -136,6 +138,9 @@ fn plan<'a>(
     message_catalog: &'a crate::messages::Messages,
     job: &Job,
 ) -> std::result::Result<Plan, &'a str> {
+    if job.input.args[0] == "mention-label" {
+        return label_plan(message_catalog, job);
+    }
     let mut input = job.input.body.as_str();
     let mut operation = job.input.args[0].clone();
     if operation == "deputy" {
@@ -171,6 +176,7 @@ fn plan<'a>(
         text: message!(message_catalog, "test.plan_03").into(),
         apply: false,
         context: None,
+        separate: false,
     };
     let mut chat_set = false;
     while !input.is_empty() {
@@ -202,6 +208,66 @@ fn plan<'a>(
         }
     }
     Ok(result)
+}
+
+fn label_plan<'a>(
+    message_catalog: &'a crate::messages::Messages,
+    job: &Job,
+) -> std::result::Result<Plan, &'a str> {
+    let usage = message!(message_catalog, "test.mention_label_usage");
+    let mut input = job.input.body.as_str();
+    let mut plan = Plan {
+        operation: "mention-label".into(),
+        chat: identity(&job.event).1.into(),
+        members: Vec::new(),
+        message: String::new(),
+        text: String::new(),
+        apply: false,
+        context: None,
+        separate: false,
+    };
+    let mut options = false;
+    let mut chat_set = false;
+    while !input.is_empty() {
+        let word = take_word(&mut input);
+        match word {
+            "--" => {
+                plan.text = input.trim().into();
+                break;
+            }
+            "--target-chat" if !chat_set => {
+                options = true;
+                let chat = take_word(&mut input);
+                if !mid(chat, 'm') {
+                    return Err(message!(message_catalog, "test.plan_04"));
+                }
+                plan.chat = chat.into();
+                chat_set = true;
+            }
+            "--apply" if !plan.apply => {
+                options = true;
+                plan.apply = true;
+            }
+            "--separate" if !plan.separate => {
+                options = true;
+                plan.separate = true;
+            }
+            value if !options && mid(value, 'p') => {
+                let member = value.to_ascii_lowercase();
+                if !plan.members.contains(&member) {
+                    plan.members.push(member);
+                }
+                if plan.members.len() > 9 {
+                    return Err(usage);
+                }
+            }
+            _ => return Err(usage),
+        }
+    }
+    if plan.members.is_empty() || plan.text.is_empty() || plan.text.encode_utf16().count() > 100 {
+        return Err(usage);
+    }
+    Ok(plan)
 }
 
 pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
@@ -307,6 +373,7 @@ fn sticker(
         text: String::new(),
         apply: true,
         context: job.context.clone(),
+        separate: false,
     });
     job.operation = "test-sticker".into();
     request(tx, job, api, Phase::Mutation, now)
@@ -404,6 +471,48 @@ pub fn inspected(
                     member_id: member.member_id.clone(),
                     start: 0,
                     end: label.encode_utf16().count() as u32,
+                    additional: None,
+                },
+            }
+        }
+        "mention-label" => {
+            let label = format!("@{}", test.text);
+            let length = label.encode_utf16().count() as u32;
+            let text = if test.separate {
+                vec![label.as_str(); test.members.len()].join(" ")
+            } else {
+                label.clone()
+            };
+            if text.encode_utf16().count() > 1500 {
+                return reply(tx, job, message!(message_catalog, "test.inspected_06"), now);
+            }
+            // 同じS/Eに複数MIDを指定する試験と、範囲を分ける比較試験を区別する。
+            let additional = test
+                .members
+                .iter()
+                .enumerate()
+                .skip(1)
+                .map(|(index, member_id)| {
+                    let start = if test.separate {
+                        index as u32 * (length + 1)
+                    } else {
+                        0
+                    };
+                    MentionTarget {
+                        member_id: member_id.clone(),
+                        start,
+                        end: start + length,
+                    }
+                })
+                .collect();
+            OcRequest::Post {
+                chat_id: identity(&job.event).1.into(),
+                text,
+                mention: MessageMention {
+                    member_id: test.members.first().ok_or("MissingTestMember")?.clone(),
+                    start: 0,
+                    end: length,
+                    additional: Some(additional),
                 },
             }
         }
@@ -492,6 +601,19 @@ pub fn inspected(
                 targets = targets,
                 arg7 = if test.operation == "delete" {
                     message!(message_catalog, "test.inspected_11", arg0 = test.message)
+                } else if test.operation == "mention-label" {
+                    message!(
+                        message_catalog,
+                        "test.mention_label_preview",
+                        label = test.text,
+                        mode = if test.separate {
+                            message!(message_catalog, "test.mention_label_separate")
+                        } else {
+                            message!(message_catalog, "test.mention_label_shared")
+                        },
+                        chat = identity(&job.event).1,
+                        count = test.members.len()
+                    )
                 } else if test.operation == "mention" {
                     message!(
                         message_catalog,
@@ -558,7 +680,7 @@ pub fn mutated(
             .map_or(String::new(), |id| {
                 message!(message_catalog, "test.mutated_02", id = id)
             });
-        let ids = if test.operation == "mention" {
+        let ids = if matches!(test.operation.as_str(), "mention" | "mention-label") {
             message!(
                 message_catalog,
                 "test.mutated_03",
@@ -577,7 +699,7 @@ pub fn mutated(
                 "test.mutated_04",
                 arg0 = test.operation,
                 status = message_catalog.status(status),
-                arg1 = if test.operation == "mention" {
+                arg1 = if matches!(test.operation.as_str(), "mention" | "mention-label") {
                     message!(message_catalog, "test.mutated_05")
                 } else {
                     message!(message_catalog, "test.mutated_06")
@@ -588,6 +710,8 @@ pub fn mutated(
                 message = message,
                 arg4 = if matches!(result.status, DeliveryStatus::Unknown) {
                     message!(message_catalog, "test.mutated_07")
+                } else if test.operation == "mention-label" {
+                    message!(message_catalog, "test.mention_label_result")
                 } else {
                     ""
                 }

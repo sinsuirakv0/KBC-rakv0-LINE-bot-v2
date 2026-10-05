@@ -29,3 +29,5 @@ help/test.txtは!test / !help testの共通案内。!test replyは [送信テス
 help/bot.txtは!bot / !help botの共通案内。botは必須helpへ登録し、[表示名変更](../../crates/kbc-core/src/oc/docs/BOT.md) の実処理はRust OC基盤で行う。
 
 2026-10-04、全体helpをindex.txtの本文だけに変更した。Command Smokeでresponsesと個別helpを追加した状態の!help / o.helpが手動のindex本文と一致し、個別helpと応答の追加は引き続き使えることを確認。buildと型検査も通過した。
+
+help/test-mention.txtは!test mention-labelの専用案内。入口のhelp/test.txtへ手動で参照を追加した。名前変更・複数人の共有範囲・--separateの比較を説明し、API成功と実際の通知を区別する。[仕様](../../crates/kbc-core/src/oc/docs/TEST_MENTION.md)。

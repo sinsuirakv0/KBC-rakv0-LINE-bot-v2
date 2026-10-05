@@ -83,3 +83,5 @@ Bridgeの非同期受付は最大4受付・実処理1件。外部素材の取得
 2026-10-04、利用者向け文面は[Messages](../../../docs/MESSAGES.md)のキーを使う。権限案内・状態ラベルなどの共通キーを優先し、新規キーはschema・用途別txt・呼出を同時に追加する。定型helpは引き続きtxt追加だけで登録できる。
 
 2026-10-05、ut/tut/stの参照先をDiscordと同じ公開mainへ切り替えた。Adapterの独立更新処理が90秒周期で確認し、Coreは確認から120秒以上のデータを使わない。索引は検索・候補操作中だけ読み、Runtimeの常駐cacheを撤廃した。素材もassets/mainを使う。データ変更後は候補操作時に再検索を案内する。同じデータの確認時刻更新では候補を維持する。[資料・更新・期限](../../../../../data/search/docs/SNAPSHOT.md)。
+
+!test mention-labelはBOT管理者専用で自由な表示名と最大9人のMIDを指定する。同一範囲への複数指定を既定、--separateは個別範囲の比較試験。ヘルプは!help test-mention。従来のtest mentionは維持する。[仕様・関数・Protocol v15](../../oc/docs/TEST_MENTION.md)。

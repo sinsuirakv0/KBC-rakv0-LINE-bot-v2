@@ -1,4 +1,9 @@
 ﻿# 利用者向け文面。差し込み項目を保持して編集してください。
+test.mention_label_usage = "使い方: !test mention-label <pMID> ... [--target-chat <mMID>] [--separate] [--apply] -- 表示名\nMIDは1〜9人、表示名は1〜100 UTF-16単位。詳しくは !help test-mention。"
+test.mention_label_shared = "同じ表示範囲にまとめる"
+test.mention_label_separate = "一人ずつ範囲を分ける"
+test.mention_label_preview = "\n送信先トーク: {chat}\n表示名: @{label}\n方式: {mode}\n通知先指定: {count}人\nAPI受理・表示・実際の通知は別々に確認します。"
+test.mention_label_result = "\nAPI結果だけでは全員への通知を確認できません。表示と各対象の端末通知を確認してください。"
 test.allow_01 = "検証OCは未登録です。!test allow <sMID> <sMID> ... で登録できます。"
 test.allow_02 = "検証を許可したOC（{arg0}件）\n{arg1}"
 test.allow_03 = "検証OCはsから始まるMIDで、一度に16件まで指定してください。!test allow remove <sMID> ... で解除できます。"

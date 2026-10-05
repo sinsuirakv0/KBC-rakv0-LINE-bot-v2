@@ -1,4 +1,5 @@
 ﻿BOT管理者専用テスト（o.testも利用可）
+自由な表示名・複数人メンション: !help test-mention
 
 スタンプ送信のテスト
 !test sticker <セットID> <スタンプID>
