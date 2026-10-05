@@ -567,6 +567,16 @@ pub fn complete(
         return Ok(());
     }
     let mut job: Job = serde_json::from_str(continuation)?;
+    if job.input.name == "test"
+        && job
+            .input
+            .args
+            .first()
+            .is_some_and(|value| value == "mention-label")
+    {
+        // 廃止試験の結果照合だけを確定し、新しい処理や返信は生成しない。
+        return Ok(());
+    }
     if matches!(job.phase, Phase::MemberNotice) {
         return moderation::complete_notice(runtime, tx, &job, result, now);
     }

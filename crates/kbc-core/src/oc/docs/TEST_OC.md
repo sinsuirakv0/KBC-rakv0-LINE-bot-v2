@@ -88,3 +88,5 @@ smoke:ocの同じSDK mockで、BOT権限、複数許可登録・不正入力の�
 Windows / Node 24.15.0 / Rust GNU LLVMでnpm run build、smoke / smoke:commands / smoke:oc / smoke:persistence / smoke:logsとClippy（workspace・all-targets・release・locked・警告をエラー扱い）が通過。途中のオフライン検証でinspectを照会Action選択のSQLへ登録し忘れる待機を検出し、修正後に同じ経路の完了を確認した。BOM・LF・資料リンク・git diff --checkも確認した。
 
 2026-10-05、実機試験後の利用者指定によりmention-label（自由表示名・同範囲の複数人メンション）を廃止した。既存の!test mentionは維持する。Protocol番号は混在を避けるためv15を維持し、複数人用DTOは削除した。
+
+廃止試験の保存済みqueued/claimed/queryingは起動時にCommandRetiredで確定失敗とし、新規送信しない。sending/unknownは従来の不明結果として保持し、明示照合では後続操作を生成しない。

@@ -134,6 +134,10 @@ impl Runtime {
             [],
         )?;
         db.execute("UPDATE actions SET status='unknown', code='RestartDuringSend', completed=?1 WHERE status='sending'", [now_ms()])?;
+        // 廃止した試験の未送信分を取消す。unknownは照合用に残す。
+        db.execute("UPDATE actions SET status='failed',code='CommandRetired',completed=?1,payload='' WHERE status IN ('queued','claimed','querying')
+            AND json_extract(payload,'$.type')='ocApi' AND json_extract(json_extract(payload,'$.continuation'),'$.input.name')='test'
+            AND json_extract(json_extract(payload,'$.continuation'),'$.input.args[0]')='mention-label'", [now_ms()])?;
         // Commandは受付でActionへ変換済み。本文は長期ログではない。
         db.execute("UPDATE events SET payload='' WHERE payload<>''", [])?;
         db.execute(
