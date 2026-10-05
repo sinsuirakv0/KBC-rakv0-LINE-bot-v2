@@ -85,3 +85,5 @@ Bridgeの非同期受付は最大4受付・実処理1件。外部素材の取得
 2026-10-05、ut/tut/stの参照先をDiscordと同じ公開mainへ切り替えた。Adapterの独立更新処理が90秒周期で確認し、Coreは確認から120秒以上のデータを使わない。索引は検索・候補操作中だけ読み、Runtimeの常駐cacheを撤廃した。素材もassets/mainを使う。データ変更後は候補操作時に再検索を案内する。同じデータの確認時刻更新では候補を維持する。[資料・更新・期限](../../../../../data/search/docs/SNAPSHOT.md)。
 
 !pushsetting android|ios [on|off|status]とandroid,iosの一括設定、statusで両OSの状態を扱う。引数なしは専用help、引数ありは既存OC照会・権限確認へ渡す。[にゃんこ更新通知](../../store_update/docs/STORE_UPDATE.md)。
+
+2026-10-05、!skd / o.skdと日付指定を追加した。既存の有限準備workerへSchedule要求を渡し、親の通常投稿後にプレーンテキストをスレッド配送する。!pushsetting skdも既存OC権限・登録tableへ接続した。[履歴・遅延・保存・関数の仕様](../../skd/docs/SKD.md)。

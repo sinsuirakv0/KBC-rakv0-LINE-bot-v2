@@ -280,3 +280,5 @@ Protocol v5でテキスト以外の媒体・参加退出・OCのtyped APIを追�
 ## 2026-10-04のBot名変更追加
 
 !bot name 名前（o.も対応）で実行OCのBot自身のプロフィールを更新する。利用者指定でBOT管理者だけに許可し、同じOCのサブトークで共通の名前になる。Protocol v9で既存照会・配送・保存を共有する。[仕様・関数・確認範囲](../../crates/kbc-core/src/oc/docs/BOT.md)。実LINEでの表示変更は配備後に利用者が確認する。
+
+2026-10-05、Discord由来のskd（日付／更新差分）とトーク別!pushsetting skdを追加した。既存準備・監視worker、HTTP、Outbox、GitHub snapshotを共有し、リーク本文を親のスレッドへ遅延配送する。実OCのスレッド成功・多OCでの遅延は運用確認へ残す。[機能の仕様と関数](../../crates/kbc-core/src/skd/docs/SKD.md)。

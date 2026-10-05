@@ -49,3 +49,5 @@ Source parserと版比較、初回無通知、未確認候補拒否、複数ト�
 2026-10-05、公開ストアへの単発取得でAndroid 15.7.1 / iOS 15.7.0を取得した。これは当日の観測値であり、今後の公開版やLINE通知成功の保証ではない。Source parser・保存/通知原子性・Outbox容量のRust検証は4件通過した。
 
 build / TypeScript check / 全workspace・all-targetsのClippy（警告拒否）、Command・OC・文面・GitHub復元・受信基盤のSmokeを通過。登録なしのNative監視の起動/取消も確認した。廃止メンション試験の待機取消とunknown照合は既存OC Smokeへ含めた。LINEへの通知送信と本番配備は未実施。
+
+2026-10-05、!pushsetting skdを同じconfigure / OC権限・登録上限へ追加し、statusはAndroid / iOS / skdを返す。run_store_monitorsはOSの5秒確認に加え、SKDの60秒確認を一つ起動する。SKDは専用HTTP・LINE Queueを作らず、更新本文と通知先を同じSQLiteへ保存して既存Outboxへ有限展開する。[履歴追跡・状態・スレッド配送](../../skd/docs/SKD.md)。現在の配備はProtocol v17のNativeとAdapterを同時に行う。

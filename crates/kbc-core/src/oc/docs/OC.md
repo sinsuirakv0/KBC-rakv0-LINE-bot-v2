@@ -105,3 +105,5 @@ LINEJS 3.4.2のSquareEventNotifiedLeaveSquareChatはsquareMemberを持つ場合�
 SDKの名前付き退出、サブトークの投稿で観測した名の再利用、未知参加者の1回照会・再起動、照会失敗時のMID付き案内をOC Smokeで確認した。build・型検査・Clippyと受信基盤のSmokeも通過した。名前のない参加・退出のSDK応答や、退会後に照会できる範囲は実OCでの確認事項として残る。
 
 !pushsettingはstore_settingから既存Context照会へ接続する。OC ADMINまたはBOT admin/modだけがトークのストア通知を設定・確認できる。OC CO_ADMINだけでは許可しない。[登録と監視](../../store_update/docs/STORE_UPDATE.md)。
+
+!pushsetting skdの登録・解除・状態照会も既存store_setting経路でOC管理者またはBOT管理者・モデレーターを確認する。設定先は実行トーク。通常の!skd表示は管理権限を要求せず、既存のmute・自動処理のCommandPlan経路を通す。[SKDの仕様](../../skd/docs/SKD.md)。

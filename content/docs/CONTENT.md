@@ -6,7 +6,7 @@
 
 `responses/<name>.txt` を追加すると `!<name>` が使える。`help/<name>.txt` は `!help <name>` の案内になる。応答txtがなくてもhelp txtだけで案内を追加できる。helpがなければ応答本文を案内として使う。`!help` / `o.help`は`help/index.txt`の本文だけを表示する。コマンド一覧はこのファイルへ手動で記載し、txt追加による自動追加は行わない。
 
-日本語を含むtxtはBOM付きUTF-8、表示はプレーンテキスト。コードブロックと空ファイルは起動時に拒否する。1ファイルは8KiB・1,500 UTF-16単位まで、各フォルダ128ファイルまで。ファイル名は英小文字・数字・`_`・`-` の32文字以内。`help`、`ut`、`tut`、`st`、その別名、`test-notify`、`test`、`oc`、`oc-admin`、`id`、`bot` は処理を持つためresponsesの名前に使えない。
+日本語を含むtxtはBOM付きUTF-8、表示はプレーンテキスト。コードブロックと空ファイルは起動時に拒否する。1ファイルは8KiB・1,500 UTF-16単位まで、各フォルダ128ファイルまで。ファイル名は英小文字・数字・`_`・`-` の32文字以内。`skd`、`pushsetting`、`help`、`ut`、`tut`、`st`、その別名、`test-notify`、`test`、`oc`、`oc-admin`、`id`、`bot` は処理を持つためresponsesの名前に使えない。
 
 起動時に一度読み込む。追加・変更は再起動または再配備で反映する。コマンド名とhelpの対象名はASCIIの大文字小文字を区別しない。静的応答の追加引数はDiscordと同様に無視する。`!コマンド help`は案内への切替として使わない。
 
@@ -31,3 +31,5 @@ help/bot.txtは!bot / !help botの共通案内。botは必須helpへ登録し、
 2026-10-04、全体helpをindex.txtの本文だけに変更した。Command Smokeでresponsesと個別helpを追加した状態の!help / o.helpが手動のindex本文と一致し、個別helpと応答の追加は引き続き使えることを確認。buildと型検査も通過した。
 
 pushsettingは処理を持つ予約名。help/pushsetting.txtは公開案内、messages/update.txtは登録応答・状態表示・ストア更新通知の全定型文面。!helpのindexへは手動で項目を追加した。[仕様](../../crates/kbc-core/src/store_update/docs/STORE_UPDATE.md)。
+
+!skdはresponsesの予約名。help/skd.txtは表示・日付指定、help/pushsetting.txtはskd通知登録を案内する。利用者向けスレッド案内・差分ラベルはmessages/skd.txtへ分離し、indexは手動追記した。[スケジュール仕様](../../crates/kbc-core/src/skd/docs/SKD.md)。
