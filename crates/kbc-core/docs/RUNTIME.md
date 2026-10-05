@@ -76,5 +76,3 @@ Protocol v14はOcRequest::Stickerに送信ID・version・任意STKOPTを追加�
 ## 公開検索データの更新（2026-10-05）
 
 Runtimeはsearch_path / search_liveと共通AssetServiceのClient・2枠だけを保持する。索引はprepare・検索Session処理・Media準備時だけ読み込み、処理後に破棄する。通常入力は読み込まない。searchDataLive=trueの本番では確認から120秒以上のデータを拒否し、取得失敗でBot全体を停止しない。Sessionは起動時に期限だけを削除し、データのrevisionは操作時に照合する。CoreConfigに任意searchDataLiveを追加したがEvent / ActionのProtocol v14は維持する。[取得の契約](../../../data/search/docs/SNAPSHOT.md)。
-
-Protocol v15はMessageMentionに任意additional（MID・UTF-16位置）を追加する。旧Actionの単独メンションはdefaultで復元し、同じNative / Adapter版を使う。!test mention-labelは共通TestInspect / Mutation・Outboxだけで一個の表示範囲または個別範囲を試す。新しいWorker・常時処理を作らない。[入力と実機確認](../src/oc/docs/TEST_MENTION.md)。

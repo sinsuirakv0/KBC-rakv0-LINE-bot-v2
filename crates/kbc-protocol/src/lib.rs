@@ -222,17 +222,6 @@ pub struct MessageMention {
     pub member_id: String,
     pub start: u32,
     pub end: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub additional: Option<Vec<MentionTarget>>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct MentionTarget {
-    pub member_id: String,
-    pub start: u32,
-    pub end: u32,
 }
 
 #[derive(Debug, Deserialize, Serialize, TS)]

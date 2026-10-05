@@ -97,7 +97,3 @@ Inspectはトークcacheを更新し、対象Botの現在roleと最大2メンバ
 ## 公開参照データ（2026-10-05）
 
 mainはSearchDataUpdater.runを独立taskとして開始し、90秒周期・同時1子プロセスで公開mainを確認する。子プロセスは90秒期限、各HTTPは20秒・4並列・10MiB。LINE API枠を使用しない。失敗はmetricsへ記録し受信を継続し、停止時はAbortSignalで子プロセスも終了する。CoreへはSDKオブジェクトや索引JSONを渡さず、原子的に更新するファイルpathとsearchDataLive=trueを渡す。Coreの利用時は120秒期限を検査する。[関数と検証](../../../scripts/docs/SEARCH_DATA.md)。
-
-## 複数メンション（v15、2026-10-05）
-
-MessageMention.additionalの最大8件を先頭と合わせてMENTION.MENTIONEESへ変換する。Inspectは最大9メンバー、同じ既存枠で順番に取得し、所属を照合する。旧DTOのadditionalなしは以前の単独entryを維持する。同一範囲の複数entryが全対象の通知になるかは実機で確認し、Adapterの送信成功だけでは証明しない。[テスト仕様](../../../crates/kbc-core/src/oc/docs/TEST_MENTION.md)。

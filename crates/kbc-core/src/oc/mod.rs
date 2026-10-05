@@ -246,7 +246,6 @@ fn mention_span(text: &str, label: &str, member_id: &str) -> Option<MessageMenti
         member_id: member_id.into(),
         start,
         end: start + label.encode_utf16().count() as u32,
-        additional: None,
     })
 }
 fn text_action(
@@ -281,7 +280,15 @@ fn text_action(
             text,
             image_url: None,
             attachment: None,
-            mention: if index == 0 { mention.clone() } else { None },
+            mention: if index == 0 {
+                mention.as_ref().map(|value| MessageMention {
+                    member_id: value.member_id.clone(),
+                    start: value.start,
+                    end: value.end,
+                })
+            } else {
+                None
+            },
             replace_message_id: if index == 0 { replace.clone() } else { None },
             is_prompt: prompt && index == 0,
             created_at_ms: now,
