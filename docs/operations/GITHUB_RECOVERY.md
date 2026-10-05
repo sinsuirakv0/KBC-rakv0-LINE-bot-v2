@@ -4,7 +4,7 @@
 
 ## 起動と関数の関係
 
-Adapterの `GitHubPersistence.restore` は保存先の非公開設定を確認し、認証とCoreを復元する。`restoreSettings` は旧permissionsとOC設定を機密ファイルへ配置する。`AuthStorage.load`、既存tokenでのlogin、`Runtime::open`の順に進む。旧OC設定はCoreのtransactionで初回だけ取り込み、新版の変更を上書きしない。旧BOT権限はSQUAREのadmin/modだけを読む。
+Adapterの `GitHubPersistence.restore` は保存先の非公開設定を確認し、認証とCoreを復元する。`restoreSettings` は旧permissionsとOC設定を機密ファイルへ配置する。`AuthStorage.load`、既存tokenでのlogin、`Runtime::open`の順に進む。旧OC設定はCoreのtransactionで初回だけ取り込み、新版の変更を上書きしない。旧BOT権限はSQUAREのadmin/modとOCの個別・全体停止をCoreへ初回だけ取り込む。
 
 既存の `PUSH_SUBSCRIPTIONS_GITHUB_REPO / TOKEN / BRANCH`、`LINE_STORAGE_BACKUP_KEY` と `LINE_STORAGE_GITHUB_PATH` を利用する。旧 `line-auth/storage.enc.json` は変更しない。新版は `line-auth/v2-reserved-storage.enc.json` と `v2/runtime/core.sqlite.gz.enc.json` へ保存する。旧版と同じSHA256鍵導出・AES-256-GCM形式。認証値、復号済みDB、MIDを公開Botリポジトリへ置かない。
 
@@ -25,3 +25,5 @@ Core DBはアカウントOwnerMismatchを検査する。非公開repoでない�
 `npm run smoke:persistence` は外部通信を行わず、旧暗号化認証からの移行、予約内の送信番号更新でGitHub書込が増えないこと、Core checkpointの復元、期限済み投稿の照合待ち、予約失敗でローカル番号が進まないことを確認する。実際の機密設定を使ったローカル検証ではOC設定3件・通知設定5トークを取り込み、再起動時の重複なしを確認した。
 
 関連: [Adapter](../../apps/line/docs/ADAPTER.md)、[Runtime](../../crates/kbc-core/docs/RUNTIME.md)、[OC](../../crates/kbc-core/src/oc/docs/OC.md)。
+
+2026-10-06、旧permissionsのSQUARE admin/mod・OCのbotStops・globalBotStopはCore SQLiteへ初回だけ取り込む。以後のBOT権限・停止設定は同じ暗号化Core snapshotが正本。旧settings/permissions.jsonは初期移行元であり、新版の変更は書き戻さない。snapshot復元後は旧ファイルの内容を優先せず、解除済み設定を戻さない。[機能と上限](../../crates/kbc-core/src/oc/docs/BOT.md)。

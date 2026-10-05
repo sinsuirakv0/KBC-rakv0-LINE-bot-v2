@@ -35,3 +35,5 @@ pushsettingは処理を持つ予約名。help/pushsetting.txtは公開案内、m
 !skdはresponsesの予約名。help/skd.txtは表示・日付指定、help/pushsetting.txtはskd通知登録を案内する。利用者向けスレッド案内・差分ラベルはmessages/skd.txtへ分離し、indexは手動追記した。[スケジュール仕様](../../crates/kbc-core/src/skd/docs/SKD.md)。
 
 help/test-mention.txtは!test mention-labelの専用案内。入口のhelp/test.txtへ手動で参照を追加した。名前変更・複数人の共有範囲・--separateの比較を説明し、API成功と実際の通知を区別する。[仕様](../../crates/kbc-core/src/oc/docs/TEST_MENTION.md)。
+
+2026-10-06、help/bot.txtへBOT権限の登録・解除・一覧、停止/再開、statusを追加した。messages/bot.txtとschemaのキーで全定型文面を編集できる。indexには既存bot項目を使い、自動で追記しない。[管理機能](../../crates/kbc-core/src/oc/docs/BOT.md)。

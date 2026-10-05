@@ -89,3 +89,5 @@ Bridgeの非同期受付は最大4受付・実処理1件。外部素材の取得
 2026-10-05、!skd / o.skdと日付指定を追加した。既存の有限準備workerへSchedule要求を渡し、親の通常投稿後にプレーンテキストをスレッド配送する。!pushsetting skdも既存OC権限・登録tableへ接続した。[履歴・遅延・保存・関数の仕様](../../skd/docs/SKD.md)。
 
 !test mention-labelはBOT管理者専用で自由な表示名と最大9人のMIDを指定する。同一範囲への複数指定を既定、--separateは個別範囲の比較試験。ヘルプは!help test-mention。従来のtest mentionは維持する。[仕様・関数・Protocol v18](../../oc/docs/TEST_MENTION.md)。
+
+2026-10-06、!botのadmin / setting / stop / start / statusを旧LINEから移植した。公開案内は!help bot、文面はmessages/bot.txt。権限更新はCoreの同じtransaction・SQLite snapshotを共有し、旧ファイルの再読込で解除を巻き戻さない。性能テスト・環境表示は後回し。[仕様・関数・検証](../../oc/docs/BOT.md)。

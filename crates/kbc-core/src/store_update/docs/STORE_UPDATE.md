@@ -51,3 +51,5 @@ Source parserと版比較、初回無通知、未確認候補拒否、複数ト�
 build / TypeScript check / 全workspace・all-targetsのClippy（警告拒否）、Command・OC・文面・GitHub復元・受信基盤のSmokeを通過。登録なしのNative監視の起動/取消も確認した。廃止メンション試験の待機取消とunknown照合は既存OC Smokeへ含めた。LINEへの通知送信と本番配備は未実施。
 
 2026-10-05、!pushsetting skdを同じconfigure / OC権限・登録上限へ追加し、statusはAndroid / iOS / skdを返す。run_store_monitorsはOSの5秒確認に加え、SKDの60秒確認を一つ起動する。SKDは専用HTTP・LINE Queueを作らず、更新本文と通知先を同じSQLiteへ保存して既存Outboxへ有限展開する。[履歴追跡・状態・スレッド配送](../../skd/docs/SKD.md)。現在の配備はProtocol v17のNativeとAdapterを同時に行う。
+
+2026-10-06、record_storeはSQLiteの個別/全体BOT停止を照合し、停止したトークへ新しい更新通知を登録しない。停止中も検知版は同じtransactionで保存し、再開後に停止期間の更新をまとめて通知しない。停止前に登録済みのOutboxは変更しない。pushsettingのBOT権限はbot_rolesの最新値を参照する。[BOT管理の保存と権限](../../oc/docs/BOT.md)。

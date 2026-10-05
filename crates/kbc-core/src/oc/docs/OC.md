@@ -107,3 +107,5 @@ SDKの名前付き退出、サブトークの投稿で観測した名の再利�
 !pushsettingはstore_settingから既存Context照会へ接続する。OC ADMINまたはBOT admin/modだけがトークのストア通知を設定・確認できる。OC CO_ADMINだけでは許可しない。[登録と監視](../../store_update/docs/STORE_UPDATE.md)。
 
 !pushsetting skdの登録・解除・状態照会も既存store_setting経路でOC管理者またはBOT管理者・モデレーターを確認する。設定先は実行トーク。通常の!skd表示は管理権限を要求せず、既存のmute・自動処理のCommandPlan経路を通す。[SKDの仕様](../../skd/docs/SKD.md)。
+
+2026-10-06、共通BOT権限はSQLiteで最新状態を照合する。!bot settingの変更をOC管理・自動処分保護・name・Test・pushsettingへ即時反映する。停止中もログ保存を継続し、start以外の新規処理を止める。[入力・旧権限区分・停止と復元](BOT.md)。
