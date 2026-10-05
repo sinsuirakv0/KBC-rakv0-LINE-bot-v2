@@ -50,7 +50,8 @@ pub enum CommandPlan {
 
 pub fn prepare(
     content: &ContentCatalog,
-    search: &SearchCatalog,
+    search_path: &std::path::Path,
+    search_live: bool,
     text: &str,
     now: i64,
 ) -> CommandPlan {
@@ -111,6 +112,20 @@ pub fn prepare(
                 now,
             )]);
         }
+        let search = match SearchCatalog::load(
+            search_path,
+            std::sync::Arc::clone(message_catalog),
+            search_live,
+        ) {
+            Ok(search) => search,
+            Err(error) => {
+                eprintln!("Search data unavailable: {error}");
+                return CommandPlan::Text(vec![(
+                    message!(message_catalog, "search.data_unavailable").into(),
+                    now,
+                )]);
+            }
+        };
         return search
             .search(name, &args)
             .map(CommandPlan::Search)

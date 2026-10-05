@@ -19,6 +19,9 @@ pub struct CoreConfig {
     pub search_data_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
+    pub search_data_live: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub ffmpeg_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

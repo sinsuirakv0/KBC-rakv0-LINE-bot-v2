@@ -12,7 +12,7 @@ use super::{
 use crate::Result;
 
 // 本文、配送期限、任意の素材要求。SDK固有の値はここへ渡さない。
-pub type Response = (String, i64, Option<crate::media::MediaRequest>);
+pub type Response = (String, i64, Option<crate::media::MediaJob>);
 
 pub fn initialize(db: &Connection) -> Result<()> {
     let columns = db
@@ -29,7 +29,8 @@ pub fn apply(
     tx: &Transaction<'_>,
     event: &CoreEvent,
     plan: CommandPlan,
-    catalog: &SearchCatalog,
+    catalog: Option<&SearchCatalog>,
+    message_catalog: &crate::messages::Messages,
     now: i64,
 ) -> Result<(Vec<Response>, Option<String>)> {
     let CoreEvent::MessageReceived {
@@ -51,7 +52,7 @@ pub fn apply(
     } else {
         None
     };
-    let responses = apply_inner(tx, event, plan, catalog, now)?;
+    let responses = apply_inner(tx, event, plan, catalog, message_catalog, now)?;
     let replace = if !responses.is_empty()
         && let Some(prompt) = old
     {
@@ -71,10 +72,10 @@ fn apply_inner(
     tx: &Transaction<'_>,
     event: &CoreEvent,
     plan: CommandPlan,
-    catalog: &SearchCatalog,
+    catalog: Option<&SearchCatalog>,
+    message_catalog: &crate::messages::Messages,
     now: i64,
 ) -> Result<Vec<Response>> {
-    let message_catalog = catalog.messages();
     let CoreEvent::MessageReceived {
         event_id,
         chat_id,
@@ -93,6 +94,20 @@ fn apply_inner(
             .map(|(text, due)| (text, due, None))
             .collect()),
         CommandPlan::Search(session) => {
+            let Some(catalog) = catalog else {
+                return Ok(vec![(
+                    message!(message_catalog, "search.data_unavailable").into(),
+                    now,
+                    None,
+                )]);
+            };
+            if session.revision != catalog.session_revision() {
+                return Ok(vec![(
+                    message!(message_catalog, "search.data_changed").into(),
+                    now,
+                    None,
+                )]);
+            }
             if let Some(owner) = sender_id {
                 tx.execute(
                     "DELETE FROM sessions WHERE chat=?1 AND owner=?2",
@@ -160,6 +175,25 @@ fn apply_inner(
             let Some((id, payload, pending)) = stored else {
                 return Ok(Vec::new());
             };
+            let Some(catalog) = catalog else {
+                return Ok(vec![(
+                    message!(message_catalog, "search.data_unavailable").into(),
+                    now,
+                    None,
+                )]);
+            };
+            let revision: String =
+                tx.query_row("SELECT revision FROM sessions WHERE id=?1", [&id], |row| {
+                    row.get(0)
+                })?;
+            if revision != catalog.session_revision() {
+                tx.execute("DELETE FROM sessions WHERE id=?1", [&id])?;
+                return Ok(vec![(
+                    message!(message_catalog, "search.data_changed").into(),
+                    now,
+                    None,
+                )]);
+            }
             let mut session: SearchSession = serde_json::from_str(&payload)?;
             let count = session
                 .files
@@ -253,8 +287,11 @@ fn selected(
             (
                 String::new(),
                 now,
-                Some(MediaRequest::Download {
-                    path: file.path.clone(),
+                Some(crate::media::MediaJob {
+                    catalog_revision: catalog.revision.clone(),
+                    request: MediaRequest::Download {
+                        path: file.path.clone(),
+                    },
                 }),
             ),
         ]);
@@ -316,7 +353,14 @@ fn selected(
         }
     };
     if let Some(request) = request {
-        responses.push((String::new(), now, Some(request)));
+        responses.push((
+            String::new(),
+            now,
+            Some(crate::media::MediaJob {
+                catalog_revision: catalog.revision.clone(),
+                request,
+            }),
+        ));
     } else {
         responses[0]
             .0

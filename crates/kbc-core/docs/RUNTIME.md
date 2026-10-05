@@ -72,3 +72,7 @@ Protocol v12はSendMessageに任意のMessageEmojiを追加した。旧保存Act
 Protocol v14はOcRequest::Stickerに送信ID・version・任意STKOPTを追加した。既存Context・Mutation・GitHub snapshotを共有し、旧保存DTOは変更しない。[テストコマンドと配送](../src/oc/docs/TEST_STICKER.md)。
 
 2026-10-04、利用者向け文面を[共通カタログ](MESSAGES.md)へ分離した。Protocol v14のSticker.textはCoreで設定した代替文をSTKTXTへ渡すための項目。旧保存Actionは従来の代替文へ復元し、NativeとAdapterを同時に更新する。
+
+## 公開検索データの更新（2026-10-05）
+
+Runtimeはsearch_path / search_liveと共通AssetServiceのClient・2枠だけを保持する。索引はprepare・検索Session処理・Media準備時だけ読み込み、処理後に破棄する。通常入力は読み込まない。searchDataLive=trueの本番では確認から120秒以上のデータを拒否し、取得失敗でBot全体を停止しない。Sessionは起動時に期限だけを削除し、データのrevisionは操作時に照合する。CoreConfigに任意searchDataLiveを追加したがEvent / ActionのProtocol v14は維持する。[取得の契約](../../../data/search/docs/SNAPSHOT.md)。

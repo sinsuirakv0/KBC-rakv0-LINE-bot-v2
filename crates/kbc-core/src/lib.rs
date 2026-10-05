@@ -36,7 +36,8 @@ pub struct Runtime {
     max_retained_events: u32,
     permissions: permissions::Permissions,
     content: commands::content::ContentCatalog,
-    search: commands::search::SearchCatalog,
+    search_path: std::path::PathBuf,
+    search_live: bool,
     assets: assets::AssetService,
     media_root: std::path::PathBuf,
     ffmpeg_path: Option<std::path::PathBuf>,
@@ -64,15 +65,11 @@ impl Runtime {
         let content = commands::content::ContentCatalog::load(Path::new(
             config.content_directory.as_deref().unwrap_or("content"),
         ))?;
-        let search = commands::search::SearchCatalog::load(
-            Path::new(
-                config
-                    .search_data_path
-                    .as_deref()
-                    .unwrap_or("data/search/catalog.json"),
-            ),
-            std::sync::Arc::clone(&content.messages),
-        )?;
+        let search_path = config
+            .search_data_path
+            .as_deref()
+            .unwrap_or("data/search/catalog.json")
+            .into();
         if let Some(parent) = Path::new(&config.database_path).parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -143,11 +140,7 @@ impl Runtime {
             "UPDATE actions SET payload='' WHERE status IN ('sent','failed')",
             [],
         )?;
-        db.execute(
-            "DELETE FROM sessions WHERE expires<=?1 OR revision<>?2",
-            params![now_ms(), search.session_revision()],
-        )?;
-        let assets = assets::AssetService::new(search.asset_commit()?)?;
+        db.execute("DELETE FROM sessions WHERE expires<=?1", [now_ms()])?;
         Ok(Self {
             database: Mutex::new(db),
             wake: Notify::new(),
@@ -156,8 +149,9 @@ impl Runtime {
             max_retained_events,
             permissions,
             content,
-            search,
-            assets,
+            search_path,
+            search_live: config.search_data_live.unwrap_or(false),
+            assets: assets::AssetService::new("main")?,
             media_root,
             ffmpeg_path: config.ffmpeg_path.map(Into::into),
             cancel: tokio_util::sync::CancellationToken::new(),
@@ -228,7 +222,7 @@ impl Runtime {
         let now = now_ms();
         let mut bytes = 0;
         let mut plans = Vec::with_capacity(batch.events.len());
-        // 検索は不変snapshotから作り、SQLiteのlockを持って走査しない。
+        // 検索時だけ公開データの索引を読み、SQLiteのlockを持って走査しない。
         for event in &batch.events {
             bytes += serde_json::to_string(event)?.len();
             if bytes > 256 * 1024 {
@@ -303,7 +297,13 @@ impl Runtime {
                 {
                     commands::CommandPlan::Ignore
                 } else {
-                    commands::prepare(&self.content, &self.search, text, now)
+                    commands::prepare(
+                        &self.content,
+                        &self.search_path,
+                        self.search_live,
+                        text,
+                        now,
+                    )
                 },
             );
         }
@@ -389,8 +389,45 @@ impl Runtime {
         now: i64,
     ) -> Result<()> {
         let (event_id, chat_id, _, _, _) = oc::identity(event);
-        let (responses, replacement) =
-            commands::sessions::apply(tx, event, plan, &self.search, now)?;
+        // 通常会話・OC管理・pingでは索引を読まない。検索候補はこの処理中だけ保持する。
+        let needs_search = matches!(plan, commands::CommandPlan::Search(_))
+            || (matches!(plan, commands::CommandPlan::Ignore)
+                && if let CoreEvent::MessageReceived {
+                    chat_id,
+                    sender_id,
+                    reply_to_message_id,
+                    ..
+                } = event
+                {
+                    reply_to_message_id.is_some() && tx.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM sessions WHERE chat=?1 AND owner=?2 AND prompt=?3 AND expires>?4)",
+                        params![chat_id, sender_id, reply_to_message_id, now], |row| row.get::<_, bool>(0))?
+                } else {
+                    false
+                });
+        let search = if needs_search {
+            match commands::search::SearchCatalog::load(
+                &self.search_path,
+                std::sync::Arc::clone(&self.content.messages),
+                self.search_live,
+            ) {
+                Ok(search) => Some(search),
+                Err(error) => {
+                    eprintln!("Search data unavailable: {error}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let (responses, replacement) = commands::sessions::apply(
+            tx,
+            event,
+            plan,
+            search.as_ref(),
+            &self.content.messages,
+            now,
+        )?;
         self.enqueue_responses(tx, event_id, chat_id, responses, replacement, now)
     }
 
@@ -434,10 +471,7 @@ impl Runtime {
                     event_id: event_id.into(),
                     chat_id: chat_id.into(),
                     related_message_id: String::new(),
-                    request: serde_json::to_string(&media::MediaJob {
-                        catalog_revision: self.search.revision.clone(),
-                        request,
-                    })?,
+                    request: serde_json::to_string(&request)?,
                     replace_message_id,
                     is_prompt,
                     created_at_ms: now,
@@ -745,7 +779,19 @@ impl Runtime {
             return Err("NotImageAction".into());
         };
         let url = image_url.as_deref().ok_or("NotImageAction")?;
-        match self.assets.download(reqwest::Url::parse(url)?).await {
+        let download = async {
+            let search = commands::search::SearchCatalog::load(
+                &self.search_path,
+                std::sync::Arc::clone(message_catalog),
+                self.search_live,
+            )?;
+            let assets = self.assets.at_revision(search.asset_commit()?)?;
+            drop(search);
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(
+                assets.download(reqwest::Url::parse(url)?).await?,
+            )
+        };
+        match download.await {
             Ok(bytes) => Ok(Some(bytes)),
             Err(_) => {
                 // 取得失敗はLINEへ何も送っていない。元URLを示す通常返信へ切り替える。

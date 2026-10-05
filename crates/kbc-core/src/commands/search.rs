@@ -16,7 +16,7 @@ use std::{
 use unicode_normalization::UnicodeNormalization;
 pub const SESSION_TTL_MS: i64 = 600000;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchEntry {
     pub id: String,
@@ -40,6 +40,8 @@ pub struct SearchCatalog {
     messages: Option<std::sync::Arc<crate::messages::Messages>>,
     source: SnapshotSource,
     schema_version: u32,
+    #[serde(default)]
+    validated_at_ms: Option<i64>,
     pub revision: String,
     pub entries: HashMap<String, Vec<SearchEntry>>,
     #[serde(skip)]
@@ -71,6 +73,8 @@ pub struct FileOption {
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SearchSession {
+    #[serde(default)]
+    pub revision: String,
     pub kind: String,
     pub query: String,
     pub results: Vec<SearchMatch>,
@@ -214,12 +218,24 @@ impl SearchCatalog {
             .map(String::as_str)
             .ok_or("MissingAssetCommit".into())
     }
-    pub fn load(path: &Path, messages: std::sync::Arc<crate::messages::Messages>) -> Result<Self> {
+    pub fn load(
+        path: &Path,
+        messages: std::sync::Arc<crate::messages::Messages>,
+        live: bool,
+    ) -> Result<Self> {
         if std::fs::metadata(path)?.len() > 4 * 1024 * 1024 {
             return Err("SearchDataLimit".into());
         }
         let text = std::fs::read_to_string(path)?;
         let mut catalog: Self = serde_json::from_str(text.trim_start_matches('\u{feff}'))?;
+        if (live && catalog.validated_at_ms.is_none())
+            || catalog.validated_at_ms.is_some_and(|at| {
+                let age = crate::now_ms() - at;
+                !(0..120000).contains(&age)
+            })
+        {
+            return Err("SearchDataExpired".into());
+        }
         catalog.messages = Some(messages);
         if catalog.schema_version != 2
             || catalog.revision.len() != 64
@@ -228,7 +244,14 @@ impl SearchCatalog {
             return Err("InvalidSearchRevision".into());
         }
         let mut fingerprint = DefaultHasher::new();
-        text.hash(&mut fingerprint);
+        // 更新確認の時刻だけが変わっても、同じデータの候補番号を維持する。
+        catalog.revision.hash(&mut fingerprint);
+        for kind in ["ut", "tut", "st"] {
+            catalog.entries.get(kind).hash(&mut fingerprint);
+        }
+        let repositories: std::collections::BTreeMap<_, _> =
+            catalog.source.repositories.iter().collect();
+        serde_json::to_string(&repositories)?.hash(&mut fingerprint);
         catalog.revision = format!("{:016x}", fingerprint.finish());
         for kind in ["ut", "tut", "st"] {
             let entries = catalog.entries.get_mut(kind).ok_or("MissingSearchData")?;
@@ -316,6 +339,7 @@ impl SearchCatalog {
     pub fn search(&self, kind: &str, args: &[&str]) -> Option<SearchSession> {
         let (query, force, operation) = parse(kind, args)?;
         let mut session = SearchSession {
+            revision: self.session_revision(),
             kind: kind.into(),
             query,
             results: Vec::new(),

@@ -164,11 +164,18 @@ impl Runtime {
                 memory_peak: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             };
             let future = async {
-                if job.catalog_revision != self.search.revision {
+                let search = crate::commands::search::SearchCatalog::load(
+                    &self.search_path,
+                    Arc::clone(&self.content.messages),
+                    self.search_live,
+                )?;
+                if job.catalog_revision != search.revision {
                     return Err("SearchDataChanged".into());
                 }
+                let assets = self.assets.at_revision(search.asset_commit()?)?;
+                drop(search);
                 context.check_memory(0)?;
-                self.generate_media(&action_id, job.request, context.clone())
+                self.generate_media(&action_id, job.request, assets, context.clone())
                     .await
             };
             tokio::pin!(future);
@@ -226,6 +233,7 @@ impl Runtime {
         &self,
         action_id: &str,
         request: MediaRequest,
+        assets: crate::assets::AssetService,
         context: RenderContext,
     ) -> Result<MediaOutput> {
         match request {
@@ -246,9 +254,9 @@ impl Runtime {
                 let mut session: SearchSession = serde_json::from_str(&payload)?;
                 let mut files = Vec::new();
                 for pair in session.files.take().ok_or("MissingFileOptions")?.chunks(2) {
-                    let first = self.assets.exists(&pair[0].path);
+                    let first = assets.exists(&pair[0].path);
                     if pair.len() == 2 {
-                        let (a, b) = tokio::try_join!(first, self.assets.exists(&pair[1].path))?;
+                        let (a, b) = tokio::try_join!(first, assets.exists(&pair[1].path))?;
                         if a {
                             files.push(pair[0].clone());
                         }
@@ -263,13 +271,24 @@ impl Runtime {
                     return Err("NoAvailableFiles".into());
                 }
                 session.files = Some(files);
+                // 索引全体を非同期処理の間保持せず、一覧文面だけを成果へ残す。
+                let search = crate::commands::search::SearchCatalog::load(
+                    &self.search_path,
+                    Arc::clone(&self.content.messages),
+                    self.search_live,
+                )?;
+                if session.revision != search.session_revision() {
+                    return Err("SearchDataChanged".into());
+                }
+                let text = search.page(&session, true);
                 Ok(MediaOutput::FileList {
                     session_id,
                     session,
+                    text,
                 })
             }
             MediaRequest::Download { path } => {
-                let bytes = self.assets.bytes(&path).await?;
+                let bytes = assets.bytes(&path).await?;
                 if path.ends_with(".png") && !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
                     return Err("InvalidImageType".into());
                 }
@@ -299,7 +318,7 @@ impl Runtime {
                 {
                     return Err("MissingFfmpeg".into());
                 }
-                let artifact = MotionJob::new(*plan, self.assets.clone(), self.ffmpeg_path.clone())
+                let artifact = MotionJob::new(*plan, assets, self.ffmpeg_path.clone())
                     .render(context)
                     .await
                     .map_err(|error| {
@@ -348,6 +367,7 @@ impl Runtime {
             Ok(MediaOutput::FileList {
                 session_id,
                 session,
+                text: page,
             }) => {
                 let changed=tx.execute("UPDATE sessions SET payload=?3,expires=?4 WHERE id=?1 AND action=?2 AND expires>?5",params![session_id,action_id,serde_json::to_string(&session)?,now_ms()+crate::commands::search::SESSION_TTL_MS,now_ms()])?;
                 if changed == 0 {
@@ -356,7 +376,7 @@ impl Runtime {
                     tx.commit()?;
                     return Ok(());
                 }
-                text = self.search.page(&session, true);
+                text = page;
                 file_list_ready = true;
             }
             Ok(MediaOutput::Attachment {
@@ -468,6 +488,7 @@ enum MediaOutput {
     FileList {
         session_id: String,
         session: SearchSession,
+        text: String,
     },
     Attachment {
         artifact: Artifact,

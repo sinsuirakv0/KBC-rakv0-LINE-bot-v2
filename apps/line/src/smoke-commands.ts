@@ -17,8 +17,14 @@ await writeFile(join(directory, "content/help/index.txt"), `\ufeff${helpIndex}\r
 await writeFile(join(directory, "content/responses/sample.txt"), "\ufeff追加した応答\r\n");
 await writeFile(join(directory, "content/help/sample.txt"), "\ufeff追加した案内\r\n");
 await writeFile(join(directory, "content/help/guide-only.txt"), "\ufeff案内txtだけで追加\n");
+const searchPath = join(directory, "catalog.json");
+const snapshot = JSON.parse((await readFile(resolve("data/search/catalog.json"), "utf8")).replace(/^\ufeff/, ""));
+const writeSnapshot = async (validatedAtMs = Date.now()) => {
+  await writeFile(searchPath, `\ufeff${JSON.stringify({ ...snapshot, validatedAtMs })}`);
+};
+await writeSnapshot();
 const config = { databasePath: join(directory, "core.sqlite"), ownerId: "fixture-account",
-  contentDirectory: join(directory, "content"), searchDataPath: resolve("data/search/catalog.json") };
+  contentDirectory: join(directory, "content"), searchDataPath: searchPath, searchDataLive: true };
 let core = createCore(config);
 const db = new DatabaseSync(config.databasePath);
 let sequence = 0;
@@ -122,14 +128,31 @@ try {
   }
   await submit("次", "alice", "last-prompt"); action = await take(); assert(action.text.includes("移動できません")); sent(action);
   db.exec("UPDATE sessions SET revision=substr(revision,1,instr(revision,':')-1)");
-  core.shutdown(); core = createCore(config); assert.equal(core.stats().activeSessions, 0);
-  assert.equal((await submit("1", "alice", "last-prompt")).actionsCreated, 0);
+  core.shutdown(); core = createCore(config);
+  await submit("1", "alice", "last-prompt"); action = await take(); assert(action.text.includes("もう一度検索")); sent(action);
+  assert.equal(core.stats().activeSessions, 0);
   await submit("o.ut ねこ"); action = await take(); sent(action, "expired-prompt");
   db.prepare("UPDATE sessions SET expires=0").run();
   assert.equal((await submit("1", "alice", "expired-prompt")).actionsCreated, 0);
   const expiredCleanupId = `cleanup:${JSON.stringify(["chat", "expired-prompt"])}`;
   db.prepare("UPDATE actions SET due=0 WHERE id=?").run(expiredCleanupId);
   const expiredCleanup = await core.nextAction(); assert(expiredCleanup?.type === "deleteMessage" && expiredCleanup.messageId === "expired-prompt"); sent(expiredCleanup);
+
+  // 再起動なしの更新・2分での失効。時刻だけの更新では候補を失効させない。
+  await submit("!ut ねこ"); action = await take(); sent(action, "refresh-prompt");
+  await writeSnapshot();
+  assert.equal((await submit("1p", "alice", "refresh-prompt")).actionsCreated, 0);
+  snapshot.entries.ut[0].names[0] = "更新されたネコ";
+  snapshot.entries.ut[0].displayName = "更新されたネコ";
+  await writeSnapshot();
+  await submit("1", "alice", "refresh-prompt"); action = await take(); assert(action.text.includes("もう一度検索")); sent(action);
+  await submit("!ut 0"); action = await take(); assert(action.text.includes("更新されたネコ")); sent(action);
+  await writeSnapshot(Date.now() - 120000);
+  await submit("!ut 0"); action = await take(); assert(action.text.includes("更新を確認できません")); sent(action);
+  await writeFile(searchPath, JSON.stringify(snapshot));
+  await submit("!ut 0"); action = await take(); assert(action.text.includes("更新を確認できません")); sent(action);
+  await submit("!ping"); action = await take(); assert.equal(action.text, "pong!"); sent(action);
+  await writeSnapshot();
 
   // 永続Mediaは8件まで。生成待ちの同じトークでも通常返信を塞がない。
   for (let index = 0; index < 8; index++) {

@@ -10,7 +10,7 @@
 | generate_media | Download、FileList、Motionを共通AssetService / MotionJobへ接続 |
 | finish_media | 成果を既存配送Actionへ変換。file確認ではSessionの現在actionも照合し、古い結果で上書きしない |
 | prepare_attachment | claimedの成果を行番号から読む。ファイルpathをAdapterやCommand入力に渡さずBufferだけを返す |
-| AssetService | 固定commit・相対path・HTTPSを検証。Client/2 HTTP枠、15秒、4MiB、HEADの正負cache512件/10分を共用 |
+| AssetService | mainまたは固定commit・相対path・HTTPSを検証。共通Client/2 HTTP枠、15秒、4MiBを共有。HEADの存在結果は保持しない |
 | RenderContext | 作業ディレクトリ・取消・待機時間だけをRendererへ渡す。進捗ごとのLINE投稿は行わない |
 | prune_media/complete_action | 再起動時に参照のない作業領域を削除。sent/確定failedの成果を削除し、unknownは照合まで保持 |
 
@@ -22,8 +22,10 @@ LINEJS 3.4.2のOCメディア送信は `obs.uploadObjTalk(chat,type,blob,undefin
 
 FFmpegの実行pathはCoreConfig.ffmpegPath（FFMPEG_PATH）。Linuxコンテナは/usr/bin/ffmpeg、Windowsは絶対pathを指定する。Docker buildと0.2CPU/512MiBでの公開素材生成は [メモリ実験](../../../experiments/motion-memory/docs/MEMORY.md) で確認。実LINEアップロードの全形式・全素材の互換性は未確認。ローカルで [公開素材のPNG/MP4/GIF・file実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) と、通信なしのジョブ復旧・OBS例外・削除失敗を確認した。
 
-未実行ジョブにもsnapshotのrevisionを保存し、更新後の索引・共有素材へ以前の解決結果を適用しない。revision不一致は未通信の再実行案内に変える。配送直前に成果が消失していても、通常返信へ変えて他の配送を維持する。fileの選択案内には固定commitのダウンロードURLも添える。
+未実行ジョブにもsnapshotのrevisionを保存し、更新後の索引・共有素材へ以前の解決結果を適用しない。revision不一致は未通信の再実行案内に変える。配送直前に成果が消失していても、通常返信へ変えて他の配送を維持する。fileの選択案内には参照先のダウンロードURLも添える。本番はDiscordと同じmain、オフラインfixtureは固定commitを使う。
 
 RenderContext.check_memoryはLinuxコンテナの使用量を共通Workerで確認し、上限の64MiB手前で新規生成・Sprite展開を拒否する。動画では16Frameごとに再確認し、子FFmpegも含む使用量のsample最大値を記録する。取消・入力上限は従来どおり維持する。[条件・限界とLinux実験](../../../experiments/motion-memory/docs/MEMORY.md)。
 
 利用者に送る素材取得・生成失敗・添付消失の案内は[Messages](MESSAGES.md)のmedia.txtで変更する。監視用のerror code・stderrと、現在配送しない内部のMotion進捗は文面設定の対象に含めない。
+
+2026-10-05、索引はMedia処理開始時だけ読み、revision照合と取得先の決定後に破棄する。FileListは確認後に再照合して一覧文面だけをfinish_mediaへ渡す。取得Clientと2 HTTP枠はRuntime全体で共有し、Commandやジョブごとに通信枠を増やさない。最新データの確認が2分を超える場合、新規準備は取得失敗案内へ変える。[更新の契約](../../../data/search/docs/SNAPSHOT.md)。

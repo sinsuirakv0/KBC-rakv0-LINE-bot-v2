@@ -1,10 +1,5 @@
-use reqwest::{Client, Url, redirect::Policy};
-use std::{
-    collections::HashMap,
-    fmt,
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
-};
+﻿use reqwest::{Client, Url, redirect::Policy};
+use std::{fmt, sync::Arc, time::Duration};
 use tokio::sync::Semaphore;
 
 pub const MAX_ASSET_BYTES: usize = 4 * 1024 * 1024;
@@ -14,7 +9,6 @@ pub struct AssetService {
     base: String,
     client: Client,
     permits: Arc<Semaphore>,
-    existence: Arc<Mutex<HashMap<String, (bool, Instant)>>>,
 }
 
 #[derive(Debug)]
@@ -33,7 +27,9 @@ impl std::error::Error for AssetError {}
 
 impl AssetService {
     pub fn new(commit: &str) -> crate::Result<Self> {
-        if commit.len() != 40 || !commit.bytes().all(|c| c.is_ascii_hexdigit()) {
+        if commit != "main"
+            && (commit.len() != 40 || !commit.bytes().all(|c| c.is_ascii_hexdigit()))
+        {
             return Err("InvalidAssetCommit".into());
         }
         Ok(Self {
@@ -45,7 +41,21 @@ impl AssetService {
                 .redirect(Policy::none())
                 .build()?,
             permits: Arc::new(Semaphore::new(2)),
-            existence: Arc::new(Mutex::new(HashMap::new())),
+        })
+    }
+    pub fn at_revision(&self, revision: &str) -> crate::Result<Self> {
+        if revision != "main"
+            && (revision.len() != 40 || !revision.bytes().all(|c| c.is_ascii_hexdigit()))
+        {
+            return Err("InvalidAssetCommit".into());
+        }
+        // Clientと全体2枠を共有し、取得元だけを切り替える。存在結果は保持しない。
+        Ok(Self {
+            base: format!(
+                "https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-assets/{revision}/jp/sitedata"
+            ),
+            client: self.client.clone(),
+            permits: Arc::clone(&self.permits),
         })
     }
     fn url(&self, path: &str) -> Result<Url, AssetError> {
@@ -65,16 +75,6 @@ impl AssetService {
     }
     pub async fn exists(&self, path: &str) -> Result<bool, AssetError> {
         let url = self.url(path)?;
-        if let Some((exists, at)) = self
-            .existence
-            .lock()
-            .map_err(|_| AssetError::new("cache", "poisoned"))?
-            .get(path)
-            .copied()
-            && at.elapsed() < Duration::from_secs(600)
-        {
-            return Ok(exists);
-        }
         let _permit = self
             .permits
             .acquire()
@@ -83,6 +83,7 @@ impl AssetService {
         let response = self
             .client
             .head(url)
+            .header(reqwest::header::CACHE_CONTROL, "no-cache")
             .send()
             .await
             .map_err(|e| AssetError::new("HEAD", e))?;
@@ -92,20 +93,6 @@ impl AssetService {
                 .error_for_status()
                 .map_err(|e| AssetError::new("HEAD", e))?;
         }
-        let mut cache = self
-            .existence
-            .lock()
-            .map_err(|_| AssetError::new("cache", "poisoned"))?;
-        if cache.len() >= 512
-            && !cache.contains_key(path)
-            && let Some(old) = cache
-                .iter()
-                .min_by_key(|(_, (_, at))| *at)
-                .map(|(key, _)| key.clone())
-        {
-            cache.remove(&old);
-        }
-        cache.insert(path.into(), (exists, Instant::now()));
         Ok(exists)
     }
     pub async fn bytes(&self, path: &str) -> Result<Vec<u8>, AssetError> {
@@ -126,6 +113,7 @@ impl AssetService {
         let mut response = self
             .client
             .get(url)
+            .header(reqwest::header::CACHE_CONTROL, "no-cache")
             .send()
             .await
             .and_then(reqwest::Response::error_for_status)

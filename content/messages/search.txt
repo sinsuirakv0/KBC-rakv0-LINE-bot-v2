@@ -1,4 +1,6 @@
 ﻿# 利用者向け文面。差し込み項目を保持して編集してください。
+search.data_unavailable = "参照データの更新を確認できません。少し待ってもう一度お試しください。"
+search.data_changed = "参照データが更新されました。もう一度検索してください。"
 search.apply_inner_01 = "検索語を指定してください。"
 search.apply_inner_02 = "該当する{arg0}が見つかりませんでした。"
 search.apply_inner_03 = "検索の受付が混み合っています。IDで指定するか、少し待って再度お試しください。"

@@ -58,11 +58,11 @@ motionはpng/mp4/gif、f/c/s/u（utだけ）、a=攻撃・w=歩行・i=待機・
 | ContentCatalog::load | txtを検証し応答・helpを起動時登録 |
 | ContentCatalog::command_help | 全体helpはindex.txtの本文だけを返す。個別helpは対象txtまたは応答txtを参照し、自動の一覧追加は行わない |
 | commands::prepare | prefix・alias・help・入力上限を判定。SearchCatalogへ検索を依頼 |
-| SearchCatalog::load/search | snapshot検証・正規化索引とID索引を構築。matchした名称番号もSessionへ保存 |
+| SearchCatalog::load/search | 利用時だけ最新snapshotの期限・内容を検証し、処理中だけ正規化・ID索引を構築。名称番号とrevisionをSessionへ保存 |
 | SearchCatalog::detail/page | ヒット形態・ダミー別称・ID解決によるURLと、検索/ファイルページをLINE向け整形 |
 | origin_path/file_options/motion_plan | 共有形態IDと素材path・描画条件を解決。通信は行わない |
 | sessions::apply/selected | 本人・トーク・prompt・期限を照合。選択・ページ更新・MediaRequestを受付transactionで保存 |
-| SearchCatalog::session_revision | snapshotと表示件数をSessionの版にする。Runtime起動時に旧一覧を失効 |
+| SearchCatalog::session_revision | データ内容・参照先と表示件数をSessionの版にする。操作時に旧一覧を失効 |
 | Runtime::submit_batch | 検索をDB lockの外で計算し、重複排除・Session・軽量Action・MediaRequest・checkpointを同時commit |
 | split_responses | LINEの文字数で分割。媒体のbyteをJSONへ入れない |
 
@@ -81,3 +81,5 @@ Bridgeの非同期受付は最大4受付・実処理1件。外部素材の取得
 !test allowは検証OCのsMIDを複数登録・解除する。BOT adminだけに許可し、!test mention / delete / kick / deputy / adminは対象確認後、--apply付きで1回の実操作を登録する。mentionの--target-chatはpMIDの所属OCの照会先で、投稿先は実行トーク。管理操作の--target-chatは操作対象トーク、!test replyの--chatは返信元。txtの案内・共通Context・既存Outboxを使う。[仕様・関数・上限](../../oc/docs/TEST_OC.md)。
 
 2026-10-04、利用者向け文面は[Messages](../../../docs/MESSAGES.md)のキーを使う。権限案内・状態ラベルなどの共通キーを優先し、新規キーはschema・用途別txt・呼出を同時に追加する。定型helpは引き続きtxt追加だけで登録できる。
+
+2026-10-05、ut/tut/stの参照先をDiscordと同じ公開mainへ切り替えた。Adapterの独立更新処理が90秒周期で確認し、Coreは確認から120秒以上のデータを使わない。索引は検索・候補操作中だけ読み、Runtimeの常駐cacheを撤廃した。素材もassets/mainを使う。データ変更後は候補操作時に再検索を案内する。同じデータの確認時刻更新では候補を維持する。[資料・更新・期限](../../../../../data/search/docs/SNAPSHOT.md)。
