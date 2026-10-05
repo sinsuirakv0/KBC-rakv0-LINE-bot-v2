@@ -231,7 +231,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
     }
     if mode == "talk" {
         if args.get(1).is_some_and(|arg| arg == "oc") {
-            if bot_rank(runtime, job) < 2 {
+            if bot_rank(tx, job)? < 2 {
                 return reply(
                     tx,
                     job,

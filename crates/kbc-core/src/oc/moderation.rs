@@ -165,7 +165,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
     if policy::role_rank(&context.actor.role) == 0 {
         return Ok(());
     }
-    if bot_rank(runtime, job) > 0
+    if bot_rank(tx, job)? > 0
         || policy::role_rank(&context.actor.role) >= 2
         || context.actor.member_id == context.bot_member_id
     {
@@ -418,6 +418,9 @@ pub fn case(
         },
         now,
     )?;
+    if action.is_empty() {
+        return Ok(());
+    }
     tx.execute(
         "INSERT INTO oc_cases VALUES(?1,?2,?3,NULL,?4,?5,?6,?7,'open',?8)",
         params![
@@ -496,7 +499,9 @@ pub fn member_event(
     } else {
         Some(chat_id.as_str())
     };
-    if let Some(destination) = destination {
+    if let Some(destination) = destination
+        && !crate::permissions::stopped(tx, destination)?
+    {
         let notify = notifications(tx, destination)?;
         let template = match state.as_str() {
             "JOINED" => notify.join,

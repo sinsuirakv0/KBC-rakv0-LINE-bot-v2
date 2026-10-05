@@ -145,6 +145,10 @@ impl Runtime {
         )? {
             return Ok(());
         }
+        let active: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM store_subscriptions WHERE platform='skd' AND NOT EXISTS(SELECT 1 FROM bot_stops WHERE bot_stops.chat IN ('*',store_subscriptions.chat)))",[],|row|row.get(0))?;
+        let updates = if active { updates } else { Vec::new() };
+        // 配信先のない更新は残さず、停止中も検知位置だけは進める。
+        tx.execute("DELETE FROM schedule_updates WHERE NOT EXISTS(SELECT 1 FROM schedule_targets t WHERE t.timestamp=schedule_updates.timestamp)",[])?;
         let count: i64 = tx.query_row("SELECT count(*) FROM schedule_updates", [], |row| {
             row.get(0)
         })?;
@@ -156,8 +160,9 @@ impl Runtime {
                 "INSERT OR IGNORE INTO schedule_updates VALUES(?1,?2)",
                 params![timestamp, serde_json::to_string(&contents)?],
             )?;
-            tx.execute("INSERT OR IGNORE INTO schedule_targets SELECT ?1,chat FROM store_subscriptions WHERE platform='skd'",[timestamp])?;
+            tx.execute("INSERT OR IGNORE INTO schedule_targets SELECT ?1,chat FROM store_subscriptions WHERE platform='skd' AND NOT EXISTS(SELECT 1 FROM bot_stops WHERE bot_stops.chat IN ('*',store_subscriptions.chat))",[timestamp])?;
         }
+        tx.execute("DELETE FROM schedule_updates WHERE NOT EXISTS(SELECT 1 FROM schedule_targets t WHERE t.timestamp=schedule_updates.timestamp)",[])?;
         tx.execute("INSERT INTO store_versions VALUES('skd',?1,?2,'') ON CONFLICT(platform) DO UPDATE SET version=excluded.version,checked=excluded.checked,error=''",params![serde_json::to_string(&watermark)?,now_ms()])?;
         tx.commit()?;
         Ok(())
@@ -182,6 +187,13 @@ impl Runtime {
         }
         let mut pending = pending_count(&tx)?;
         for (timestamp, chat, body) in targets {
+            if crate::permissions::stopped(&tx, &chat)? {
+                tx.execute(
+                    "DELETE FROM schedule_targets WHERE timestamp=?1 AND chat=?2",
+                    params![timestamp, chat],
+                )?;
+                continue;
+            }
             let contents: Vec<String> = serde_json::from_str(&body)?;
             let reserved = contents.len() as i64 + 1;
             if pending + reserved > crate::MAX_ACTIONS {
@@ -319,11 +331,47 @@ mod tests {
                 .unwrap(),
             100
         );
+        // 停止先の予定は見送り、再開後に遅れて送信しない。
+        {
+            let db = runtime.database.lock().unwrap();
+            crate::permissions::control(&db, "*", true, "fixture", now_ms()).unwrap();
+        }
+        runtime
+            .observe_schedule(
+                Watermark {
+                    timestamp: 201,
+                    hashes: BTreeMap::new(),
+                },
+                vec![(201, vec!["停止中".into()])],
+            )
+            .unwrap();
+        runtime.dispatch_schedules().unwrap();
+        {
+            let db = runtime.database.lock().unwrap();
+            assert_eq!(
+                db.query_row("SELECT count(*) FROM schedule_targets", [], |row| row
+                    .get::<_, i64>(0))
+                    .unwrap(),
+                0
+            );
+            assert_eq!(
+                db.query_row("SELECT count(*) FROM actions", [], |row| row
+                    .get::<_, i64>(0))
+                    .unwrap(),
+                100
+            );
+            crate::permissions::control(&db, "*", false, "fixture", now_ms()).unwrap();
+        }
         {
             let db = runtime.database.lock().unwrap();
             for timestamp in 201..217 {
                 db.execute("INSERT INTO schedule_updates VALUES(?1,'[]')", [timestamp])
                     .unwrap();
+                db.execute(
+                    "INSERT INTO schedule_targets VALUES(?1,'chat-0')",
+                    [timestamp],
+                )
+                .unwrap();
             }
         }
         assert!(
@@ -349,7 +397,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             serde_json::from_str::<Watermark>(&value).unwrap().timestamp,
-            200
+            201
         );
         drop(runtime);
         std::fs::remove_dir_all(path).unwrap();

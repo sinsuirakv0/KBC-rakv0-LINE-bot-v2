@@ -20,7 +20,7 @@ pub fn parse(text: &str) -> Option<Input> {
 }
 
 pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &Job, now: i64) -> Result<()> {
-    if !allowed(runtime, job, 1, 3) {
+    if !allowed(tx, job, 1, 3)? {
         return reply(
             tx,
             job,

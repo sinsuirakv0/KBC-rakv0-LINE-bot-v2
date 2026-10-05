@@ -1,4 +1,29 @@
-﻿!bot name 名前
-このOCでのBotの表示名を変更します。
+﻿BOT管理と状態確認
 
-例: !bot name KBC Bot
+!bot status
+  稼働時間・停止設定・BOT権限・配送待ちなどを表示
+!bot name 名前
+  このOCのBotの表示名を変更（BOT管理者のみ）
+!bot admin [talkID:<sMIDまたはmMID>] [3p]
+  管理者・モデレーター一覧（1ページ10人）
+!bot setting status [talkID:<sMIDまたはmMID>]
+  自分のBOT権限を確認
+!bot setting admin/mod @対象
+!bot setting admin/mod userID:<pMID> [talkID:<sMIDまたはmMID>]
+  登録・更新。pMIDをそのまま指定することもできます
+!bot setting admin/mod del @対象
+!bot setting admin/mod userID:<pMID> [talkID:<sMIDまたはmMID>] del
+  指定した権限だけ解除。一度の操作は一人です
+
+基本はOC単位（sMID）。同じOCのサブトークで共有します。
+talkIDでmMIDを指定すると、そのトークだけの登録になります。
+BOT管理者は遠隔設定可。OC管理人は同じOCだけ設定可。
+副官・BOTモデレーターはBOT権限を変更できません。
+
+!bot stop / !bot start
+  このトークで停止・再開（BOT管理者またはOC管理人・副官）
+!bot stop all / !bot start all
+  全体の停止・再開（BOT管理者のみ）
+全体停止を解除しても、個別停止は維持します。
+停止中はstartだけ受け付け、受信ログの保存は続けます。
+o.でも同じコマンドを使えます。案内は !help bot。

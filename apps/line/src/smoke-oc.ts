@@ -135,6 +135,53 @@ async function signal(id: string, state: string, scope = "square", targetChat = 
     displayName: "参加者🙂", state, scope, memberCreatedAtMs: at, createdAtMs: at });
 }
 try {
+  // 旧権限区分と即時反映。OC管理人は同じOCだけ、BOT管理者は遠隔設定可。
+  for (const actor of [co, mod, user]) {
+    await message(`!bot setting admin userID:${user}`, actor);
+    assert(texts(await drain()).includes("BOT権限を変更"));
+  }
+  await message(`!bot setting mod userID:${user} talkID:${labSquare}`, admin);
+  assert(texts(await drain()).includes("BOT権限を変更"));
+  await message("!bot setting mod @対象", admin, undefined, sub, { mentions: [user] }); await drain();
+  assert.equal(db.prepare("SELECT role FROM bot_roles WHERE scope=? AND member=?").get(square, user)?.role, "mod");
+  await message("o.bot setting status", user); assert(texts(await drain()).includes("BOTモデレーター"));
+  await message(`!bot setting admin ${user}`, admin); await drain();
+  await message(`!bot setting mod ${user} del`, admin); await drain();
+  assert.equal(db.prepare("SELECT role FROM bot_roles WHERE scope=? AND member=?").get(square, user)?.role, "admin");
+  await message(`!bot setting mod ${user}`, admin); await drain();
+  await message("!test reply 123 試験", user); assert(texts(await drain()).includes("BOT管理者専用"));
+  await message(`!bot setting mod ${user} del`, admin); await drain();
+  assert.equal(db.prepare("SELECT role FROM bot_roles WHERE member=?").get(user), undefined);
+  await message(`!bot setting mod ${labUser} talkID:${labSquare}`, owner); await drain();
+  await message("!bot setting status", labUser, undefined, labChat, { squareId: labSquare, botMemberId: labBot });
+  assert(texts(await drain()).includes("BOTモデレーター"));
+  await message(`!bot setting mod ${labUser} talkID:${labSquare} del`, owner); await drain();
+  // mMIDの旧登録も参照し、既定登録でsMIDへ統合。再起動で解除済み権限を戻さない。
+  db.prepare("INSERT INTO bot_roles VALUES(?,?,'mod','fixture',0)").run(chat, user);
+  await message(`!bot setting admin ${user}`, admin); await drain();
+  assert.equal(db.prepare("SELECT count(*) AS n FROM bot_roles WHERE member=?").get(user)?.n, 1);
+  await message(`!bot setting admin ${user} del`, admin); await drain();
+  await message(`!bot setting mod ${mod} del`, owner); await drain();
+  core.shutdown(); core = createCore(config);
+  assert.equal(db.prepare("SELECT role FROM bot_roles WHERE member=?").get(mod), undefined);
+  await message(`!bot setting mod ${mod}`, admin); await drain();
+  await message("!bot admin", user); assert(texts(await drain()).includes(owner));
+  await message("!bot status", user); const botStatus = texts(await drain());
+  assert(botStatus.includes("稼働時間") && botStatus.includes("配送待ち") && botStatus.includes("結果不明"));
+  // 個別停止と全体停止は独立。ログは継続し、副官は全体停止を解除できない。
+  await message("!bot stop all", co); assert(texts(await drain()).includes("実行権限"));
+  await message("!bot stop", co); await drain();
+  const pendingLogs = core.stats().pendingLogs;
+  await message("!ping", user); assert.equal((await drain()).length, 0);
+  assert(core.stats().pendingLogs > pendingLogs);
+  await message("!ping", user, undefined, sub); assert(texts(await drain()).length > 0);
+  await message("!bot stop all", owner, undefined, sub); await drain();
+  core.shutdown(); core = createCore(config);
+  await message("!bot start all", co); assert(texts(await drain()).includes("実行権限"));
+  await message("!bot start all", owner); await drain();
+  await message("!ping", user); assert.equal((await drain()).length, 0);
+  await message("o.bot start", co); await drain();
+  await message("!ping", user); assert(texts(await drain()).length > 0);
   // 通知設定はトーク単位。副官・一般参加者は不可、OC管理者とBOT管理権限は可。
   for (const actor of [co, user]) {
     await message("!pushsetting android,ios", actor); assert(texts(await drain()).includes("権限が必要"));

@@ -1,5 +1,6 @@
 ﻿use crate::messages::message;
 mod bot;
+mod bot_management;
 mod commands;
 mod id;
 mod legacy;
@@ -218,18 +219,16 @@ fn square(event: &CoreEvent) -> Option<&str> {
         CoreEvent::MemberChanged { square_id, .. } => Some(square_id),
     }
 }
-fn bot_rank(runtime: &Runtime, job: &Job) -> u8 {
+fn bot_rank(db: &Connection, job: &Job) -> Result<u8> {
     let (_, chat, _, actor, _) = identity(&job.event);
-    let context = job.context.as_ref().expect("resolved context");
-    runtime
-        .permissions
-        .rank(&context.square_id, actor)
-        .max(runtime.permissions.rank(chat, actor))
+    let context = job.context.as_ref().ok_or("MissingOcContext")?;
+    crate::permissions::rank(db, &context.square_id, chat, actor)
 }
-fn allowed(runtime: &Runtime, job: &Job, bot: u8, oc: u8) -> bool {
-    bot_rank(runtime, job) >= bot
+fn allowed(db: &Connection, job: &Job, bot: u8, oc: u8) -> Result<bool> {
+    Ok(bot_rank(db, job)? >= bot
         || (oc > 0
-            && policy::role_rank(&job.context.as_ref().expect("resolved context").actor.role) >= oc)
+            && policy::role_rank(&job.context.as_ref().ok_or("MissingOcContext")?.actor.role)
+                >= oc))
 }
 #[derive(Default)]
 struct TextDelivery {
@@ -259,6 +258,18 @@ fn text_action(
     delivery: TextDelivery,
     now: i64,
 ) -> Result<String> {
+    let control = match event {
+        CoreEvent::MessageReceived { text, .. } => bot::parse(text).is_some_and(|input| {
+            input.name == "bot"
+                && input.args.first().is_some_and(|arg| {
+                    matches!(arg.to_ascii_lowercase().as_str(), "start" | "stop")
+                })
+        }),
+        _ => false,
+    };
+    if crate::permissions::stopped(tx, chat)? && !(control && chat == identity(event).1) {
+        return Ok(String::new());
+    }
     let TextDelivery {
         mention,
         replace,
@@ -418,7 +429,9 @@ pub fn ingest(
         return Ok(false);
     }
     if matches!(event, CoreEvent::MemberChanged { .. }) {
-        moderation::member_event(runtime, tx, event, now)?;
+        if !crate::permissions::stopped(tx, identity(event).1)? {
+            moderation::member_event(runtime, tx, event, now)?;
+        }
         return Ok(true);
     }
     let CoreEvent::MessageReceived {
@@ -436,6 +449,9 @@ pub fn ingest(
     };
     id::remember(tx, event)?;
     if bot_member_id.as_ref() == Some(actor) {
+        return Ok(true);
+    }
+    if crate::permissions::stopped(tx, identity(event).1)? && !bot_management::is_start(text) {
         return Ok(true);
     }
     if moderation::mute(runtime, tx, event, now)? {
@@ -564,6 +580,12 @@ pub fn complete(
         return Ok(());
     }
     let mut job: Job = serde_json::from_str(continuation)?;
+    if api.is_read()
+        && crate::permissions::stopped(tx, identity(&job.event).1)?
+        && !bot_management::is_start_job(&job)
+    {
+        return Ok(());
+    }
     if matches!(job.phase, Phase::MemberNotice) {
         return moderation::complete_notice(runtime, tx, &job, result, now);
     }
@@ -620,6 +642,8 @@ pub fn complete(
             }
             if job.input.name == "store-setting" {
                 store_setting::execute(runtime, tx, &job, now)
+            } else if job.input.name == "bot" {
+                bot_management::execute(runtime, tx, &mut job, now)
             } else if job.input.name == "bot-name" {
                 bot::execute(runtime, tx, &mut job, now)
             } else if job.input.name == "id" {

@@ -306,13 +306,18 @@ impl Runtime {
         let mut statement = tx.prepare(
             "SELECT chat FROM store_subscriptions WHERE platform=?1 ORDER BY chat LIMIT 513",
         )?;
-        let chats = statement
+        let mut chats = statement
             .query_map([platform.key()], |row| row.get::<_, String>(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         drop(statement);
-        if chats.is_empty() {
-            return Ok(());
+        let mut active = Vec::new();
+        for chat in chats {
+            if !crate::permissions::stopped(&tx, &chat)? {
+                active.push(chat);
+            }
         }
+        chats = active;
+
         if chats.len() > MAX_SUBSCRIPTIONS as usize {
             return Err("StoreSubscriptionCapacity".into());
         }
@@ -461,6 +466,21 @@ mod tests {
                 .is_err()
         );
         core.record_store(StorePlatform::Ios, "15.7.0", true, now)
+            .unwrap();
+        assert_eq!(core.stats().unwrap().queued_actions, 3);
+        // 停止中の更新は登録しない。再開時に停止期間の更新を再通知しない。
+        {
+            let db = core.database.lock().unwrap();
+            crate::permissions::control(&db, "*", true, "fixture", now).unwrap();
+        }
+        core.record_store(StorePlatform::Android, "15.8.0", true, now)
+            .unwrap();
+        assert_eq!(core.stats().unwrap().queued_actions, 3);
+        {
+            let db = core.database.lock().unwrap();
+            crate::permissions::control(&db, "*", false, "fixture", now).unwrap();
+        }
+        core.record_store(StorePlatform::Android, "15.8.0", true, now)
             .unwrap();
         assert_eq!(core.stats().unwrap().queued_actions, 3);
         {

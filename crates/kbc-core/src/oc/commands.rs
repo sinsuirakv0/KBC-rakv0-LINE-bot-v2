@@ -94,7 +94,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
                 message_catalog,
                 "commands.execute_02",
                 arg0 = context.actor.role,
-                arg1 = bot_rank(runtime, job),
+                arg1 = bot_rank(tx, job)?,
                 arg2 = context.bot_role,
                 arg3 = context.authority
             ),
@@ -109,7 +109,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
         }
         _ => (1, 2),
     };
-    if !allowed(runtime, job, bot, oc) {
+    if !allowed(tx, job, bot, oc)? {
         return reply(
             tx,
             job,
@@ -572,7 +572,7 @@ fn save_notification(
     }
     Ok(true)
 }
-fn targets(job: &Job) -> Vec<String> {
+pub(super) fn targets(job: &Job) -> Vec<String> {
     let mut result = Vec::new();
     if let CoreEvent::MessageReceived { mentions, .. } = &job.event {
         for id in mentions.iter().flatten() {
@@ -801,15 +801,12 @@ pub fn target(
     }
     if member.member_id == context.bot_member_id
         || policy::role_rank(&member.role) != 1
-        || runtime
-            .permissions
-            .rank(&member.square_id, &member.member_id)
-            .max(
-                runtime
-                    .permissions
-                    .rank(identity(&job.event).1, &member.member_id),
-            )
-            > 0
+        || crate::permissions::rank(
+            tx,
+            &member.square_id,
+            identity(&job.event).1,
+            &member.member_id,
+        )? > 0
     {
         job.results.push(message!(
             message_catalog,

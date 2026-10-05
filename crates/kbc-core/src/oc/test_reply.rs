@@ -31,7 +31,7 @@ pub fn parse(text: &str) -> Option<Input> {
 
 pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &Job, now: i64) -> Result<()> {
     let message_catalog = &runtime.content.messages;
-    if bot_rank(runtime, job) < 2 {
+    if bot_rank(tx, job)? < 2 {
         return reply(
             tx,
             job,

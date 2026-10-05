@@ -36,7 +36,7 @@ pub struct Runtime {
     stopped: AtomicBool,
     next_cleanup_ms: AtomicI64,
     max_retained_events: u32,
-    permissions: permissions::Permissions,
+    started_at_ms: i64,
     content: commands::content::ContentCatalog,
     search_path: std::path::PathBuf,
     search_live: bool,
@@ -81,7 +81,6 @@ impl Runtime {
             .unwrap_or(Path::new("storage"))
             .join("media");
         std::fs::create_dir_all(&media_root)?;
-        let permissions = permissions::Permissions::load(config.permissions_path.as_deref())?;
         let mut db = Connection::open(config.database_path)?;
         // Event・Action・checkpointを一つのtransactionで確定する。
         db.execute_batch("PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL;
@@ -119,6 +118,7 @@ impl Runtime {
             "INSERT OR IGNORE INTO metadata VALUES ('owner', ?1)",
             [&config.owner_id],
         )?;
+        permissions::initialize(&mut db, config.permissions_path.as_deref())?;
         oc::initialize(&db)?;
         commands::sessions::initialize(&db)?;
         logs::initialize(&db)?;
@@ -152,7 +152,7 @@ impl Runtime {
             stopped: AtomicBool::new(false),
             next_cleanup_ms: AtomicI64::new(0),
             max_retained_events,
-            permissions,
+            started_at_ms: now_ms(),
             content,
             search_path,
             search_live: config.search_data_live.unwrap_or(false),
@@ -732,6 +732,10 @@ impl Runtime {
 
     pub fn stats(&self) -> Result<CoreStats> {
         let db = self.database.lock().map_err(|_| "DatabaseLock")?;
+        self.stats_from_db(&db)
+    }
+
+    fn stats_from_db(&self, db: &Connection) -> Result<CoreStats> {
         let count = |status| -> Result<u32> {
             Ok(db.query_row(
                 "SELECT count(*) FROM actions WHERE status=?1",

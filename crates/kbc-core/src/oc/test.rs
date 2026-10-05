@@ -272,7 +272,7 @@ fn label_plan<'a>(
 
 pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
     let message_catalog = &runtime.content.messages;
-    if bot_rank(runtime, job) < 2 {
+    if bot_rank(tx, job)? < 2 {
         return reply(
             tx,
             job,
@@ -404,7 +404,7 @@ pub fn inspected(
             now,
         );
     }
-    if bot_rank(runtime, job) < 2 || identity(&job.event).4 < now - 60000 {
+    if bot_rank(tx, job)? < 2 || identity(&job.event).4 < now - 60000 {
         return reply(tx, job, message!(message_catalog, "test.inspected_02"), now);
     }
     let value = result.oc_result.as_ref().ok_or("MissingOcResult")?;

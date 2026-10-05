@@ -5,10 +5,22 @@ pub fn parse(text: &str) -> Option<Input> {
     let mut input = text;
     let command = test_reply::take_word(&mut input);
     let end = input.find(char::is_whitespace).unwrap_or(input.len());
-    if (!command.eq_ignore_ascii_case("!bot") && !command.eq_ignore_ascii_case("o.bot"))
-        || !input[..end].eq_ignore_ascii_case("name")
-    {
+    if !command.eq_ignore_ascii_case("!bot") && !command.eq_ignore_ascii_case("o.bot") {
         return None;
+    }
+    if input.is_empty() {
+        return None;
+    }
+    if !input[..end].eq_ignore_ascii_case("name") {
+        return Some(Input {
+            name: "bot".into(),
+            args: input
+                .split_whitespace()
+                .take(64)
+                .map(str::to_owned)
+                .collect(),
+            body: input.into(),
+        });
     }
     // name直後の区切り用スペース1個だけを除き、残りの文字列はそのまま渡す。
     Some(Input {
@@ -23,7 +35,7 @@ pub fn parse(text: &str) -> Option<Input> {
 
 pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
     let message_catalog = &runtime.content.messages;
-    if bot_rank(runtime, job) < 2 {
+    if bot_rank(tx, job)? < 2 {
         return reply(
             tx,
             job,
@@ -53,7 +65,7 @@ pub fn target(
 ) -> Result<()> {
     let message_catalog = &runtime.content.messages;
     // 変更APIの発行時も、BOT管理者としての権限を確認する。
-    if bot_rank(runtime, job) < 2 {
+    if bot_rank(tx, job)? < 2 {
         return reply(
             tx,
             job,
