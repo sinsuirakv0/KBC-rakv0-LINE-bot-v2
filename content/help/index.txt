@@ -4,6 +4,7 @@
 ・ut -味方キャラ検索
 ・tut -敵キャラ検索
 ・st -ステージ検索
+・pushsetting -Android/iOSのアプデ通知設定
 [bot関係]
 ・ping -応答確認
 ・bot -botの設定

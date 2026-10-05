@@ -103,3 +103,5 @@ LINEJS 3.4.2のSquareEventNotifiedLeaveSquareChatはsquareMemberを持つ場合�
 名前・メンションが必要な通知対象で、観測名もない場合だけ、既存OutboxのMember照会を1件追加する。処分用の照会とAction IDを分け、通知のための取得を受信transactionで待たない。未知の名前をpresenceへ代替ラベルで保存しない。照会したMID・OCを検査し、失敗時は「未取得 (pMID)」で送る。成功した名前は状態や時刻を変えず不足名だけ補う。既存90秒の重複通知抑制・API枠・Queue上限を使う。
 
 SDKの名前付き退出、サブトークの投稿で観測した名の再利用、未知参加者の1回照会・再起動、照会失敗時のMID付き案内をOC Smokeで確認した。build・型検査・Clippyと受信基盤のSmokeも通過した。名前のない参加・退出のSDK応答や、退会後に照会できる範囲は実OCでの確認事項として残る。
+
+!pushsettingはstore_settingから既存Context照会へ接続する。OC ADMINまたはBOT admin/modだけがトークのストア通知を設定・確認できる。OC CO_ADMINだけでは許可しない。[登録と監視](../../store_update/docs/STORE_UPDATE.md)。

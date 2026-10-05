@@ -1,0 +1,28 @@
+﻿にゃんこ大戦争 Android / iOS アプデ通知
+
+!pushsetting android
+!pushsetting ios
+実行したトークで通知をONにします。末尾のonは省略できます。
+
+!pushsetting android off
+!pushsetting ios off
+通知をOFFにします。
+
+!pushsetting android,ios
+!pushsetting android,ios off
+両方をまとめて設定します。
+
+!pushsetting status
+!pushsetting android status
+登録・検知済み版・保存した確認時刻・取得エラーを確認します。
+
+登録・解除・状態確認: OC管理者、BOT管理者、BOTモデレーター。
+副官はBOT管理権限がある場合に利用できます。
+通知先はOC単位ではなく、実行したトーク単位です。
+o.pushsettingも同じです。メンションは付けません。
+
+登録先があるOSだけ、全トークで共通の5秒周期で確認します。
+初回は基準値を保存し、通知は送りません。
+更新候補は再取得で確認し、版が増えた場合だけ通知します。
+停止中に進んだ版は、保存済み基準との比較で検知します。
+取得失敗では待ち時間を延ばします。結果不明の通知は自動再送しません。

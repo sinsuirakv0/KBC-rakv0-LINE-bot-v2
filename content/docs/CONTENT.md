@@ -29,3 +29,5 @@ help/test.txtは!test / !help testの共通案内。!test replyは [送信テス
 help/bot.txtは!bot / !help botの共通案内。botは必須helpへ登録し、[表示名変更](../../crates/kbc-core/src/oc/docs/BOT.md) の実処理はRust OC基盤で行う。
 
 2026-10-04、全体helpをindex.txtの本文だけに変更した。Command Smokeでresponsesと個別helpを追加した状態の!help / o.helpが手動のindex本文と一致し、個別helpと応答の追加は引き続き使えることを確認。buildと型検査も通過した。
+
+pushsettingは処理を持つ予約名。help/pushsetting.txtは公開案内、messages/update.txtは登録応答・状態表示・ストア更新通知の全定型文面。!helpのindexへは手動で項目を追加した。[仕様](../../crates/kbc-core/src/store_update/docs/STORE_UPDATE.md)。

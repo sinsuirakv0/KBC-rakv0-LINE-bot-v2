@@ -5,6 +5,7 @@ mod id;
 mod legacy;
 mod moderation;
 mod policy;
+mod store_setting;
 mod test;
 mod test_reply;
 pub use legacy::import_legacy;
@@ -446,6 +447,7 @@ pub fn ingest(
         return Ok(true);
     }
     let input = if let Some(input) = commands::parse(text)
+        .or_else(|| store_setting::parse(text))
         .or_else(|| bot::parse(text))
         .or_else(|| id::parse(text))
         .or_else(|| test_reply::parse(text))
@@ -631,7 +633,9 @@ pub fn complete(
             if identity(&job.event).4 < now - 60000 {
                 return reply(tx, &job, message!(message_catalog, "mod.complete_04"), now);
             }
-            if job.input.name == "bot-name" {
+            if job.input.name == "store-setting" {
+                store_setting::execute(runtime, tx, &job, now)
+            } else if job.input.name == "bot-name" {
                 bot::execute(runtime, tx, &mut job, now)
             } else if job.input.name == "id" {
                 id::execute(runtime, tx, &mut job, now)
