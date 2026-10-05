@@ -46,7 +46,7 @@ LINEJSの最新公開版は2026-10-03のnpm再確認でも3.4.2。npm配布物re
 
 ## Commandの追加境界
 
-Protocol v17。通常返信の実送信IDをCoreへ渡し、候補promptへ結び付ける。管理者削除はsquare.destroyMessageへ渡し、新しい返信成功後に実行する。OCのメディアはoid省略のOBS reqseq upload自身が投稿し、空のIMAGE/VIDEOを先に送らない。画像・動画・GIF・ファイルの素材準備はRust共通Worker、BlobとLINEJS入出力はAdapterが扱う。uploadMediaも共通API枠・実fetch直前のsending記録を通し、HTTP statusを共通transportで検査する。動画durationはCoreの実Frame数から渡す。メディア自体はrelatedMessageId付き返信にならない。通信後の不明結果はunknownで自動再投稿しない。[Media Worker](../../../crates/kbc-core/docs/MEDIA.md) と [実素材実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) を参照。
+Protocol v18。通常返信の実送信IDをCoreへ渡し、候補promptへ結び付ける。管理者削除はsquare.destroyMessageへ渡し、新しい返信成功後に実行する。OCのメディアはoid省略のOBS reqseq upload自身が投稿し、空のIMAGE/VIDEOを先に送らない。画像・動画・GIF・ファイルの素材準備はRust共通Worker、BlobとLINEJS入出力はAdapterが扱う。uploadMediaも共通API枠・実fetch直前のsending記録を通し、HTTP statusを共通transportで検査する。動画durationはCoreの実Frame数から渡す。メディア自体はrelatedMessageId付き返信にならない。通信後の不明結果はunknownで自動再投稿しない。[Media Worker](../../../crates/kbc-core/docs/MEDIA.md) と [実素材実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) を参照。
 
 通知47のNICE / LOVEは既存ProtocolのReactionNotifiedへ正規化するが、ページ操作には使わない。利用者指定でリアクション方式を廃止し、一覧へのテキストリプライへ戻した。SquareDirectoryは旧snapshotのReactions要求を外部通信なしで完了し、getMessageReactionsを呼ばない。[旧案の調査・スタンプの仕様と未確認点](REACTIONS_AND_STICKERS.md)。
 
@@ -101,3 +101,7 @@ mainはSearchDataUpdater.runを独立taskとして開始し、90秒周期・同�
 2026-10-05、Protocol v16のNativeと同時更新する。mainは既存のrunMediaJobsとともにrunStoreMonitorsを一度起動し、shutdownで取消・終了を待つ。ストア取得と検知はRust、通知の送信は既存deliverActionとApiScheduler。新しいLINE ReceiverやAPI Queueは追加しない。[詳細](../../../crates/kbc-core/src/store_update/docs/STORE_UPDATE.md)。
 
 Protocol v17。deliverActionはthreadRootIdがある通常テキストをgetSquareThreadMid→300ms待機→sendSquareThreadMessageへ渡す。親送信後の1秒待機はCoreのdueへ保存する。照会のみ最大3回、送信開始後のエラーはunknownで自動再投稿しない。ApiSchedulerの共通枠・実fetch前のsending記録を共有し、本文の通常トークへのfallbackはない。smoke:skdで照会の準備遅延・送信境界・送信先とunknownを模擬検証する。[詳細と実OCの未確認点](../../../crates/kbc-core/src/skd/docs/SKD.md)。
+
+## 複数メンション（v18、2026-10-05）
+
+MessageMention.additionalの最大8件を先頭と合わせてMENTION.MENTIONEESへ変換する。Inspectは最大9メンバー、同じ既存枠で順番に取得し、所属を照合する。旧DTOのadditionalなしは以前の単独entryを維持する。同一範囲の複数entryが全対象の通知になるかは実機で確認し、Adapterの送信成功だけでは証明しない。[テスト仕様](../../../crates/kbc-core/src/oc/docs/TEST_MENTION.md)。

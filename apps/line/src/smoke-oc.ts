@@ -151,25 +151,6 @@ try {
   await message("!pushsetting ios off", mod, undefined, sub); await drain();
   assert.equal(db.prepare("SELECT count(*) AS n FROM store_subscriptions").get()?.n, 0);
   const idleMonitors = core.runStoreMonitors(); core.shutdown(); await idleMonitors; core = createCore(config);
-  // 廃止前の保存DTO: 未通信は取消し、unknownの明示照合で後続を作らない。
-  const retiredEvent: CoreEvent = { type: "messageReceived", eventId: "retired", chatId: chat, messageId: "old", text: "!test mention-label", createdAtMs: Date.now() };
-  const retiredContinuation = JSON.stringify({ event: retiredEvent, input: { name: "test", args: ["mention-label"], body: "" },
-    phase: "Mutation", step: 2, context: null, targets: [user], results: [], operation: "test-mention-label", case_id: null, deferred: null,
-    test: { operation: "mention-label", chat, members: [user], message: "", text: "試験", apply: true, context: null, separate: false } });
-  core.shutdown();
-  for (const status of ["queued", "unknown"]) {
-    const actionId = `retired-${status}`;
-    const payload = JSON.stringify({ type: "ocApi", actionId, eventId: "retired", chatId: chat, createdAtMs: Date.now(), continuation: retiredContinuation,
-      request: { type: "post", chatId: chat, text: "@試験", mention: { memberId: user, start: 0, end: 3 } } });
-    db.prepare("INSERT INTO actions(id,event_id,chat,payload,due,created,status) VALUES(?,'retired',?,?,0,0,?)").run(actionId, chat, payload, status);
-  }
-  core = createCore(config);
-  assert.equal(db.prepare("SELECT code FROM actions WHERE id='retired-queued'").get()?.code, "CommandRetired");
-  assert.equal(core.stats().unknownActions, 1);
-  core.resolveAction({ actionId: "retired-unknown", status: "sent", code: "Verified", messageId: "old-confirmed" });
-  assert.equal(core.stats().unknownActions, 0);
-  const beforeRetired = mentionSends.length;
-  await message("!test mention-label", owner); await drain(); assert.equal(mentionSends.length, beforeRetired);
   // OC管理人・副官・BOTモデレーターにも許可せず、実行OCのBot名だけを更新する。
   for (const actor of [admin, co, mod, user]) {
     await message("!bot name 未許可", actor); assert(texts(await drain()).includes("共通案内: BOT管理者専用"));
@@ -253,6 +234,42 @@ try {
   await message(`!test mention ${user} --apply`, owner); await drain();
   assert.equal(mentionSends.at(-1)?.chat, chat);
   assert.equal(JSON.parse(mentionSends.at(-1)!.metadata).MENTIONEES[0].M, user);
+  // 自由な名前を同じUTF-16範囲へ割り当て、別範囲の比較と最大9人を確認する。
+  const sharedLabel = "@担当🙂\n支援  班";
+  const beforeLabel = mentionSends.length;
+  await message(`!test mention-label ${labUser} ${labCo} --target-chat ${labChat} --apply -- 拒否`, admin);
+  assert(texts(await drain()).includes("BOT管理者専用"));
+  await message(`!test mention-label ${labUser} ${labCo} --target-chat ${labChat} -- 担当🙂\n支援  班`, owner);
+  const labelPreview = texts(await drain()); assert(labelPreview.includes("未実行") && labelPreview.includes("2人") && labelPreview.includes(sharedLabel));
+  assert.equal(mentionSends.length, beforeLabel);
+  await message(`!test mention-label ${labUser} ${labCo} ${labUser} --target-chat ${labChat} --apply -- 担当🙂\n支援  班`, owner);
+  assert(texts(await drain()).includes("各対象の端末通知"));
+  assert.deepEqual(mentionSends.at(-1), { chat, text: sharedLabel, metadata: JSON.stringify({ MENTIONEES: [
+    { S: "0", E: String(sharedLabel.length), M: labUser }, { S: "0", E: String(sharedLabel.length), M: labCo },
+  ] }) });
+  await message(`o.test mention-label ${labUser} ${labCo} --target-chat ${labChat} --separate --apply -- 担当🙂\n支援  班`, owner, undefined, sub);
+  // 照会後の保存済み複数メンションも、再起動後に実行サブトークへ一度だけ送る。
+  for (let index = 0; index < 2; index++) {
+    const query = await core.nextQueryAction(); assert(query?.type === "ocApi");
+    await deliverAction(client, core, gate, query, service);
+  }
+  core.shutdown(); core = createCore(config); await drain();
+  assert.deepEqual(mentionSends.at(-1), { chat: sub, text: `${sharedLabel} ${sharedLabel}`, metadata: JSON.stringify({ MENTIONEES: [
+    { S: "0", E: String(sharedLabel.length), M: labUser },
+    { S: String(sharedLabel.length + 1), E: String(sharedLabel.length * 2 + 1), M: labCo },
+  ] }) });
+  await message(`!test mention-label ${user} --apply -- 自由な名前`, owner); await drain();
+  assert.deepEqual(JSON.parse(mentionSends.at(-1)!.metadata), { MENTIONEES: [{ S: "0", E: "6", M: user }] });
+  const nineMembers = [admin, co, mod, user, bot, owner, mid("p", "6"), mid("p", "7"), mid("p", "8")];
+  await message(`!test mention-label ${nineMembers.join(" ")} --apply -- お知らせ`, owner); await drain();
+  assert.equal(JSON.parse(mentionSends.at(-1)!.metadata).MENTIONEES.length, 9);
+  const labelCalls = mentionSends.length;
+  for (const input of [
+    `!test mention-label ${[...nineMembers, mid("p", "0")].join(" ")} --apply -- 多すぎる`,
+    `!test mention-label ${user} --apply -- ${"🙂".repeat(51)}`,
+    `!test mention-label ${user} --apply --`,
+  ]) { await message(input, owner); assert(texts(await drain()).includes("使い方:")); }
+  assert.equal(mentionSends.length, labelCalls);
   const deletedBefore = deleted.length;
   await message(`!test delete 1234567890 --target-chat ${labChat}`, owner); await drain(); assert.equal(deleted.length, deletedBefore);
   await message(`!test delete 1234567890 --target-chat ${labChat} --apply`, owner); assert(texts(await drain()).includes("成功"));

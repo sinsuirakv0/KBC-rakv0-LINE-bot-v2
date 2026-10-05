@@ -33,7 +33,7 @@ txtと同梱検索を受付でAction化する。検索の走査は不変snapshot
 
 ## Bridge
 
-`kbc-protocol`のRust型から`apps/line/src/protocol/generated/`を生成する。本人・返信先・送信ID・画像URLとOC操作を追加したLINE専用Protocol v17。NativeとAdapterを同時に更新し、旧Adapterと混在させない。`kbc-node`は変換とRuntime呼出だけを行う。
+`kbc-protocol`のRust型から`apps/line/src/protocol/generated/`を生成する。本人・返信先・送信ID・画像URLとOC操作を追加したLINE専用Protocol v18。NativeとAdapterを同時に更新し、旧Adapterと混在させない。`kbc-node`は変換とRuntime呼出だけを行う。
 
 JSからNativeへの設定・Batch・結果は型付きDTOをJSON文字列化して渡す。N-APIのserde Value変換では整数の時刻がf64として入ってi64の復元に失敗したため、この小さな境界では整数表現を保つ。出力はplain DTO。大きな画像・SDKオブジェクトをこの経路へ渡さない。
 
@@ -80,3 +80,5 @@ Runtimeはsearch_path / search_liveと共通AssetServiceのClient・2枠だけ�
 Protocol v16。2026-10-05、run_store_monitorsを追加し、Android/iOSのストア監視を既存Lifecycleへ接続した。検知版・トークごとの登録・Outboxを同じDBへ保存し、GitHub snapshotから復元する。[監視・容量・配送の契約](../src/store_update/docs/STORE_UPDATE.md)。
 
 Protocol v17はSendMessageの任意threadRootId / threadContentsを追加する。親送信の成功と1秒以降の本文Actionの登録を結果transactionで保存する。unknownの本文は同じスレッドの後続を止め、確定failedならqueuedの後続を取消す。通常返信は継続する。run_store_monitorsへSKD確認を接続し、schedule_updates / schedule_targetsと予約を含むOutbox容量を既存SQLite・GitHub snapshotで扱う。[SKDの状態と上限](../src/skd/docs/SKD.md)。
+
+Protocol v18はMessageMentionに任意additional（MID・UTF-16位置）を追加する。旧Actionの単独メンションはdefaultで復元し、同じNative / Adapter版を使う。!test mention-labelは共通TestInspect / Mutation・Outboxだけで一個の表示範囲または個別範囲を試す。新しいWorker・常時処理を作らない。[入力と実機確認](../src/oc/docs/TEST_MENTION.md)。

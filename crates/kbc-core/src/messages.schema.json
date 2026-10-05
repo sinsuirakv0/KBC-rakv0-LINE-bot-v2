@@ -1,4 +1,9 @@
 {
+  "test.mention_label_usage": [],
+  "test.mention_label_shared": [],
+  "test.mention_label_separate": [],
+  "test.mention_label_preview": ["chat", "label", "mode", "count"],
+  "test.mention_label_result": [],
   "search.data_unavailable": [],
   "search.data_changed": [],
   "bot.execute_01": [],

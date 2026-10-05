@@ -7,7 +7,10 @@ import type { MessageMention } from "../protocol/generated/MessageMention.js";
 import type { MessageEmoji } from "../protocol/generated/MessageEmoji.js";
 
 export function mentionMetadata(mention?: MessageMention | null): Record<string, string> | undefined {
-  return mention ? { MENTION: JSON.stringify({ MENTIONEES: [{ S: String(mention.start), E: String(mention.end), M: mention.memberId }] }) } : undefined;
+  if (!mention) return undefined;
+  const targets = [mention, ...(mention.additional ?? [])];
+  if (targets.length > 9) throw new Error("TooManyMentionTargets");
+  return { MENTION: JSON.stringify({ MENTIONEES: targets.map(target => ({ S: String(target.start), E: String(target.end), M: target.memberId })) }) };
 }
 export function messageMetadata(mention?: MessageMention | null, emojis?: MessageEmoji[] | null): Record<string, string> | undefined {
   const metadata = mentionMetadata(mention) ?? {};
@@ -97,7 +100,7 @@ export class SquareDirectory {
       result.member = memberDto(member);
       result.rawMemberName = member.displayName;
     } else if (request.type === "inspect") {
-      if (!/^m[0-9a-f]{8,63}$/i.test(request.chatId) || request.memberIds.length > 2
+      if (!/^m[0-9a-f]{8,63}$/i.test(request.chatId) || request.memberIds.length > 9
           || request.memberIds.some(id => !/^p[0-9a-f]{8,63}$/i.test(id))) throw new Error("InvalidInspectionTarget");
       // 実験前はトークとBotの所属・roleを改めて照会し、以前の役割を根拠にしない。
       this.cache.delete(request.chatId);

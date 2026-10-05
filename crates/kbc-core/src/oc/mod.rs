@@ -247,6 +247,7 @@ fn mention_span(text: &str, label: &str, member_id: &str) -> Option<MessageMenti
         member_id: member_id.into(),
         start,
         end: start + label.encode_utf16().count() as u32,
+        additional: None,
     })
 }
 fn text_action(
@@ -283,15 +284,7 @@ fn text_action(
             thread_contents: None,
             image_url: None,
             attachment: None,
-            mention: if index == 0 {
-                mention.as_ref().map(|value| MessageMention {
-                    member_id: value.member_id.clone(),
-                    start: value.start,
-                    end: value.end,
-                })
-            } else {
-                None
-            },
+            mention: if index == 0 { mention.clone() } else { None },
             replace_message_id: if index == 0 { replace.clone() } else { None },
             is_prompt: prompt && index == 0,
             created_at_ms: now,
@@ -571,16 +564,6 @@ pub fn complete(
         return Ok(());
     }
     let mut job: Job = serde_json::from_str(continuation)?;
-    if job.input.name == "test"
-        && job
-            .input
-            .args
-            .first()
-            .is_some_and(|value| value == "mention-label")
-    {
-        // 廃止試験の結果照合だけを確定し、新しい処理や返信は生成しない。
-        return Ok(());
-    }
     if matches!(job.phase, Phase::MemberNotice) {
         return moderation::complete_notice(runtime, tx, &job, result, now);
     }

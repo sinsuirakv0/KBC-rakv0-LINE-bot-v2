@@ -87,6 +87,6 @@ smoke:ocの同じSDK mockで、BOT権限、複数許可登録・不正入力の�
 
 Windows / Node 24.15.0 / Rust GNU LLVMでnpm run build、smoke / smoke:commands / smoke:oc / smoke:persistence / smoke:logsとClippy（workspace・all-targets・release・locked・警告をエラー扱い）が通過。途中のオフライン検証でinspectを照会Action選択のSQLへ登録し忘れる待機を検出し、修正後に同じ経路の完了を確認した。BOM・LF・資料リンク・git diff --checkも確認した。
 
-2026-10-05、実機試験後の利用者指定によりmention-label（自由表示名・同範囲の複数人メンション）を廃止した。既存の!test mentionは維持する。Protocol番号は混在を避けるためv15を維持し、複数人用DTOは削除した。
+## 自由な表示名と複数人の試験（2026-10-05）
 
-廃止試験の保存済みqueued/claimed/queryingは起動時にCommandRetiredで確定失敗とし、新規送信しない。sending/unknownは従来の不明結果として保持し、明示照合では後続操作を生成しない。
+!test mention-labelは初回追加後に実機試験を経て廃止したが、利用者の指定でコミット382ad95から復元した。廃止時にCommandRetiredで失敗済みとなったActionは復活させない。現在の既定は一個の表示範囲へ最大9人のpMIDを設定、--separateは個別範囲の比較試験。従来のBOT admin・実行/照会先OCのallow・現在の所属・期限・Outboxを共有する。Inspectの上限を9人へ広げたが、kickやrolesなど既存操作の対象数は変えない。[入力・Protocol v18・仕組み・実機での確認項目](TEST_MENTION.md)。
