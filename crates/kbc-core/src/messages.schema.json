@@ -559,9 +559,68 @@
   "update.off": [],
   "update.permission": [],
   "update.capacity": [],
-  "update.configured": ["platform", "state"],
+  "update.configured": [
+    "platform",
+    "state"
+  ],
   "update.unobserved": [],
   "update.no_error": [],
-  "update.status": ["platform", "state", "version", "checked", "pending", "error"],
-  "update.notification": ["platform", "version", "detected_at", "asset_url", "store", "store_url"]
+  "update.status": [
+    "platform",
+    "state",
+    "version",
+    "checked",
+    "pending",
+    "error"
+  ],
+  "update.notification": [
+    "platform",
+    "version",
+    "detected_at",
+    "asset_url",
+    "store",
+    "store_url"
+  ],
+  "skd.root": [],
+  "skd.header": [
+    "detected",
+    "types"
+  ],
+  "skd.initial": [
+    "types"
+  ],
+  "skd.failed": [],
+  "skd.unknown": [],
+  "skd.guaranteed": [],
+  "skd.step_up": [],
+  "skd.ticket_shard": [],
+  "skd.shard": [],
+  "skd.ticket": [],
+  "skd.event_tag": [],
+  "skd.normal_tag": [],
+  "skd.related": [
+    "url"
+  ],
+  "skd.permanent_suffix": [],
+  "skd.permanent": [],
+  "skd.omitted": [
+    "count"
+  ],
+  "skd.changes": [],
+  "skd.change_start": [
+    "before",
+    "after"
+  ],
+  "skd.change_end": [
+    "before",
+    "after"
+  ],
+  "skd.change_min_version": [
+    "before",
+    "after"
+  ],
+  "skd.change_max_version": [
+    "before",
+    "after"
+  ]
 }
