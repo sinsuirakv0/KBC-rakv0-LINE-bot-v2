@@ -8,6 +8,7 @@ mod layout;
 mod plan;
 mod project;
 mod raster;
+pub(crate) mod remote;
 pub(crate) mod request;
 
 pub(crate) use error::MotionError;

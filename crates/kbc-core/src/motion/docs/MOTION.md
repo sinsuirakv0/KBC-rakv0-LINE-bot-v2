@@ -21,4 +21,6 @@
 
 2026-10-03のメモリ対策: FFmpegは入力decoder・filter・出力encoderを1threadにし、frameは逐次pipeへ渡す。SpriteSheet.decodeは共通Contextへ展開予算を照会し、render_frameは16Frameごとにコンテナ使用量を確認する。MotionJob.renderは描画状態を明示dropしてから成果を確認し、container_peak_sample_bytesをstdout以外の診断ログへ出す。[Linux 0.2CPU / 512MiBでの実測](../../../../../experiments/motion-memory/docs/MEMORY.md)。
 
-2026-10-07の利用者指定: LINE側でメモリ不足などにより生成できない場合はDiscord Botの資源で代行生成し、LINE側は完成したPNG / GIF / MP4を受け取って送信する。[要件・現行関数との関係・確認中の接続方式](../../../../../docs/decisions/MOTION_REMOTE_FALLBACK_V1.md)。代行経路は未実装であり、現在の生成失敗は引き続き案内へ変換される。
+2026-10-07、生成失敗時のDiscord代行を実装。`Runtime::render_motion`が事前メモリ不足・素材取得失敗・描画/FFmpeg失敗・実行timeoutを分類し、ローカル終了後に`RemoteMotion::render`へ同じMotionPlanを渡す。入力・Frame・素材データの不正は代行しない。`RemoteMotion::download`は完成ファイルだけを最大8MiBで逐次保存し、既存Media Workerの送信へ戻す。[契約・関数・再起動・期限](../../../../../docs/decisions/MOTION_REMOTE_FALLBACK_V1.md)。代行未設定では従来どおり失敗案内にする。
+
+`render_gif`のpalette生成も失敗時に子FFmpegの終了を待つ。`finish_encoder`は取消を待機中にも受け、終了・stderr回収後に戻る。代行の開始前にローカル描画とEncoderを解放するための境界であり、描画アルゴリズムは変更していない。

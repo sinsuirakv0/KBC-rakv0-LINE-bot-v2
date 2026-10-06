@@ -134,15 +134,15 @@ impl Runtime {
             if self.cancel.is_cancelled() {
                 return Ok(());
             }
-            let next: Option<(i64, String, String)> = {
+            let next: Option<(i64, String, String, String)> = {
                 let db = self.database.lock().map_err(|_| "DatabaseLock")?;
-                let row = db.query_row("SELECT rowid,id,payload FROM actions WHERE status='queued' AND json_extract(payload,'$.type')='prepareMedia' ORDER BY rowid LIMIT 1", [], |row| Ok((row.get(0)?, row.get::<_,String>(1)?, row.get(2)?))).optional()?;
-                if let Some((_, id, _)) = &row {
+                let row = db.query_row("SELECT rowid,id,payload,code FROM actions WHERE status='queued' AND json_extract(payload,'$.type')='prepareMedia' ORDER BY rowid LIMIT 1", [], |row| Ok((row.get(0)?, row.get::<_,String>(1)?, row.get(2)?, row.get(3)?))).optional()?;
+                if let Some((_, id, _, _)) = &row {
                     db.execute("UPDATE actions SET status='preparing' WHERE id=?1", [id])?;
                 }
                 row
             };
-            let Some((row_id, action_id, payload)) = next else {
+            let Some((row_id, action_id, payload, previous_code)) = next else {
                 notified.await;
                 continue;
             };
@@ -157,6 +157,18 @@ impl Runtime {
             };
             let job: MediaJob = serde_json::from_str(request)?;
             let is_schedule = matches!(&job.request, MediaRequest::Schedule { .. });
+            let is_motion = matches!(&job.request, MediaRequest::Motion(_));
+            let resume_remote = is_motion
+                && self.motion_remote.is_some()
+                && matches!(
+                    previous_code.as_str(),
+                    "MotionLocalRunning" | "MotionRemotePending"
+                );
+            let execution_seconds = if is_motion && self.motion_remote.is_some() {
+                1860
+            } else {
+                600
+            };
             let workspace = self.media_root.join(format!("job-{row_id}"));
             tokio::fs::create_dir_all(&workspace).await?;
             let context = RenderContext {
@@ -165,6 +177,10 @@ impl Runtime {
                 queue_wait: Duration::from_millis((now_ms() - created_at_ms).max(0) as u64),
                 memory_peak: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             };
+            // 再開時は初回の待機期限で生成済み状態を捨てず、依頼全体の期限を延長しない。
+            let execution_limit = Duration::from_secs(execution_seconds).min(
+                Duration::from_secs(600 + execution_seconds).saturating_sub(context.queue_wait),
+            );
             let future = async {
                 if let MediaRequest::Schedule { date } = &job.request {
                     return self
@@ -182,12 +198,22 @@ impl Runtime {
                 }
                 let assets = self.assets.at_revision(search.asset_commit()?)?;
                 drop(search);
-                context.check_memory(0)?;
-                self.generate_media(&action_id, job.request, assets, context.clone())
-                    .await
+                if !is_motion {
+                    context.check_memory(0)?;
+                }
+                self.generate_media(
+                    &action_id,
+                    job.request,
+                    assets,
+                    context.clone(),
+                    resume_remote,
+                )
+                .await
             };
             tokio::pin!(future);
-            let outcome = if now_ms() - created_at_ms > 600000 {
+            let outcome = if (!resume_remote && context.queue_wait > Duration::from_secs(600))
+                || execution_limit.is_zero()
+            {
                 Err("MediaQueueExpired".into())
             } else {
                 tokio::select! {
@@ -199,13 +225,20 @@ impl Runtime {
                         return Ok(());
                     },
                     result = &mut future => result,
-                    _ = tokio::time::sleep(Duration::from_secs(600)) => {
+                    _ = tokio::time::sleep(execution_limit) => {
                         context.cancellation.cancel();
                         if tokio::time::timeout(Duration::from_secs(15), &mut future).await.is_err() { return Err("MediaCancellationStalled".into()); }
                         Err("MediaExecutionTimeout".into())
                     },
                 }
             };
+            if outcome
+                .as_ref()
+                .err()
+                .is_some_and(|error| error.to_string() == "MediaCancellationStalled")
+            {
+                return Err("MediaCancellationStalled".into());
+            }
             self.finish_media(action, outcome, is_schedule)?;
             let retained: bool = self.database.lock().map_err(|_|"DatabaseLock")?.query_row("SELECT EXISTS(SELECT 1 FROM actions WHERE id=?1 AND json_extract(CASE WHEN json_valid(payload) THEN payload ELSE '{}' END,'$.attachment') IS NOT NULL)",[&action_id],|row|row.get(0))?;
             if !retained {
@@ -243,6 +276,7 @@ impl Runtime {
         request: MediaRequest,
         assets: crate::assets::AssetService,
         context: RenderContext,
+        resume_remote: bool,
     ) -> Result<MediaOutput> {
         match request {
             MediaRequest::Schedule { .. } => Err("InvalidMediaRequest".into()),
@@ -321,23 +355,9 @@ impl Runtime {
                 })
             }
             MediaRequest::Motion(plan) => {
-                let format = plan.format;
-                if format != crate::motion::request::MotionFormat::Png
-                    && self.ffmpeg_path.as_ref().is_none_or(|path| !path.is_file())
-                {
-                    return Err("MissingFfmpeg".into());
-                }
-                let artifact = MotionJob::new(*plan, assets, self.ffmpeg_path.clone())
-                    .render(context)
-                    .await
-                    .map_err(|error| {
-                        eprintln!("Motion failed: {error}");
-                        if error.to_string() == "MediaMemoryBudgetExceeded" {
-                            error.to_string()
-                        } else {
-                            error.public_message().to_owned()
-                        }
-                    })?;
+                let artifact = self
+                    .render_motion(action_id, *plan, assets, context, resume_remote)
+                    .await?;
                 let duration_ms = artifact.duration_ms;
                 Ok(MediaOutput::Attachment {
                     artifact,
@@ -345,6 +365,83 @@ impl Runtime {
                 })
             }
         }
+    }
+
+    async fn render_motion(
+        &self,
+        action_id: &str,
+        plan: MotionPlan,
+        assets: crate::assets::AssetService,
+        context: RenderContext,
+        resume_remote: bool,
+    ) -> Result<Artifact> {
+        use crate::motion::{MotionError, request::MotionFormat};
+        if !resume_remote || self.motion_remote.is_none() {
+            if self.motion_remote.is_some() {
+                self.database.lock().map_err(|_| "DatabaseLock")?.execute(
+                    "UPDATE actions SET code='MotionLocalRunning' WHERE id=?1 AND status='preparing'", [action_id])?;
+            }
+            let local_context = RenderContext {
+                cancellation: context.cancellation.child_token(),
+                ..context.clone()
+            };
+            let local = async {
+                local_context
+                    .check_memory(0)
+                    .map_err(|error| MotionError::render(error.to_string()))?;
+                if plan.format != MotionFormat::Png
+                    && self.ffmpeg_path.as_ref().is_none_or(|path| !path.is_file())
+                {
+                    return Err(MotionError::render("MissingFfmpeg"));
+                }
+                MotionJob::new(plan.clone(), assets.clone(), self.ffmpeg_path.clone())
+                    .render(local_context.clone())
+                    .await
+            };
+            tokio::pin!(local);
+            let outcome = match tokio::time::timeout(Duration::from_secs(600), &mut local).await {
+                Ok(outcome) => outcome,
+                Err(_) => {
+                    local_context.cancellation.cancel();
+                    if tokio::time::timeout(Duration::from_secs(15), &mut local)
+                        .await
+                        .is_err()
+                    {
+                        return Err("MediaCancellationStalled".into());
+                    }
+                    Err(MotionError::render("MediaExecutionTimeout"))
+                }
+            };
+            match outcome {
+                Ok(artifact) => return Ok(artifact),
+                Err(error) => {
+                    eprintln!("Motion local generation failed: {error}");
+                    if !error.can_delegate()
+                        || self.motion_remote.is_none()
+                        || context.cancellation.is_cancelled()
+                    {
+                        return Err(match error.to_string().as_str() {
+                            "MissingFfmpeg" | "MediaMemoryBudgetExceeded" => error.to_string(),
+                            _ => error.public_message().into(),
+                        }
+                        .into());
+                    }
+                }
+            }
+        }
+        let remote = self
+            .motion_remote
+            .as_ref()
+            .ok_or("MotionRemoteUnavailable")?;
+        // 再起動時にローカル重処理を繰り返さず、同じ代行依頼を再開する。
+        self.database.lock().map_err(|_| "DatabaseLock")?.execute(
+            "UPDATE actions SET code='MotionRemotePending' WHERE id=?1 AND status='preparing'",
+            [action_id],
+        )?;
+        use sha1::{Digest, Sha1};
+        let id = format!("{:x}", Sha1::digest(action_id.as_bytes()));
+        eprintln!("Motion generation delegated: request_id={id}");
+        remote.render(&id, &plan, &assets, &context).await
     }
     fn finish_media(
         &self,
@@ -468,7 +565,7 @@ impl Runtime {
             is_prompt,
             created_at_ms,
         };
-        tx.execute("UPDATE actions SET status='queued',payload=?2,due=?3 WHERE id=?1 AND status='preparing'",params![action_id,serde_json::to_string(&prepared)?,now_ms()])?;
+        tx.execute("UPDATE actions SET status='queued',payload=?2,due=?3,code='' WHERE id=?1 AND status='preparing'",params![action_id,serde_json::to_string(&prepared)?,now_ms()])?;
         tx.commit()?;
         Ok(())
     }

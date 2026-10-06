@@ -7,6 +7,7 @@ pub const MAX_ASSET_BYTES: usize = 4 * 1024 * 1024;
 #[derive(Clone)]
 pub struct AssetService {
     base: String,
+    revision: String,
     client: Client,
     permits: Arc<Semaphore>,
 }
@@ -33,6 +34,7 @@ impl AssetService {
             return Err("InvalidAssetCommit".into());
         }
         Ok(Self {
+            revision: commit.into(),
             base: format!(
                 "https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-assets/{commit}/jp/sitedata"
             ),
@@ -51,6 +53,7 @@ impl AssetService {
         }
         // Clientと全体2枠を共有し、取得元だけを切り替える。存在結果は保持しない。
         Ok(Self {
+            revision: revision.into(),
             base: format!(
                 "https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-assets/{revision}/jp/sitedata"
             ),
@@ -72,6 +75,31 @@ impl AssetService {
             return Err(AssetError::new("asset", "invalid path"));
         }
         Url::parse(&format!("{}/{path}", self.base)).map_err(|e| AssetError::new("asset", e))
+    }
+
+    pub(crate) fn revision(&self) -> &str {
+        &self.revision
+    }
+
+    // 代行APIも既存ClientとHTTP枠を共有し、応答本文の処理中は枠を保持する。
+    pub(crate) async fn motion_request(
+        &self,
+        method: reqwest::Method,
+        url: Url,
+        secret: &str,
+        body: Option<Vec<u8>>,
+    ) -> crate::Result<(reqwest::Response, tokio::sync::OwnedSemaphorePermit)> {
+        let permit = Arc::clone(&self.permits).acquire_owned().await?;
+        let mut request = self
+            .client
+            .request(method, url)
+            .bearer_auth(secret)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .header(reqwest::header::CACHE_CONTROL, "no-store");
+        if let Some(body) = body {
+            request = request.body(body);
+        }
+        Ok((request.send().await?, permit))
     }
     pub async fn exists(&self, path: &str) -> Result<bool, AssetError> {
         let url = self.url(path)?;

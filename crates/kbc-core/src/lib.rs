@@ -43,6 +43,7 @@ pub struct Runtime {
     assets: assets::AssetService,
     media_root: std::path::PathBuf,
     ffmpeg_path: Option<std::path::PathBuf>,
+    motion_remote: Option<motion::remote::RemoteMotion>,
     cancel: tokio_util::sync::CancellationToken,
     media_worker_active: AtomicBool,
     logs_enabled: bool,
@@ -68,6 +69,10 @@ impl Runtime {
         let content = commands::content::ContentCatalog::load(Path::new(
             config.content_directory.as_deref().unwrap_or("content"),
         ))?;
+        let motion_remote = motion::remote::RemoteMotion::from_config(
+            config.motion_remote_url,
+            config.motion_remote_secret,
+        )?;
         let search_path = config
             .search_data_path
             .as_deref()
@@ -159,6 +164,7 @@ impl Runtime {
             assets: assets::AssetService::new("main")?,
             media_root,
             ffmpeg_path: config.ffmpeg_path.map(Into::into),
+            motion_remote,
             cancel: tokio_util::sync::CancellationToken::new(),
             media_worker_active: AtomicBool::new(false),
             logs_enabled: config.logs_enabled.unwrap_or(false),

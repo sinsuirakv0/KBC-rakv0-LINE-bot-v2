@@ -31,3 +31,7 @@ RenderContext.check_memoryはLinuxコンテナの使用量を共通Workerで確�
 2026-10-05、索引はMedia処理開始時だけ読み、revision照合と取得先の決定後に破棄する。FileListは確認後に再照合して一覧文面だけをfinish_mediaへ渡す。取得Clientと2 HTTP枠はRuntime全体で共有し、Commandやジョブごとに通信枠を増やさない。最新データの確認が2分を超える場合、新規準備は取得失敗案内へ変える。[更新の契約](../../../data/search/docs/SNAPSHOT.md)。
 
 2026-10-05、MediaRequest::Scheduleを追加した。描画・素材と同じ有限準備workerでHTTP取得・差分整形を行い、検索索引の読み込み・FFmpeg・素材revision照合を通さず本文付き親SendMessageへ変換する。HTTPは共通AssetService。Outbox容量はprepareMediaに最大33配送枠を保守的に予約する。スケジュールの本文は最大32×1,500 UTF-16単位。[処理と保存](../src/skd/docs/SKD.md)。
+
+2026-10-07、motionだけに任意のDiscord代行を追加。`generate_media → render_motion → RemoteMotion::render / download → finish_media`を既存1 Workerで実行する。事前メモリ確認はローカル試行内で行うため、メモリ圧迫で新規生成を拒否した時点から代行できる。`actions.code`にローカル試行中・代行中を保存し、再起動後は同じAction IDに対応する代行へ進む。成功・失敗案内への変換でcodeを消す。
+
+代行有効のmotionはローカル10分と代行待ちを含め31分の実行上限。初回の待機期限は10分、保存済みの生成状態から再開する場合は作成から41分までの残り時間へ制限する。通常配送と同じトークのpingは生成中も進む。代行未設定・他Mediaの10分上限は維持する。成果・未解決件数・unknownの上限と規則は共通。[接続設定・有限HTTP・取消・再開](../../../docs/decisions/MOTION_REMOTE_FALLBACK_V1.md)。

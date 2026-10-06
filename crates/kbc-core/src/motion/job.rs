@@ -351,7 +351,7 @@ async fn render_mp4(
     }
     drop(stdin);
     let finalize_started = Instant::now();
-    finish_encoder(child, stderr).await?;
+    finish_encoder(child, stderr, context).await?;
     metrics.encoder_finalize = finalize_started.elapsed();
     metrics.encoder_total = encoder_started.elapsed();
     Ok(EncodedMotion { prepared, metrics })
@@ -392,14 +392,23 @@ async fn render_gif(
         "1".to_owned(),
         palette.to_string_lossy().into_owned(),
     ];
-    let (palette_child, mut palette_stdin, palette_stderr) =
+    let (mut palette_child, mut palette_stdin, palette_stderr) =
         start_encoder(ffmpeg, &palette_arguments)?;
     for index in sample_indices(prepared.frames.len()) {
-        prepared = render_frame(prepared, index, context)?.prepared;
-        write_rgba(&mut palette_stdin, prepared.rgba(), context).await?;
+        prepared = match render_frame(prepared, index, context) {
+            Ok(rendered) => rendered.prepared,
+            Err(error) => {
+                stop_encoder(&mut palette_child).await;
+                return Err(error);
+            }
+        };
+        if let Err(error) = write_rgba(&mut palette_stdin, prepared.rgba(), context).await {
+            stop_encoder(&mut palette_child).await;
+            return Err(error);
+        }
     }
     drop(palette_stdin);
-    finish_encoder(palette_child, palette_stderr).await?;
+    finish_encoder(palette_child, palette_stderr, context).await?;
 
     prepared.previous_packets = None;
     let arguments = vec![
@@ -454,7 +463,7 @@ async fn render_gif(
         }
     }
     drop(stdin);
-    finish_encoder(child, stderr).await?;
+    finish_encoder(child, stderr, context).await?;
     Ok(prepared)
 }
 
@@ -528,9 +537,21 @@ fn start_encoder(
 async fn finish_encoder(
     mut child: Child,
     stderr: tokio::process::ChildStderr,
+    context: &TaskContext,
 ) -> Result<(), MotionError> {
     let stderr_task = tokio::spawn(read_stderr_tail(stderr));
-    let status = child.wait().await;
+    let status = tokio::select! {
+        biased;
+        _ = context.cancellation().cancelled() => {
+            stop_encoder(&mut child).await;
+            let _ = stderr_task.await;
+            return Err(MotionError::render("FFmpeg finalization was cancelled"));
+        }
+        status = child.wait() => status,
+    };
+    if status.is_err() {
+        stop_encoder(&mut child).await;
+    }
     let stderr_tail = stderr_task.await.unwrap_or_default();
     let status =
         status.map_err(|error| MotionError::render(format!("FFmpeg wait failed: {error}")))?;

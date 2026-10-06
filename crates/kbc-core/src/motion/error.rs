@@ -6,6 +6,7 @@ use std::fmt::{Display, Formatter};
 pub(crate) struct MotionError {
     public_message: &'static str,
     detail: String,
+    can_delegate: bool,
 }
 
 impl MotionError {
@@ -13,6 +14,7 @@ impl MotionError {
         Self {
             public_message: "❌ モーションデータが正しくありません",
             detail: detail.into(),
+            can_delegate: false,
         }
     }
 
@@ -20,6 +22,7 @@ impl MotionError {
         Self {
             public_message: "❌ モーション素材を取得できませんでした",
             detail: detail.into(),
+            can_delegate: true,
         }
     }
 
@@ -27,11 +30,16 @@ impl MotionError {
         Self {
             public_message: "❌ モーションの生成に失敗しました",
             detail: detail.into(),
+            can_delegate: true,
         }
     }
 
     pub(crate) fn public_message(&self) -> &'static str {
         self.public_message
+    }
+
+    pub(crate) fn can_delegate(&self) -> bool {
+        self.can_delegate
     }
 }
 
