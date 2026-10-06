@@ -285,6 +285,6 @@ Protocol v5でテキスト以外の媒体・参加退出・OCのtyped APIを追�
 
 ## 2026-10-07のmotion生成要件変更
 
-ut / tut motionはLINE側での生成を基本とし、メモリ不足などで生成できない場合にDiscord Botへ代行を依頼する。Discord側の資源で完成させた画像・動画だけをLINE側へ渡し、既存Outboxで送信する。[採用した要件と確認中の方式](../decisions/MOTION_REMOTE_FALLBACK_V1.md)。現行コードは生成失敗を案内へ変換しており、代行生成は未実装。
+ut / tut motionはLINE側での生成を基本とし、メモリ不足などで生成できない場合にDiscord Botへ代行を依頼する。Discord側の資源で完成させた画像・動画だけをLINE側へ渡し、既存Outboxで送信する。[採用した契約・関数・期限](../decisions/MOTION_REMOTE_FALLBACK_V1.md)。認証付きHTTP APIと生成失敗全般からの切替を利用者が承認し、両Botに実装した。
 
-接続方式と切替対象を確認後、両Botのversion付き契約、Discordの既存Task実行枠を共有する外部受付、LINEの事前メモリ検知・生成失敗からの切替、完成ファイルの有限受取を実装する。代行成功・失敗と既存配送への接続を少数の条件で検証し、実接続・本番反映は別に記録する。
+代行Protocol v1、Discordの既存Task実行枠を共有する外部受付、LINEの事前メモリ検知・生成失敗からの切替、再起動時の同じ依頼への再開、完成ファイルの有限受取を接続した。[結合実験と確認範囲](../../experiments/motion-fallback/docs/VERIFICATION.md)。接続先URL・同じSecretの本番設定、別サーバーへの公開、実LINE送信・低資源コンテナ負荷は未確認。
