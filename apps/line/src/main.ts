@@ -1,4 +1,4 @@
-import { SquareDirectory } from "./adapter/square.js";
+﻿import { SquareDirectory } from "./adapter/square.js";
 import { BaseClient, type Device } from "@evex/linejs/base";
 import { resolve } from "node:path";
 import { createServer } from "node:http";
@@ -92,7 +92,9 @@ async function main(): Promise<void> {
       contentDirectory: resolve(process.env.CONTENT_DIRECTORY ?? "content"),
       searchDataPath, searchDataLive: true,
       permissionsPath, legacyOcSettingsPath,
-      ffmpegPath: process.env.FFMPEG_PATH?.trim() || (process.platform === "linux" ? "/usr/bin/ffmpeg" : undefined) });
+      ffmpegPath: process.env.FFMPEG_PATH?.trim() || (process.platform === "linux" ? "/usr/bin/ffmpeg" : undefined),
+      motionRemoteUrl: process.env.MOTION_REMOTE_URL?.trim() || undefined,
+      motionRemoteSecret: process.env.MOTION_REMOTE_SECRET?.trim() || undefined });
     const directory = new SquareDirectory(client);
     receiver = new Receiver(client, core, gate, controller.signal, directory);
     const activeCore = core;

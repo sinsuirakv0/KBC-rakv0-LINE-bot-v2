@@ -27,6 +27,8 @@ npm start
 
 `motion`のMP4/GIFにはFFmpegが必要。DockerfileはFFmpegを同梱し、Linuxの既定pathは`/usr/bin/ffmpeg`。Windowsでは`FFMPEG_PATH`へ実行ファイルの絶対pathを指定する。PNGはFFmpegなしでも生成できる。公開素材だけを使う`npm run verify:media`はLINE認証・通信を行わず、PNG/MP4/GIF・file選択と生成中のpingを検査する。[実験結果](../../experiments/commands/docs/MEDIA_VERIFICATION.md)を参照。
 
+任意のDiscord代行は`MOTION_REMOTE_URL`にHTTPSの`/motion-jobs`までのURL、`MOTION_REMOTE_SECRET`にDiscord側`MOTION_RENDER_SECRET`と同じ32〜256文字のkeyを設定する。両BotのNative / Adapterを更新・再起動して有効にする。未設定では従来のローカル生成を使う。代行時の資源・取消・再開と実接続の未確認範囲は[決定資料](../decisions/MOTION_REMOTE_FALLBACK_V1.md)を参照。
+
 ## 保存とコンテナの扱い
 
 `storage/auth.json`と`storage/core.sqlite`は同じ運用単位で保管し、公開Gitへ置かない。旧認証のreqseq・refresh情報を保持する。Coreファイルを別アカウントへ使うとOwnerMismatchで停止する。結果不明はSQLiteのactionsに残し、勝手に再投稿しない。
