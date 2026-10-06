@@ -282,3 +282,9 @@ Protocol v5でテキスト以外の媒体・参加退出・OCのtyped APIを追�
 !bot name 名前（o.も対応）で実行OCのBot自身のプロフィールを更新する。利用者指定でBOT管理者だけに許可し、同じOCのサブトークで共通の名前になる。Protocol v9で既存照会・配送・保存を共有する。[仕様・関数・確認範囲](../../crates/kbc-core/src/oc/docs/BOT.md)。実LINEでの表示変更は配備後に利用者が確認する。
 
 2026-10-05、Discord由来のskd（日付／更新差分）とトーク別!pushsetting skdを追加した。既存準備・監視worker、HTTP、Outbox、GitHub snapshotを共有し、リーク本文を親のスレッドへ遅延配送する。実OCのスレッド成功・多OCでの遅延は運用確認へ残す。[機能の仕様と関数](../../crates/kbc-core/src/skd/docs/SKD.md)。
+
+## 2026-10-07のmotion生成要件変更
+
+ut / tut motionはLINE側での生成を基本とし、メモリ不足などで生成できない場合にDiscord Botへ代行を依頼する。Discord側の資源で完成させた画像・動画だけをLINE側へ渡し、既存Outboxで送信する。[採用した要件と確認中の方式](../decisions/MOTION_REMOTE_FALLBACK_V1.md)。現行コードは生成失敗を案内へ変換しており、代行生成は未実装。
+
+接続方式と切替対象を確認後、両Botのversion付き契約、Discordの既存Task実行枠を共有する外部受付、LINEの事前メモリ検知・生成失敗からの切替、完成ファイルの有限受取を実装する。代行成功・失敗と既存配送への接続を少数の条件で検証し、実接続・本番反映は別に記録する。
