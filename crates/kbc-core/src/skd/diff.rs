@@ -35,6 +35,7 @@ pub(super) fn compare_gatya(
                         ..block.header.clone()
                     },
                     gachas: vec![entry],
+                    raw: None,
                 })
             })
             .collect::<Vec<_>>()
@@ -63,6 +64,7 @@ pub(super) fn compare_sale(
                     header: entry.header.clone(),
                     time_blocks: entry.time_blocks.clone(),
                     stage_ids: vec![*id],
+                    raw: None,
                 })
             })
             .collect::<Vec<_>>()
@@ -83,6 +85,7 @@ pub(super) fn compare_sale(
                     header: entry.header.clone(),
                     time_blocks: entry.time_blocks.clone(),
                     stage_ids: vec![*id],
+                    raw: None,
                 };
                 serialize(&value).is_ok_and(|key| added_keys.contains(&key))
             });

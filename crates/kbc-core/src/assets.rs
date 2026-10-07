@@ -158,6 +158,21 @@ impl AssetService {
         url: &str,
         body: Option<Vec<u8>>,
     ) -> Result<String, AssetError> {
+        self.text_response(method, url, body, false)
+            .await?
+            .ok_or_else(|| AssetError::new("GET", "missing response"))
+    }
+    pub(crate) async fn get_optional_text(&self, url: &str) -> Result<Option<String>, AssetError> {
+        self.text_response(reqwest::Method::GET, url, None, true)
+            .await
+    }
+    async fn text_response(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+        body: Option<Vec<u8>>,
+        allow_not_found: bool,
+    ) -> Result<Option<String>, AssetError> {
         let url = Url::parse(url).map_err(|e| AssetError::new("URL", e))?;
         if url.scheme() != "https"
             || !(matches!(url.host_str(), Some("play.google.com" | "itunes.apple.com"))
@@ -203,9 +218,16 @@ impl AssetService {
         let response = request
             .send()
             .await
-            .and_then(reqwest::Response::error_for_status)
             .map_err(|e| AssetError::new("store", e))?;
-        String::from_utf8(read_body(response).await?).map_err(|e| AssetError::new("UTF8", e))
+        if allow_not_found && response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let response = response
+            .error_for_status()
+            .map_err(|e| AssetError::new("store", e))?;
+        String::from_utf8(read_body(response).await?)
+            .map(Some)
+            .map_err(|e| AssetError::new("UTF8", e))
     }
 }
 async fn read_body(mut response: reqwest::Response) -> Result<Vec<u8>, AssetError> {

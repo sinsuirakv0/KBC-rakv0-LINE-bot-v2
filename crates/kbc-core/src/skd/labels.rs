@@ -1,14 +1,14 @@
 ﻿use super::model::*;
 use crate::messages::{Messages, message};
 
-pub(super) fn series_id(mappings: &MappingMaps, gacha_type: i64, gacha_id: i64) -> Option<i64> {
+pub(crate) fn series_id(mappings: &MappingMaps, gacha_type: i64, gacha_id: i64) -> Option<i64> {
     mappings
         .get(mode_for_type(gacha_type))
         .get(&gacha_id)
         .copied()
 }
 
-pub(super) fn entry_labels(entry: &GachaEntry, messages: &Messages) -> String {
+pub(crate) fn entry_labels(entry: &GachaEntry, messages: &Messages) -> String {
     let mut labels = String::new();
     if entry.guaranteed {
         labels.push_str(message!(messages, "skd.guaranteed"));
@@ -23,7 +23,7 @@ pub(super) fn entry_labels(entry: &GachaEntry, messages: &Messages) -> String {
     labels
 }
 
-pub(super) fn type_tag(gacha_type: i64, messages: &Messages) -> &str {
+pub(crate) fn type_tag(gacha_type: i64, messages: &Messages) -> &str {
     match gacha_type {
         4 => message!(messages, "skd.event_tag"),
         0 => message!(messages, "skd.normal_tag"),
@@ -31,7 +31,7 @@ pub(super) fn type_tag(gacha_type: i64, messages: &Messages) -> &str {
     }
 }
 
-pub(super) fn mode_for_type(gacha_type: i64) -> GachaMode {
+pub(crate) fn mode_for_type(gacha_type: i64) -> GachaMode {
     match gacha_type {
         1 => GachaMode::Rare,
         4 => GachaMode::Event,
@@ -39,11 +39,11 @@ pub(super) fn mode_for_type(gacha_type: i64) -> GachaMode {
     }
 }
 
-pub(super) fn stage_name(id: i64, data: &SaleDisplayData) -> String {
+pub(crate) fn stage_name(id: i64, data: &SaleDisplayData) -> String {
     stage_name_with_breaks(id, data, " ")
 }
 
-pub(super) fn stage_name_preserving_breaks(id: i64, data: &SaleDisplayData) -> String {
+pub(crate) fn stage_name_preserving_breaks(id: i64, data: &SaleDisplayData) -> String {
     stage_name_with_breaks(id, data, "\n")
 }
 
@@ -70,7 +70,7 @@ fn stage_name_with_breaks(id: i64, data: &SaleDisplayData, line_break: &str) -> 
         .unwrap_or_else(|| message!(data.messages, "skd.unknown").to_owned())
 }
 
-fn strip_display_markup(value: &str, line_break: &str) -> String {
+pub(crate) fn strip_display_markup(value: &str, line_break: &str) -> String {
     let with_breaks = replace_breaks(value, line_break);
     let mut result = String::new();
     let mut inside_tag = false;
@@ -93,13 +93,13 @@ fn replace_breaks(value: &str, replacement: &str) -> String {
     result
 }
 
-pub(super) fn is_mission_id(id: i64) -> bool {
+pub(crate) fn is_mission_id(id: i64) -> bool {
     (8_000..=9_999).contains(&id)
         || (15_000..=15_999).contains(&id)
         || (17_000..=17_999).contains(&id)
 }
 
-fn representative_stage_id(entry: &SaleEntry, card_setting_ids: &[i64]) -> Option<i64> {
+pub(crate) fn representative_stage_id(entry: &SaleEntry, card_setting_ids: &[i64]) -> Option<i64> {
     if entry.stage_ids.len() <= 1 {
         return None;
     }
@@ -109,7 +109,7 @@ fn representative_stage_id(entry: &SaleEntry, card_setting_ids: &[i64]) -> Optio
         .find(|id| entry.stage_ids.contains(id))
 }
 
-pub(super) fn list_stage_ids(entry: &SaleEntry, card_setting_ids: &[i64]) -> Vec<i64> {
+pub(crate) fn list_stage_ids(entry: &SaleEntry, card_setting_ids: &[i64]) -> Vec<i64> {
     representative_stage_id(entry, card_setting_ids)
         .map(|id| vec![id])
         .unwrap_or_else(|| entry.stage_ids.clone())
@@ -118,7 +118,7 @@ pub(super) fn list_stage_ids(entry: &SaleEntry, card_setting_ids: &[i64]) -> Vec
         .collect()
 }
 
-pub(super) fn schedule_name<'a>(entry: &'a ItemEntry, data: &'a ItemDisplayData) -> &'a str {
+pub(crate) fn schedule_name<'a>(entry: &'a ItemEntry, data: &'a ItemDisplayData) -> &'a str {
     if matches!(entry.gift.gift_type, 301 | 302) {
         return data
             .sale_names

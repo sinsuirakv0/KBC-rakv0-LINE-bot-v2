@@ -8,7 +8,7 @@ const EVENT: &str = "https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-eve
 const ASSETS: &str =
     "https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-assets/main/jp/sitedata";
 
-pub(super) struct Metadata {
+pub(crate) struct Metadata {
     http: Arc<AssetService>,
     messages: Arc<Messages>,
 }
@@ -21,6 +21,7 @@ impl Metadata {
     }
     pub async fn gatya(&self, gacha: GachaJson) -> Result<GachaScheduleData> {
         let mut names = Vec::new();
+        let mut gacha_names = Vec::new();
         let mut mappings = Vec::new();
         for (name, short, mapping) in [
             (
@@ -55,17 +56,28 @@ impl Metadata {
                     derived.entry(*series).or_insert_with(|| name.clone());
                 }
             }
-            // 略称ファイルはDiscord版でも任意。通信失敗時は通常名へ戻す。
-            if let Ok(short) = self.text(EVENT, &format!("data/{short}")).await {
+            // 略称は404のときだけ通常名へ戻し、通信失敗を空の辞書として扱わない。
+            if let Some(short) = self
+                .http
+                .get_optional_text(&format!("{EVENT}/data/{short}"))
+                .await?
+            {
                 derived.extend(id_names(&short));
             }
+            gacha_names.push(full);
             names.push(derived);
             mappings.push(mapping);
         }
         let mut names = names.into_iter();
+        let mut gacha_names = gacha_names.into_iter();
         let mut mappings = mappings.into_iter();
         Ok(GachaScheduleData {
             gacha,
+            gacha_names: ModeMaps {
+                rare: gacha_names.next().unwrap(),
+                event: gacha_names.next().unwrap(),
+                normal: gacha_names.next().unwrap(),
+            },
             short_series_names: ModeMaps {
                 rare: names.next().unwrap(),
                 event: names.next().unwrap(),
@@ -136,7 +148,15 @@ impl Metadata {
                 let mut cells = line.trim_start_matches('\u{feff}').split(',');
                 let id = cells.next()?.trim().parse().ok()?;
                 let name = cells.next()?.trim();
-                (!name.is_empty()).then(|| (id, ItemName { name: name.into() }))
+                (!name.is_empty()).then(|| {
+                    (
+                        id,
+                        ItemName {
+                            name: name.into(),
+                            detail: cells.collect::<Vec<_>>().join(",").trim().into(),
+                        },
+                    )
+                })
             })
             .collect();
         Ok(ItemDisplayData {
@@ -148,7 +168,7 @@ impl Metadata {
     }
 }
 
-fn id_names(text: &str) -> HashMap<i64, String> {
+pub(crate) fn id_names(text: &str) -> HashMap<i64, String> {
     text.lines()
         .filter_map(|line| {
             let (id, name) = line.trim_start_matches('\u{feff}').split_once(',')?;
@@ -157,7 +177,7 @@ fn id_names(text: &str) -> HashMap<i64, String> {
         })
         .collect()
 }
-fn parse_mapping(text: &str) -> Result<HashMap<i64, i64>> {
+pub(crate) fn parse_mapping(text: &str) -> Result<HashMap<i64, i64>> {
     let mut lines = text.lines().filter(|line| !line.trim().is_empty());
     let headers: Vec<_> = lines
         .next()

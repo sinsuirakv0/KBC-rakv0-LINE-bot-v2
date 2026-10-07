@@ -5,31 +5,31 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct ScheduleHeader {
-    pub(super) start_date: String,
-    pub(super) start_time: String,
-    pub(super) end_date: String,
-    pub(super) end_time: String,
-    pub(super) min_version: String,
-    pub(super) max_version: String,
+pub(crate) struct ScheduleHeader {
+    pub(crate) start_date: String,
+    pub(crate) start_time: String,
+    pub(crate) end_date: String,
+    pub(crate) end_time: String,
+    pub(crate) min_version: String,
+    pub(crate) max_version: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub(super) struct DateRange {
-    pub(super) start: String,
-    pub(super) end: String,
+pub(crate) struct DateRange {
+    pub(crate) start: String,
+    pub(crate) end: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct TimeBlock {
-    pub(super) date_ranges: Vec<DateRange>,
-    pub(super) month_days: Vec<i64>,
-    pub(super) weekdays: Vec<String>,
-    pub(super) time_ranges: Vec<[String; 2]>,
+pub(crate) struct TimeBlock {
+    pub(crate) date_ranges: Vec<DateRange>,
+    pub(crate) month_days: Vec<i64>,
+    pub(crate) weekdays: Vec<String>,
+    pub(crate) time_ranges: Vec<[String; 2]>,
 }
 
-pub(super) fn parse_header_date(date_text: &str, time_text: &str) -> Result<DateTime<Utc>, String> {
+pub(crate) fn parse_header_date(date_text: &str, time_text: &str) -> Result<DateTime<Utc>, String> {
     let date = format!("{:0>8}", date_text.trim());
     let time = format!("{:0>4}", time_text.trim());
     if date.len() != 8 || time.len() != 4 {
@@ -53,13 +53,13 @@ pub(super) fn parse_header_date(date_text: &str, time_text: &str) -> Result<Date
         .ok_or_else(|| "date and time are ambiguous".to_owned())
 }
 
-pub(super) fn validate_header(header: &ScheduleHeader) -> Result<(), String> {
+pub(crate) fn validate_header(header: &ScheduleHeader) -> Result<(), String> {
     parse_header_date(&header.start_date, &header.start_time)?;
     parse_header_date(&header.end_date, &header.end_time)?;
     Ok(())
 }
 
-pub(super) fn format_jst_short(date: DateTime<Utc>) -> String {
+pub(crate) fn format_jst_short(date: DateTime<Utc>) -> String {
     let value = date.with_timezone(&jst());
     format!(
         "{}/{}({}) {:02}:{:02}",
@@ -71,7 +71,7 @@ pub(super) fn format_jst_short(date: DateTime<Utc>) -> String {
     )
 }
 
-pub(super) fn format_duration(start: DateTime<Utc>, end: DateTime<Utc>) -> String {
+pub(crate) fn format_duration(start: DateTime<Utc>, end: DateTime<Utc>) -> String {
     let mut remaining_minutes = (end - start).num_minutes().max(0);
     let days = remaining_minutes / 1_440;
     remaining_minutes %= 1_440;
@@ -124,7 +124,7 @@ fn weekday_japanese(weekday: chrono::Weekday) -> &'static str {
 use serde_json::Number;
 use std::collections::HashMap;
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(super) enum GachaMode {
+pub(crate) enum GachaMode {
     Rare,
     Event,
     Normal,
@@ -132,58 +132,60 @@ pub(super) enum GachaMode {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct GachaRate {
-    pub(super) normal: Number,
-    pub(super) rare: Number,
-    pub(super) super_rare: Number,
-    pub(super) uber_rare: Number,
-    pub(super) legend_rare: Number,
+pub(crate) struct GachaRate {
+    pub(crate) normal: Number,
+    pub(crate) rare: Number,
+    pub(crate) super_rare: Number,
+    pub(crate) uber_rare: Number,
+    pub(crate) legend_rare: Number,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct GachaEntry {
-    pub(super) id: i64,
-    pub(super) price: Number,
-    pub(super) flags: i64,
-    pub(super) rates: GachaRate,
-    pub(super) guaranteed: bool,
+pub(crate) struct GachaEntry {
+    pub(crate) id: i64,
+    pub(crate) price: Number,
+    pub(crate) flags: i64,
+    pub(crate) rates: GachaRate,
+    pub(crate) guaranteed: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(super) message: Option<String>,
+    pub(crate) message: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct GachaHeader {
+pub(crate) struct GachaHeader {
     #[serde(flatten)]
-    pub(super) schedule: ScheduleHeader,
-    pub(super) gacha_type: i64,
-    pub(super) gacha_count: i64,
+    pub(crate) schedule: ScheduleHeader,
+    pub(crate) gacha_type: i64,
+    pub(crate) gacha_count: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct GachaBlock {
-    pub(super) header: GachaHeader,
-    pub(super) gachas: Vec<GachaEntry>,
+pub(crate) struct GachaBlock {
+    pub(crate) header: GachaHeader,
+    pub(crate) gachas: Vec<GachaEntry>,
+    #[serde(default, skip_serializing)]
+    pub(crate) raw: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct GachaJson {
+pub(crate) struct GachaJson {
     #[serde(default, rename = "updatedAt")]
-    pub(super) _updated_at: String,
-    pub(super) data: Vec<GachaBlock>,
+    pub(crate) _updated_at: String,
+    pub(crate) data: Vec<GachaBlock>,
 }
 
-pub(super) struct ModeMaps<T> {
-    pub(super) rare: T,
-    pub(super) event: T,
-    pub(super) normal: T,
+pub(crate) struct ModeMaps<T> {
+    pub(crate) rare: T,
+    pub(crate) event: T,
+    pub(crate) normal: T,
 }
 
 impl<T> ModeMaps<T> {
-    pub(super) fn get(&self, mode: GachaMode) -> &T {
+    pub(crate) fn get(&self, mode: GachaMode) -> &T {
         match mode {
             GachaMode::Rare => &self.rare,
             GachaMode::Event => &self.event,
@@ -192,33 +194,36 @@ impl<T> ModeMaps<T> {
     }
 }
 
-pub(super) type NameMaps = ModeMaps<HashMap<i64, String>>;
-pub(super) type MappingMaps = ModeMaps<HashMap<i64, i64>>;
+pub(crate) type NameMaps = ModeMaps<HashMap<i64, String>>;
+pub(crate) type MappingMaps = ModeMaps<HashMap<i64, i64>>;
 
-pub(super) struct GachaScheduleData {
+pub(crate) struct GachaScheduleData {
     pub gacha: GachaJson,
+    pub gacha_names: NameMaps,
     pub short_series_names: NameMaps,
     pub series_mappings: MappingMaps,
     pub messages: std::sync::Arc<crate::messages::Messages>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct SaleEntry {
-    pub(super) header: ScheduleHeader,
-    pub(super) time_blocks: Vec<TimeBlock>,
-    pub(super) stage_ids: Vec<i64>,
+pub(crate) struct SaleEntry {
+    pub(crate) header: ScheduleHeader,
+    pub(crate) time_blocks: Vec<TimeBlock>,
+    pub(crate) stage_ids: Vec<i64>,
+    #[serde(default, skip_serializing)]
+    pub(crate) raw: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct SaleJson {
+pub(crate) struct SaleJson {
     #[serde(default, rename = "updatedAt")]
-    pub(super) _updated_at: String,
-    pub(super) data: Vec<SaleEntry>,
+    pub(crate) _updated_at: String,
+    pub(crate) data: Vec<SaleEntry>,
 }
 
-pub(super) type OrderedNames = HashMap<i64, String>;
-pub(super) struct SaleDisplayData {
+pub(crate) type OrderedNames = HashMap<i64, String>;
+pub(crate) struct SaleDisplayData {
     pub sale: SaleJson,
     pub sale_names: OrderedNames,
     pub all_day_event_names: OrderedNames,
@@ -228,39 +233,55 @@ pub(super) struct SaleDisplayData {
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct ItemGift {
-    pub(super) event_id: i64,
-    pub(super) gift_type: i64,
-    pub(super) gift_amount: i64,
-    pub(super) title: String,
-    pub(super) message: String,
-    pub(super) url: String,
-    pub(super) repeat_flag: i64,
+pub(crate) struct ItemGift {
+    pub(crate) event_id: i64,
+    pub(crate) gift_type: i64,
+    pub(crate) gift_amount: i64,
+    pub(crate) title: String,
+    pub(crate) message: String,
+    pub(crate) url: String,
+    pub(crate) repeat_flag: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct ItemEntry {
-    pub(super) header: ScheduleHeader,
-    pub(super) time_blocks: Vec<TimeBlock>,
-    pub(super) gift: ItemGift,
+pub(crate) struct ItemEntry {
+    pub(crate) header: ScheduleHeader,
+    pub(crate) time_blocks: Vec<TimeBlock>,
+    pub(crate) gift: ItemGift,
+    #[serde(default, skip_serializing)]
+    pub(crate) raw: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct ItemJson {
+pub(crate) struct ItemJson {
     #[serde(default, rename = "updatedAt")]
-    pub(super) _updated_at: String,
-    pub(super) data: Vec<ItemEntry>,
+    pub(crate) _updated_at: String,
+    pub(crate) data: Vec<ItemEntry>,
 }
 
-pub(super) struct ItemName {
-    pub(super) name: String,
+pub(crate) struct ItemName {
+    pub(crate) name: String,
+    pub(crate) detail: String,
 }
 
-pub(super) struct ItemDisplayData {
+pub(crate) struct ItemDisplayData {
     pub messages: std::sync::Arc<crate::messages::Messages>,
-    pub(super) item: ItemJson,
-    pub(super) item_names: HashMap<i64, ItemName>,
-    pub(super) sale_names: HashMap<i64, String>,
+    pub(crate) item: ItemJson,
+    pub(crate) item_names: HashMap<i64, ItemName>,
+    pub(crate) sale_names: HashMap<i64, String>,
+}
+
+pub(crate) fn format_jst_full(date: DateTime<Utc>) -> String {
+    let value = date.with_timezone(&FixedOffset::east_opt(9 * 60 * 60).unwrap());
+    format!(
+        "{}年{}月{}日({}) {:02}:{:02}",
+        value.year(),
+        value.month(),
+        value.day(),
+        weekday_japanese(value.weekday()),
+        value.hour(),
+        value.minute()
+    )
 }

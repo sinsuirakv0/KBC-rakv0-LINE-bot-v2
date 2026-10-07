@@ -92,6 +92,7 @@ pub(super) fn parse_gatya_tsv(text: &str) -> Result<GachaJson, String> {
                 gacha_count: gacha_count as i64,
             },
             gachas,
+            raw: None,
         });
     }
     Ok(GachaJson {
@@ -125,6 +126,7 @@ pub(super) fn parse_sale_tsv(text: &str) -> Result<SaleJson, String> {
             header,
             time_blocks,
             stage_ids,
+            raw: None,
         });
     }
     Ok(SaleJson {
@@ -174,6 +176,7 @@ pub(super) fn parse_item_tsv(text: &str) -> Result<ItemJson, String> {
             header,
             time_blocks,
             gift,
+            raw: None,
         });
     }
     Ok(ItemJson {

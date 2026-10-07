@@ -58,3 +58,5 @@ Rustは日時入力、追加と期間変更、プレーンテキスト、履歴�
 2026-10-05の検証結果: Core全8件の通常テスト、SKDの公開source単発1件（3種別の辞書も取得）、workspace/all-targetsのClippy警告拒否、Native/TypeScript build、smoke:skd・commands・oc・messages・persistence・受信基盤のsmokeが通過。Nativeのo.skd受付→共有準備worker→親Action→本文Actionも、LINE通信0件の単発確認で通過し、待機は約1.03秒、本文3メッセージだった。公開データの観測値であり、実OCでの送信成功の証明ではない。
 
 2026-10-06、!botの停止設定を予定登録と段階配送の両方で確認する。停止先は新しいschedule_targetsへ加えず、全宛先停止中は更新本文を待機tableへ追加しない。配信先のない更新はobserve_scheduleの同じtransactionで整理し、検知watermarkだけを進める。停止中の更新を再開後に送らず、本文だけの孤立rowで上限16件を消費しない。既存targetsは1周最大64件の配送処理でも停止を再確認し、見送り先を除去する。変更前からOutboxへ登録済みのActionは従来の確定・unknown契約を保つ。[BOT停止と権限](../../oc/docs/BOT.md)。
+
+2026-10-07、model / metadata / labelsをgatya・sale・itemの参照Commandと共用した。JSONのrawは表示に使用し、Serializeから除くため既存差分の比較対象は増やさない。任意の略称は404だけを通常名へ戻し、その他の取得失敗は既存の失敗経路へ返す。[参照Command](../../event_data/docs/COMMANDS.md)。

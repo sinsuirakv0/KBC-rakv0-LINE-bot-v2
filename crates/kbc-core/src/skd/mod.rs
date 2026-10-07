@@ -8,9 +8,9 @@ use std::sync::Arc;
 
 mod diff;
 mod formatter;
-mod labels;
-mod metadata;
-mod model;
+pub(crate) mod labels;
+pub(crate) mod metadata;
+pub(crate) mod model;
 pub(crate) mod monitor;
 mod parser;
 mod source;
