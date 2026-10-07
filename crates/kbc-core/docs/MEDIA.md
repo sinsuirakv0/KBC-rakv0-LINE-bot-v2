@@ -35,3 +35,5 @@ RenderContext.check_memoryはLinuxコンテナの使用量を共通Workerで確�
 2026-10-07、motionだけに任意のDiscord代行を追加。`generate_media → render_motion → RemoteMotion::render / download → finish_media`を既存1 Workerで実行する。事前メモリ確認はローカル試行内で行うため、メモリ圧迫で新規生成を拒否した時点から代行できる。`actions.code`にローカル試行中・代行中を保存し、再起動後は同じAction IDに対応する代行へ進む。成功・失敗案内への変換でcodeを消す。
 
 代行有効のmotionはローカル10分と代行待ちを含め31分の実行上限。初回の待機期限は10分、保存済みの生成状態から再開する場合は作成から41分までの残り時間へ制限する。通常配送と同じトークのpingは生成中も進む。代行未設定・他Mediaの10分上限は維持する。成果・未解決件数・unknownの上限と規則は共通。[接続設定・有限HTTP・取消・再開](../../../docs/decisions/MOTION_REMOTE_FALLBACK_V1.md)。
+
+2026-10-07、MediaRequest::EventDataでgatya・sale・itemのHTTP取得を既存Workerへ追加。検索索引・描画を通さず、finish_event_dataが同じ準備Actionを通常返信へ変換する。最大32件をOutboxの既存予約枠内で登録し、sale候補は共有Sessionへ保存する。停止・期限の取消ではHTTP Futureをdropする。[関数・容量・復旧](../src/event_data/docs/COMMANDS.md)。

@@ -84,3 +84,5 @@ Protocol v17はSendMessageの任意threadRootId / threadContentsを追加する�
 Protocol v18はMessageMentionに任意additional（MID・UTF-16位置）を追加する。旧Actionの単独メンションはdefaultで復元し、同じNative / Adapter版を使う。!test mention-labelは共通TestInspect / Mutation・Outboxだけで一個の表示範囲または個別範囲を試す。新しいWorker・常時処理を作らない。[入力と実機確認](../src/oc/docs/TEST_MENTION.md)。
 
 2026-10-06、BOT権限を常駐HashMapからSQLiteのbot_rolesへ移した。旧ファイルは初回取込のみで、設定解除を再起動で復活させない。bot_stopsは個別・全体停止、稼働秒数は現在のRuntime起動から計測する。stats_from_dbをstatusとstatsで共有し、DB lock内で再lockしない。Protocol v18は維持する。[仕様・上限・関数](../src/oc/docs/BOT.md)。
+
+2026-10-07、gatya・sale・itemは受付をPrepareMediaへ変換し、外部HTTPを保存transactionの外で実行する。saleの候補は共通sessions tableへ最大9 IDを保存し、送信成功後30秒まで有効。event-v1のSession操作では検索索引を読み込まない。Protocol v18を維持する。[処理経路](../src/event_data/docs/COMMANDS.md)。

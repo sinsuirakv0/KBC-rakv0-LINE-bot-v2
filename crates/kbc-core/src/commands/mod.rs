@@ -1,4 +1,4 @@
-use crate::messages::message;
+﻿use crate::messages::message;
 pub mod content;
 pub mod pagination;
 pub mod search;
@@ -16,29 +16,35 @@ pub fn split_responses(
             result.push((body, due, media));
             continue;
         }
-        let mut remaining = body.as_str();
-        while !remaining.is_empty() {
-            let mut units = 0;
-            let mut end = remaining.len();
-            let mut newline = None;
-            for (index, character) in remaining.char_indices() {
-                units += character.len_utf16();
-                if units > 1500 {
-                    end = newline.unwrap_or(index);
-                    break;
-                }
-                if character == '\n' {
-                    newline = Some(index + 1);
-                }
-            }
-            result.push((remaining[..end].trim_end().to_owned(), due, None));
-            remaining = remaining[end..].trim_start_matches('\n');
-        }
+        result.extend(split_text(&body).into_iter().map(|text| (text, due, None)));
     }
     if result.len() > 8 {
         return Err("ResponseLimit".into());
     }
     Ok(result)
+}
+
+pub(crate) fn split_text(body: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut remaining = body;
+    while !remaining.is_empty() {
+        let mut units = 0;
+        let mut end = remaining.len();
+        let mut newline = None;
+        for (index, character) in remaining.char_indices() {
+            units += character.len_utf16();
+            if units > 1500 {
+                end = newline.unwrap_or(index);
+                break;
+            }
+            if character == '\n' {
+                newline = Some(index + 1);
+            }
+        }
+        result.push(remaining[..end].trim_end().to_owned());
+        remaining = remaining[end..].trim_start_matches('\n');
+    }
+    result
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -68,6 +74,9 @@ pub fn prepare(
     let known = matches!(
         name,
         "skd"
+            | "gatya"
+            | "sale"
+            | "item"
             | "pushsetting"
             | "bot"
             | "oc"
@@ -97,6 +106,24 @@ pub fn prepare(
     }
     if name == "id" {
         return CommandPlan::Ignore;
+    }
+    if matches!(name, "gatya" | "sale" | "item") {
+        if args
+            .first()
+            .is_some_and(|arg| arg.eq_ignore_ascii_case("help"))
+            || args.len() > 16
+            || args.join(" ").len() > 512
+        {
+            return CommandPlan::Text(vec![(content.command_help(name).unwrap_or_default(), now)]);
+        }
+        return CommandPlan::Prepare(Box::new(crate::media::MediaJob {
+            catalog_revision: String::new(),
+            request: crate::media::MediaRequest::EventData(crate::event_data::Request {
+                command: name.into(),
+                arguments: args.iter().map(|arg| (*arg).into()).collect(),
+                owner: None,
+            }),
+        }));
     }
     if name == "skd" {
         return match crate::skd::parse_date(&args) {

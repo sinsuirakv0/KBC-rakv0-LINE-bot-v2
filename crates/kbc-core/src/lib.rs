@@ -14,6 +14,7 @@ use tokio::sync::Notify;
 
 mod assets;
 mod commands;
+mod event_data;
 mod logs;
 mod media;
 mod messages;
@@ -408,7 +409,7 @@ impl Runtime {
                 } = event
                 {
                     reply_to_message_id.is_some() && tx.query_row(
-                        "SELECT EXISTS(SELECT 1 FROM sessions WHERE chat=?1 AND owner=?2 AND prompt=?3 AND expires>?4)",
+                        "SELECT EXISTS(SELECT 1 FROM sessions WHERE chat=?1 AND owner=?2 AND prompt=?3 AND expires>?4 AND revision<>'event-v1')",
                         params![chat_id, sender_id, reply_to_message_id, now], |row| row.get::<_, bool>(0))?
                 } else {
                     false
@@ -667,7 +668,7 @@ impl Runtime {
                     return Err("MissingPromptMessageId".into());
                 }
                 tx.execute(
-                "UPDATE sessions SET prompt=?2,expires=?3,payload=COALESCE(pending_payload,payload),pending_payload=NULL WHERE action=?1 AND expires>?4",
+                "UPDATE sessions SET prompt=?2,expires=CASE WHEN revision='event-v1' THEN ?4+30000 ELSE ?3 END,payload=COALESCE(pending_payload,payload),pending_payload=NULL WHERE action=?1 AND expires>?4",
                 params![
                     result.action_id,
                     result.message_id,

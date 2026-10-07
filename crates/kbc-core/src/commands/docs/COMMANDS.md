@@ -91,3 +91,5 @@ Bridgeの非同期受付は最大4受付・実処理1件。外部素材の取得
 !test mention-labelはBOT管理者専用で自由な表示名と最大9人のMIDを指定する。同一範囲への複数指定を既定、--separateは個別範囲の比較試験。ヘルプは!help test-mention。従来のtest mentionは維持する。[仕様・関数・Protocol v18](../../oc/docs/TEST_MENTION.md)。
 
 2026-10-06、!botのadmin / setting / stop / start / statusを旧LINEから移植した。公開案内は!help bot、文面はmessages/bot.txt。権限更新はCoreの同じtransaction・SQLite snapshotを共有し、旧ファイルの再読込で解除を巻き戻さない。性能テスト・環境表示は後回し。[仕様・関数・検証](../../oc/docs/BOT.md)。
+
+2026-10-07、Discord v2のgatya・sale・itemを追加。既存PrepareMediaでHTTPと最大32件の本文生成を行い、saleの9件以下の候補は共通Session tableでリプライ番号選択する。[仕様・関数・上限・検証](../../event_data/docs/COMMANDS.md)。

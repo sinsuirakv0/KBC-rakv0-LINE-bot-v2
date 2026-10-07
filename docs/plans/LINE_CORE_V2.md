@@ -288,3 +288,7 @@ Protocol v5でテキスト以外の媒体・参加退出・OCのtyped APIを追�
 ut / tut motionはLINE側での生成を基本とし、メモリ不足などで生成できない場合にDiscord Botへ代行を依頼する。Discord側の資源で完成させた画像・動画だけをLINE側へ渡し、既存Outboxで送信する。[採用した契約・関数・期限](../decisions/MOTION_REMOTE_FALLBACK_V1.md)。認証付きHTTP APIと生成失敗全般からの切替を利用者が承認し、両Botに実装した。
 
 代行Protocol v1、Discordの既存Task実行枠を共有する外部受付、LINEの事前メモリ検知・生成失敗からの切替、再起動時の同じ依頼への再開、完成ファイルの有限受取を接続した。[結合実験と確認範囲](../../experiments/motion-fallback/docs/VERIFICATION.md)。同日、既存HTTPSの接続先・共通Secretを本番設定し、両Botを配備。DiscordのHTTPS生成3形式とLINEの受信再開・Core復元を確認した。実LINEでの代行送信、OOM再現・継続負荷の確認は残る。
+
+## イベント参照コマンド（2026-10-07）
+
+利用者指定でgatya・sale・itemの参照元をDiscord Bot v2とした。既存CoreのHTTP・準備・配送・Sessionへ移植し、gatyaの激レア表示漏れを両Botで修正。saleは一覧へのリプライで番号選択する。[確定要件](../requirements/EVENT_COMMANDS.md)、[実装と確認](../../crates/kbc-core/src/event_data/docs/COMMANDS.md)。

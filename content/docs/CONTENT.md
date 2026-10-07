@@ -37,3 +37,5 @@ pushsettingは処理を持つ予約名。help/pushsetting.txtは公開案内、m
 help/test-mention.txtは!test mention-labelの専用案内。入口のhelp/test.txtへ手動で参照を追加した。名前変更・複数人の共有範囲・--separateの比較を説明し、API成功と実際の通知を区別する。[仕様](../../crates/kbc-core/src/oc/docs/TEST_MENTION.md)。
 
 2026-10-06、help/bot.txtへBOT権限の登録・解除・一覧、停止/再開、statusを追加した。messages/bot.txtとschemaのキーで全定型文面を編集できる。indexには既存bot項目を使い、自動で追記しない。[管理機能](../../crates/kbc-core/src/oc/docs/BOT.md)。
+
+2026-10-07、gatya・sale・itemを処理を持つ予約名と必須helpへ追加した。help/indexへ3コマンドを手動追記。表示はmessages/event.txtと既存skd等の共通キーで変更できる。saleのリプライ番号選択を公開helpへ記載した。[実装](../../crates/kbc-core/src/event_data/docs/COMMANDS.md)。

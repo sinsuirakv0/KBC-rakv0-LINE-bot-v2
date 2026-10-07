@@ -20,6 +20,7 @@ pub const MAX_OUTPUT_BYTES: u64 = 8 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize)]
 pub enum MediaRequest {
+    EventData(crate::event_data::Request),
     Schedule { date: Option<String> },
     Download { path: String },
     FileList { session_id: String },
@@ -156,7 +157,11 @@ impl Runtime {
                 return Err("InvalidMediaJob".into());
             };
             let job: MediaJob = serde_json::from_str(request)?;
-            let is_schedule = matches!(&job.request, MediaRequest::Schedule { .. });
+            let failure_message = match &job.request {
+                MediaRequest::Schedule { .. } => Some("skd.failed"),
+                MediaRequest::EventData(_) => Some("event.failed"),
+                _ => None,
+            };
             let is_motion = matches!(&job.request, MediaRequest::Motion(_));
             let resume_remote = is_motion
                 && self.motion_remote.is_some()
@@ -182,6 +187,13 @@ impl Runtime {
                 Duration::from_secs(600 + execution_seconds).saturating_sub(context.queue_wait),
             );
             let future = async {
+                if let MediaRequest::EventData(request) = job.request {
+                    let output = tokio::select! {
+                        _ = context.cancellation.cancelled() => return Err("MediaCancelled".into()),
+                        result = self.prepare_event_data(&request) => result?,
+                    };
+                    return Ok(MediaOutput::EventData { request, output });
+                }
                 if let MediaRequest::Schedule { date } = &job.request {
                     return self
                         .prepare_schedule(date.clone())
@@ -239,7 +251,7 @@ impl Runtime {
             {
                 return Err("MediaCancellationStalled".into());
             }
-            self.finish_media(action, outcome, is_schedule)?;
+            self.finish_media(action, outcome, failure_message)?;
             let retained: bool = self.database.lock().map_err(|_|"DatabaseLock")?.query_row("SELECT EXISTS(SELECT 1 FROM actions WHERE id=?1 AND json_extract(CASE WHEN json_valid(payload) THEN payload ELSE '{}' END,'$.attachment') IS NOT NULL)",[&action_id],|row|row.get(0))?;
             if !retained {
                 tokio::fs::remove_dir_all(&workspace).await?;
@@ -279,7 +291,9 @@ impl Runtime {
         resume_remote: bool,
     ) -> Result<MediaOutput> {
         match request {
-            MediaRequest::Schedule { .. } => Err("InvalidMediaRequest".into()),
+            MediaRequest::Schedule { .. } | MediaRequest::EventData(_) => {
+                Err("InvalidMediaRequest".into())
+            }
             MediaRequest::FileList { session_id } => {
                 let stored: Option<String> = self
                     .database
@@ -447,8 +461,14 @@ impl Runtime {
         &self,
         action: CoreAction,
         outcome: Result<MediaOutput>,
-        is_schedule: bool,
+        failure_message: Option<&'static str>,
     ) -> Result<()> {
+        let outcome = match outcome {
+            Ok(MediaOutput::EventData { request, output }) => {
+                return self.finish_event_data(action, request, output);
+            }
+            outcome => outcome,
+        };
         let message_catalog = &self.content.messages;
         let CoreAction::PrepareMedia {
             action_id,
@@ -470,6 +490,7 @@ impl Runtime {
         let mut file_list_ready = false;
         let mut thread_contents = None;
         match outcome {
+            Ok(MediaOutput::EventData { .. }) => unreachable!(),
             Ok(MediaOutput::Thread(contents)) => {
                 text = message!(message_catalog, "skd.root").into();
                 thread_contents = Some(contents);
@@ -529,8 +550,8 @@ impl Runtime {
             }
             Err(error) => {
                 eprintln!("Media preparation failed: {error}");
-                text = if is_schedule {
-                    message!(message_catalog, "skd.failed")
+                text = if let Some(key) = failure_message {
+                    message_catalog.literal(key)
                 } else if error.to_string() == "MediaMemoryBudgetExceeded" {
                     message!(message_catalog, "media.finish_media_02")
                 } else if error.to_string() == "MissingFfmpeg" {
@@ -604,6 +625,10 @@ impl Runtime {
     }
 }
 enum MediaOutput {
+    EventData {
+        request: crate::event_data::Request,
+        output: crate::event_data::Output,
+    },
     Thread(Vec<String>),
     Superseded,
     FileList {

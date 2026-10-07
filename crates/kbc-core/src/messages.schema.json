@@ -2,22 +2,60 @@
   "bot.admin": [],
   "bot.capacity": [],
   "bot.control_denied": [],
-  "bot.control_result": ["action", "scope", "changed", "all"],
+  "bot.control_result": [
+    "action",
+    "scope",
+    "changed",
+    "all"
+  ],
   "bot.member": [],
   "bot.mod": [],
   "bot.none": [],
   "bot.off": [],
   "bot.on": [],
-  "bot.permission_status": ["scope", "role", "oc_role"],
+  "bot.permission_status": [
+    "scope",
+    "role",
+    "oc_role"
+  ],
   "bot.register": [],
   "bot.remove": [],
-  "bot.role_entry": ["role", "name", "member"],
-  "bot.role_list": ["scope", "body", "page", "total"],
-  "bot.role_result": ["role", "operation", "changed", "scope", "member"],
+  "bot.role_entry": [
+    "role",
+    "name",
+    "member"
+  ],
+  "bot.role_list": [
+    "scope",
+    "body",
+    "page",
+    "total"
+  ],
+  "bot.role_result": [
+    "role",
+    "operation",
+    "changed",
+    "scope",
+    "member"
+  ],
   "bot.roles_denied": [],
   "bot.running": [],
   "bot.start": [],
-  "bot.status": ["state", "all", "local", "uptime", "role", "oc_role", "received", "waiting", "queries", "sending", "unknown", "media", "logs"],
+  "bot.status": [
+    "state",
+    "all",
+    "local",
+    "uptime",
+    "role",
+    "oc_role",
+    "received",
+    "waiting",
+    "queries",
+    "sending",
+    "unknown",
+    "media",
+    "logs"
+  ],
   "bot.stop": [],
   "bot.stopped": [],
   "bot.target_required": [],
@@ -25,7 +63,12 @@
   "test.mention_label_usage": [],
   "test.mention_label_shared": [],
   "test.mention_label_separate": [],
-  "test.mention_label_preview": ["chat", "label", "mode", "count"],
+  "test.mention_label_preview": [
+    "chat",
+    "label",
+    "mode",
+    "count"
+  ],
   "test.mention_label_result": [],
   "search.data_unavailable": [],
   "search.data_changed": [],
@@ -650,5 +693,90 @@
   "skd.change_max_version": [
     "before",
     "after"
+  ],
+  "event.failed": [],
+  "event.no_gatya": [],
+  "event.no_sale": [],
+  "event.no_item": [],
+  "event.item_usage": [],
+  "event.sale_not_found": [
+    "query"
+  ],
+  "event.sale_results": [
+    "query",
+    "count",
+    "lines"
+  ],
+  "event.select_hint": [],
+  "event.invalid_selection": [],
+  "event.selection_unavailable": [],
+  "event.weekly": [
+    "days"
+  ],
+  "event.monthly": [
+    "days"
+  ],
+  "event.daily": [],
+  "event.all_day": [],
+  "event.raw_missing": [
+    "arg0"
+  ],
+  "event.series_not_found": [
+    "query"
+  ],
+  "event.gatya_schedule": [
+    "arg0"
+  ],
+  "event.active": [],
+  "event.gatya_message": [
+    "message"
+  ],
+  "event.rates": [
+    "rates"
+  ],
+  "event.gatya_period": [
+    "arg0",
+    "arg1",
+    "arg2",
+    "arg3"
+  ],
+  "event.rate_normal": [],
+  "event.rate_rare": [],
+  "event.rate_super_rare": [],
+  "event.rate_uber_rare": [],
+  "event.rate_legend_rare": [],
+  "event.series_id_not_found": [
+    "id"
+  ],
+  "event.gacha_id_not_found": [
+    "id"
+  ],
+  "event.sale_id_not_found": [
+    "id"
+  ],
+  "event.time_block": [
+    "arg0"
+  ],
+  "event.target_stages": [
+    "arg0"
+  ],
+  "event.separator": [],
+  "event.unlimited_time": [],
+  "event.sale_schedule": [
+    "arg0"
+  ],
+  "event.item_event_id": [
+    "id"
+  ],
+  "event.gift_amount": [
+    "arg0"
+  ],
+  "event.once_only": [],
+  "event.gift_details": [],
+  "event.item_schedule": [
+    "arg0"
+  ],
+  "event.item_not_found": [
+    "id"
   ]
 }

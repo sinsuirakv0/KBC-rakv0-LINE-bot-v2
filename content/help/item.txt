@@ -1,0 +1,15 @@
+﻿!item
+開催中・開催予定のスケジュールを表示します。
+
+!item <ID>
+詳細を表示します。
+
+!item <ID> j(json)
+整形済みJSONを表示します。
+
+!item <ID> r(raw)
+生データを表示します。
+
+IDはgiftTypeを優先し、該当がなければeventIDで検索します。
+
+o. も同じコマンドのprefixとして使えます。

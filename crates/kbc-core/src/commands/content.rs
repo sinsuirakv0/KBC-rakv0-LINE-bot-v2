@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, path::Path};
+﻿use std::{collections::BTreeMap, path::Path};
 
 use crate::Result;
 
@@ -24,6 +24,9 @@ impl ContentCatalog {
             matches!(
                 key.as_str(),
                 "pushsetting"
+                    | "gatya"
+                    | "sale"
+                    | "item"
                     | "skd"
                     | "bot"
                     | "oc"
@@ -47,6 +50,9 @@ impl ContentCatalog {
             "index",
             "pushsetting",
             "skd",
+            "gatya",
+            "sale",
+            "item",
             "bot",
             "oc",
             "oc-admin",

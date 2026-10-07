@@ -89,7 +89,12 @@ fn apply_inner(
         return Ok(vec![]);
     };
     match plan {
-        CommandPlan::Prepare(job) => Ok(vec![(String::new(), now, Some(*job))]),
+        CommandPlan::Prepare(mut job) => {
+            if let crate::media::MediaRequest::EventData(request) = &mut job.request {
+                request.owner = sender_id.clone();
+            }
+            Ok(vec![(String::new(), now, Some(*job))])
+        }
         CommandPlan::Text(messages) => Ok(messages
             .into_iter()
             .map(|(text, due)| (text, due, None))
@@ -176,6 +181,13 @@ fn apply_inner(
             let Some((id, payload, pending)) = stored else {
                 return Ok(Vec::new());
             };
+            if tx.query_row(
+                "SELECT revision='event-v1' FROM sessions WHERE id=?1",
+                [&id],
+                |r| r.get::<_, bool>(0),
+            )? {
+                return crate::event_data::select(tx, &id, &payload, text, message_catalog, now);
+            }
             let Some(catalog) = catalog else {
                 return Ok(vec![(
                     message!(message_catalog, "search.data_unavailable").into(),
