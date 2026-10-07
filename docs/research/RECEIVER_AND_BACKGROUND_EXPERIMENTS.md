@@ -189,3 +189,9 @@ Receiver.runPollingは、一覧を全ページ取得できた場合だけ、そ�
 8a14f53を反映し、起動約22秒でlistedChats=11 / pollingChats=11 / priorityChats=4 / unlistedPriorityChats=1、定期取得19周期、API errors=0 / rateLimits=0を確認した。旧設定5トークのうち1トークがLINEの現在の一覧にない。除外後のNOT_FOUND解消と整合するが、退会・削除のどちらかまで特定したとは扱わない。
 
 約146秒時点も定期取得181周期、API errors=0 / rateLimits=0 / discoveryFailures=0、暗号化backup成功3回を維持した。新規イベントのない期間でも定期取得が進んだ。少数トークの短時間観測であり、多OC・制限後の復帰・参加退出の完全性の保証は継続観測事項。[配備記録](../operations/MINIMAL_BOT.md#2026-10-04の通常応答id参加取得motion修正)。
+
+## 2026-10-08：旧pushの移植
+
+予約を未来dueのOutboxへ直接保存し、受信とは独立した既存Timerで配送する。イベント・ガチャ・dailyは共有公開データSourceと既存監視の寿命へ接続し、LINE側の取得APIを増やさない。5秒ごとのDB確認、公開データ60秒更新・最大120秒保持、1分先の配送準備を採用した。[判断・トレードオフ・有限上限](../decisions/PUSH_NOTIFICATIONS_V1.md)。
+
+実LINEの通知、NorthflankのCPU・常駐メモリ、多OCの継続負荷は未検証。オフライン検証と公開データの単発確認を行い、結果を[機能資料](../../crates/kbc-core/src/push/docs/PUSH.md)へ記録する。LINEJS公開版はnpm registryで3.4.2を再確認し、依存版は変更しない。

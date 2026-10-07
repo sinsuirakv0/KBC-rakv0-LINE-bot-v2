@@ -292,3 +292,7 @@ ut / tut motionはLINE側での生成を基本とし、メモリ不足などで�
 ## イベント参照コマンド（2026-10-07）
 
 利用者指定でgatya・sale・itemの参照元をDiscord Bot v2とした。既存CoreのHTTP・準備・配送・Sessionへ移植し、gatyaの激レア表示漏れを両Botで修正。saleは一覧へのリプライで番号選択する。[確定要件](../requirements/EVENT_COMMANDS.md)、[実装と確認](../../crates/kbc-core/src/event_data/docs/COMMANDS.md)。
+
+## 2026-10-08：予約・イベント・ガチャ通知
+
+旧LINEの !push を移植する。本文省略可の時間／日時予約、掲載有無に関係しない個別イベントID、名前からの通知設定、gによるガチャ個別／全件、旧dailyを対象にする。設定・予約・配送は共通Coreへ置き、受信方式とAdapterのLINE API制御は維持する。[実装と確認範囲](../../crates/kbc-core/src/push/docs/PUSH.md)、[保存・監視の決定](../decisions/PUSH_NOTIFICATIONS_V1.md)。

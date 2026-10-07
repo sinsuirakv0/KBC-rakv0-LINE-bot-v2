@@ -55,3 +55,5 @@ Sessionは全体128件、同じ人・トークの候補を置き換える。保�
 公開データでは3コマンドの一覧・ID詳細・JSON・rawの12通りに加え、gatyaのRシリーズ指定・名前検索・シリーズJSONとsaleの名前検索・選択開始を確認。恒久の最小回帰は激レア表示と、候補の送信成功・30秒期限・所有者・再起動の2件。公開取得は通常テストではignoreする。
 
 NativeのsubmitBatchAsyncから共通Worker・返信ActionまでLINE通信0件で確認。準備待ちのsaleより先にpingを配送でき、sale候補のリプライ選択から詳細を生成し、!gatya・o.itemも応答を生成した。実OC送信と本番配備は今回実施していない。LINEJS最新公開版は3.4.2を再確認し、依存は維持した。
+
+2026-10-08、Sourceの公開JSON・名称取得をpush通知設定と監視でも共用する。EventData Requestの内部command=pushは参照結果ではなく通知設定用の候補を返し、Selection.pushとrevision=push-v1で既存Sessionへ接続する。1候補は結果transactionで登録、複数候補は10分・10件表示・確定前後のページ管理を使う。saleの従来選択は変更しない。[pushの関数と契約](../../push/docs/PUSH.md)。

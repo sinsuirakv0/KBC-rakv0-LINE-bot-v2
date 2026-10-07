@@ -39,3 +39,5 @@ help/test-mention.txtは!test mention-labelの専用案内。入口のhelp/test.
 2026-10-06、help/bot.txtへBOT権限の登録・解除・一覧、停止/再開、statusを追加した。messages/bot.txtとschemaのキーで全定型文面を編集できる。indexには既存bot項目を使い、自動で追記しない。[管理機能](../../crates/kbc-core/src/oc/docs/BOT.md)。
 
 2026-10-07、gatya・sale・itemを処理を持つ予約名と必須helpへ追加した。help/indexへ3コマンドを手動追記。表示はmessages/event.txtと既存skd等の共通キーで変更できる。saleのリプライ番号選択を公開helpへ記載した。[実装](../../crates/kbc-core/src/event_data/docs/COMMANDS.md)。
+
+2026-10-08、予約・イベント・ガチャ・翌日予定の通知文面はmessages/push.txt、案内はhelp/push.txtへ置く。index.txtは手動でpushの1行を追加した。各文面キーと差し込み項目はCore schemaを同時更新する。[機能の仕様](../../crates/kbc-core/src/push/docs/PUSH.md)。

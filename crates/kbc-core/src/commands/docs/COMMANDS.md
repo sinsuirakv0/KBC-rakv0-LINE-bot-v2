@@ -93,3 +93,5 @@ Bridgeの非同期受付は最大4受付・実処理1件。外部素材の取得
 2026-10-06、!botのadmin / setting / stop / start / statusを旧LINEから移植した。公開案内は!help bot、文面はmessages/bot.txt。権限更新はCoreの同じtransaction・SQLite snapshotを共有し、旧ファイルの再読込で解除を巻き戻さない。性能テスト・環境表示は後回し。[仕様・関数・検証](../../oc/docs/BOT.md)。
 
 2026-10-07、Discord v2のgatya・sale・itemを追加。既存PrepareMediaでHTTPと最大32件の本文生成を行い、saleの9件以下の候補は共通Session tableでリプライ番号選択する。[仕様・関数・上限・検証](../../event_data/docs/COMMANDS.md)。
+
+2026-10-08、旧LINEの予約・イベント通知を !push へ移植した。時間指定はCommandPlan::Pushから未来dueの既存Outboxへ保存し、名前での通知設定は共通EventData準備WorkerとSessionを使う。複数候補は10件表示・次/前/3p・番号選択で登録／解除する。[仕様・関数・保存・検証](../../push/docs/PUSH.md)。

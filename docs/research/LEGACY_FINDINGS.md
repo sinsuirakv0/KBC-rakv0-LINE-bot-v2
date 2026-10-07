@@ -103,3 +103,9 @@ Talkに関する約110秒やPUSHの観察は過去の特定環境の結果であ
 [受信・常時処理の調査と実験](RECEIVER_AND_BACKGROUND_EXPERIMENTS.md)に、手元SDK 3.1.4と開発元の固定commitの確認、および通信を使わないStream検証を記録した。定期取得とOC PUSH、補助監視、名前巡回、通知・同期の比較が必要な箇所を分類している。
 
 Stream検証は受信経路を選ぶための知見であり、旧Botの無反応の原因を確定するものではない。最新公開版を使う方針は確定し、その後[3.4.2配布物の認証なしProbe](../../experiments/linejs-receiver/docs/RECEIVER_PROBE.md)を実施した。実LINEでの方式比較、API制限の実測、Northflankの採用Runtimeでの検証は未完了。
+
+## 2026-10-08：pushの現行コード確認
+
+旧LINE c6796e0のpush.ts、reminders/time.ts・store.ts・scheduler.ts、eventPush/catalog.ts・schedule.ts・daily.ts・policy.ts・scheduler.tsを確認した。数字は分後、日付はJSTで、旧予約は本文必須。個別IDはsale.json掲載と先行トーク登録が必要で、102/112を含む予定では他のIDを扱わなかった。全イベントは開始のみ、個別は開始・終了10分前・任意の事前通知、dailyは22時に翌日予定をスレッドへ送る。各旧schedulerが直接LINEへ送信し、失敗は別途再試行していた。
+
+新版は利用者指定で本文省略・未掲載ID登録・ガチャ個別と全件を追加し、候補を選ぶ目的を通知設定に限定する。dailyの指定は旧dailyの移植として確認済み。保存・配送は共通Outboxを使う。[確定した仕様と関数](../../crates/kbc-core/src/push/docs/PUSH.md)。
