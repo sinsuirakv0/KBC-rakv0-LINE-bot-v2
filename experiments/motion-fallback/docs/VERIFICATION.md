@@ -41,6 +41,29 @@
 
 ## 検証範囲
 
-保存状態と時計を操作した再起動復旧、FFmpeg不足、成果上限を再現した。Linux cgroupの実メモリ圧迫・OOM kill、実際の10分timeout、別サーバーのHTTPS公開、実LINE upload・送信、運用時のCPU・メモリは未検証。本番配備は行っていない。
+ローカル実験では保存状態と時計を操作した再起動復旧、FFmpeg不足、成果上限を再現した。Linux cgroupの実メモリ圧迫・OOM kill、実際の10分timeout、実LINE upload・送信、継続負荷は未検証。本番設定・配備とHTTPS公開先での確認は以下に分けて記録する。
+
+## 本番設定とHTTPS検証（2026-10-07）
+
+ChromeからNorthflankの同じproject内にある`kbc-discord-bot`と`kbc-rakv0-line-bot`の環境変数を設定した。既存のDiscord公開ポート3000とHTTPS domainを使い、LINEの`MOTION_REMOTE_URL`を`https://p01--kbc-discord-bot--xwtq22smkhqt.code.run/motion-jobs`とした。ランダムな64文字の共通キーをDiscordの`MOTION_RENDER_SECRET`・LINEの`MOTION_REMOTE_SECRET`へ保存。既存変数を保ち、値の一致を入力画面で確認してUpdate onlyで保存した。キーの値はGit・資料へ残さず、HTTPS検証用の一時ファイルは使用直後に削除した。
+
+| Bot | 配備版 / build | Linux build | 最終状態 |
+| --- | --- | --- | --- |
+| Discord | e25e5be / uplifting-shade-921 | 2分10秒・Success | Running、1 / 1、0.2vCPU / 512MB |
+| LINE | 6723105 / near-slope-9679 | 2分44秒・Success | Running、1 / 1、0.2vCPU / 512MB |
+
+Discordは0 instanceへ変更後に新buildを配備し、1へ戻した。LINEは一時的にCDをOFFにし、旧版を動かしたままbuildした。build成功後に0 instanceへ変更、旧版の0 / 0を確認して新buildを配備し、CDをON・1 instanceへ戻した。開始時と終了時のCI / CDは両BotともON。資源・domainの追加購入はない。配備には今回のcommitだけをpushし、Discord側に元から存在した未commitの変更は含めていない。
+
+HTTPSの外部APIを直接確認し、未認証401、正しい認証で202受付・ready・完成成果GET・DELETEを確認した。PNG / MP4 / GIFのContent-Type・名前・Protocol v1・先頭byte・8MiB上限を検査し、MP4のdurationも確認。今回のHTTP確認では動画の再復号は行っていない。
+
+| 成果 | Frame指定 | byte | duration |
+| --- | ---: | ---: | ---: |
+| PNG | 攻撃Frame 0の1Frame | 136,677 | 対象外 |
+| MP4 | 攻撃Frame 0〜2の3Frame | 4,421 | 100ms |
+| GIF | 攻撃Frame 0〜2の3Frame | 9,125 | 対象外 |
+
+LINEは配備後にhealth 200 / state=receivingを確認。停止前・再開後ともCoreのcompletedActions=100、unknownActions=25、retainedEvents=805。queued / claimed / querying / sending / preparingMedia / pendingLogsは0で、保存状態の復元を確認した。unknownを削除・成功へ変更していない。
+
+Bot投稿を作らずにDiscordの実資源で生成した結果であり、実OCでLINEがメモリ不足になって代行成果を送信する流れ、長いmotionの負荷、OOM再現の確認とは区別する。今回の検証によるLINE / Discord投稿は0件。
 
 [採用仕様・期限・接続設定](../../../docs/decisions/MOTION_REMOTE_FALLBACK_V1.md)

@@ -1,6 +1,6 @@
 ﻿# ut / tutのDiscord代行生成
 
-2026-10-07（JST）。状態: 認証付きHTTP APIと生成失敗全般からの切替を利用者が承認。両Botに実装し、ローカルHTTPで結合検証済み。本番配備は未実施。
+2026-10-07（JST）。状態: 認証付きHTTP APIと生成失敗全般からの切替を利用者が承認。両Botに実装し、ローカルHTTPで結合検証済み。本番設定・配備とDiscordのHTTPS生成を確認済み。実LINEでの代行成果の送信は未検証。
 
 ## 確定した要件
 
@@ -35,6 +35,8 @@ LINE側へ未描画Frameや素材一式を返して生成を続ける形には�
 ## 採用方式・起動・期限
 
 LINE側に`MOTION_REMOTE_URL=https://<Discord側のHTTP公開先>/motion-jobs`と`MOTION_REMOTE_SECRET`を両方指定する。Discord側の`MOTION_RENDER_SECRET`を同じ32〜256文字の印字可能ASCIIにする。未設定では従来のローカル生成・失敗案内を維持する。片方だけの設定や不正なURL / keyは起動失敗にする。LINEは公開先のHTTPSを必須とし、localhost等のローカル検証だけHTTPを許可する。SecretをURL・ログ・公開Gitへ入れない。
+
+2026-10-07、本番の接続先を`https://p01--kbc-discord-bot--xwtq22smkhqt.code.run/motion-jobs`として設定した。Discordの既存公開ポート3000・HTTPS domainを使い、共通キーはNorthflankの各サービスの環境変数へ保存した。[配備と実接続の確認範囲](../../experiments/motion-fallback/docs/VERIFICATION.md#本番設定とhttps検証2026-10-07)。
 
 代行Protocol v1は`POST /motion-jobs`で受付、`GET /motion-jobs/:id`で状態、`GET /motion-jobs/:id/artifact`で成果、`DELETE /motion-jobs/:id`で取消・削除する。依頼IDは既存LINE Action IDのSHA-1で、本文はversion・依頼ID・素材参照revision・解決済みMotionPlan。元のコマンド本文・OC MID・LINE認証情報を送らない。主な契約はDiscord側`crates/kbc-core/src/motion/docs/REMOTE.md`に記録した。
 

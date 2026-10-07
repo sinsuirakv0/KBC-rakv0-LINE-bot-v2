@@ -29,6 +29,8 @@ npm start
 
 任意のDiscord代行は`MOTION_REMOTE_URL`にHTTPSの`/motion-jobs`までのURL、`MOTION_REMOTE_SECRET`にDiscord側`MOTION_RENDER_SECRET`と同じ32〜256文字のkeyを設定する。両BotのNative / Adapterを更新・再起動して有効にする。未設定では従来のローカル生成を使う。代行時の資源・取消・再開と実接続の未確認範囲は[決定資料](../decisions/MOTION_REMOTE_FALLBACK_V1.md)を参照。
 
+2026-10-07、本番のDiscord代行を設定・配備した。LINEは6723105 / near-slope-9679、Discordはe25e5be / uplifting-shade-921。接続先は`https://p01--kbc-discord-bot--xwtq22smkhqt.code.run/motion-jobs`。既存の0.2vCPU / 512MB・1 instanceを使用。開始時のCI / CDは両方ONで、切替後もONへ戻した。LINEはCDだけ一時OFFにして旧版を動かしたままbuildし、旧instanceを0へ変更後に配備・1へ戻した。health 200 / receiving、保存済みCoreの復元、DiscordのHTTPSで3形式の生成を確認。キーの値はNorthflank環境変数だけで管理する。[実測と未確認点](../../experiments/motion-fallback/docs/VERIFICATION.md#本番設定とhttps検証2026-10-07)。
+
 ## 保存とコンテナの扱い
 
 `storage/auth.json`と`storage/core.sqlite`は同じ運用単位で保管し、公開Gitへ置かない。旧認証のreqseq・refresh情報を保持する。Coreファイルを別アカウントへ使うとOwnerMismatchで停止する。結果不明はSQLiteのactionsに残し、勝手に再投稿しない。
