@@ -52,6 +52,7 @@ pub enum CommandPlan {
     Text(Vec<(String, i64)>),
     Prepare(Box<crate::media::MediaJob>),
     Search(SearchSession),
+    Push(Vec<String>),
     Ignore,
 }
 
@@ -78,6 +79,7 @@ pub fn prepare(
             | "sale"
             | "item"
             | "pushsetting"
+            | "push"
             | "bot"
             | "oc"
             | "id"
@@ -103,6 +105,16 @@ pub fn prepare(
                 .unwrap_or(message!(message_catalog, "search.prepare_01").into()),
             now,
         )]);
+    }
+    if name == "push" {
+        return if args.is_empty() || args == ["help"] {
+            CommandPlan::Text(vec![(
+                content.command_help("push").unwrap_or_default(),
+                now,
+            )])
+        } else {
+            CommandPlan::Push(args.into_iter().map(str::to_owned).collect())
+        };
     }
     if name == "id" {
         return CommandPlan::Ignore;

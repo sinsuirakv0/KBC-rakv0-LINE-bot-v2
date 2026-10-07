@@ -11,7 +11,7 @@ use std::sync::Arc;
 mod gatya;
 mod item;
 mod sale;
-mod source;
+pub(crate) mod source;
 #[cfg(test)]
 mod tests;
 use source::Source;
@@ -91,7 +91,7 @@ pub(crate) struct Output {
     pub selection: Option<Selection>,
 }
 impl Output {
-    fn text(messages: Vec<String>) -> Self {
+    pub(crate) fn text(messages: Vec<String>) -> Self {
         Self {
             messages,
             selection: None,
@@ -102,6 +102,8 @@ impl Output {
 pub(crate) struct Selection {
     pub kind: String,
     pub choices: Vec<i64>,
+    #[serde(default)]
+    pub push: Option<crate::push::Selection>,
 }
 
 // 通常返信と同じ1,500 UTF-16単位で分割し、Discord版と同じ最大32件に制限する。
@@ -126,6 +128,7 @@ impl Runtime {
         let messages = &self.content.messages;
         let now = chrono::DateTime::from_timestamp_millis(now_ms()).ok_or("InvalidEventTime")?;
         let output = match request.command.as_str() {
+            "push" => crate::push::lookup(&source, messages, &request.arguments).await,
             "gatya" => gatya::run(&source, messages, &request.arguments, now)
                 .await
                 .map(Output::text),
@@ -178,6 +181,25 @@ impl Runtime {
         let now = now_ms();
         let mut db = self.database.lock().map_err(|_| "DatabaseLock")?;
         let tx = db.transaction()?;
+        if request.command == "push" && crate::permissions::stopped(&tx, &chat_id)? {
+            tx.execute("UPDATE actions SET status='failed',payload='',code='BotStopped',completed=?2 WHERE id=?1",params![action_id,now])?;
+            tx.commit()?;
+            return Ok(());
+        }
+        if let Some(selection) = output.selection.as_mut().and_then(|s| s.push.as_mut())
+            && selection.choices.len() == 1
+        {
+            output.messages = vec![crate::push::configure(
+                &tx,
+                &chat_id,
+                &selection.choices[0],
+                selection.advance,
+                selection.enabled,
+                &self.content.messages,
+                now,
+            )?];
+            output.selection = None;
+        }
         let mut is_prompt = false;
         let wanted_selection = output.selection.is_some();
         if let (Some(owner), Some(selection)) = (request.owner, output.selection.take()) {
@@ -191,7 +213,13 @@ impl Runtime {
                 let payload = serde_json::to_string(&selection)?;
                 if count < 128 && payload.len() <= 64 * 1024 && output.messages.len() == 1 {
                     tx.execute("INSERT INTO sessions(id,chat,owner,action,payload,expires,revision) VALUES(?1,?2,?3,?4,?5,?6,'event-v1')",
-                        params![event_id, chat_id, owner, action_id, payload, now+30_000])?;
+                        params![event_id, chat_id, owner, action_id, payload, now+if selection.push.is_some() {600_000} else {30_000}])?;
+                    if selection.push.is_some() {
+                        tx.execute(
+                            "UPDATE sessions SET revision='push-v1' WHERE id=?1",
+                            [&event_id],
+                        )?;
+                    }
                     is_prompt = true;
                 }
             }
@@ -202,7 +230,11 @@ impl Runtime {
                 .unwrap_or(&output.messages[0]);
             output.messages = crate::commands::split_text(&format!(
                 "{text}\n\n{}",
-                message!(self.content.messages, "event.selection_unavailable")
+                if request.command == "push" {
+                    message!(self.content.messages, "push.selection_unavailable")
+                } else {
+                    message!(self.content.messages, "event.selection_unavailable")
+                }
             ));
         }
         for (index, text) in output.messages.into_iter().enumerate() {
@@ -245,13 +277,21 @@ impl Runtime {
 
 pub(crate) fn select(
     tx: &Transaction<'_>,
+    event: &kbc_protocol::CoreEvent,
     id: &str,
     payload: &str,
-    input: &str,
+    pending: bool,
     messages: &Messages,
     now: i64,
 ) -> Result<Vec<crate::commands::sessions::Response>> {
-    let selection: Selection = serde_json::from_str(payload)?;
+    let input = match event {
+        kbc_protocol::CoreEvent::MessageReceived { text, .. } => text.as_str(),
+        _ => return Ok(vec![]),
+    };
+    let mut selection: Selection = serde_json::from_str(payload)?;
+    if let Some(push) = &mut selection.push {
+        return crate::push::select(tx, event, id, push, pending, messages, now);
+    }
     let response = match crate::commands::pagination::parse(input, 0) {
         crate::commands::pagination::Input::Select(number)
             if number > 0 && number <= selection.choices.len() =>

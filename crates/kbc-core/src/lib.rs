@@ -21,6 +21,7 @@ mod messages;
 mod motion;
 mod oc;
 mod permissions;
+mod push;
 mod skd;
 mod store_update;
 
@@ -129,6 +130,7 @@ impl Runtime {
         commands::sessions::initialize(&db)?;
         logs::initialize(&db)?;
         store_update::initialize(&db)?;
+        push::initialize(&db)?;
         skd::monitor::initialize(&db)?;
         oc::import_legacy(&mut db, config.legacy_oc_settings_path.as_deref())?;
         // 遠隔退避以後に送信された可能性がある。期限済みの副作用は照合まで再実行しない。
@@ -409,7 +411,7 @@ impl Runtime {
                 } = event
                 {
                     reply_to_message_id.is_some() && tx.query_row(
-                        "SELECT EXISTS(SELECT 1 FROM sessions WHERE chat=?1 AND owner=?2 AND prompt=?3 AND expires>?4 AND revision<>'event-v1')",
+                        "SELECT EXISTS(SELECT 1 FROM sessions WHERE chat=?1 AND owner=?2 AND prompt=?3 AND expires>?4 AND revision NOT IN ('event-v1','push-v1'))",
                         params![chat_id, sender_id, reply_to_message_id, now], |row| row.get::<_, bool>(0))?
                 } else {
                     false
@@ -551,7 +553,20 @@ impl Runtime {
                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).optional()?;
                 match next {
                     Some((id, payload, due)) if due <= now_ms() => {
-                        let action = serde_json::from_str(&payload)?;
+                        let action: CoreAction = serde_json::from_str(&payload)?;
+                        if let CoreAction::SendMessage {
+                            action_id,
+                            event_id,
+                            chat_id,
+                            ..
+                        } = &action
+                            && (event_id.starts_with("push:event:")
+                                || action_id.starts_with("push:reminder:"))
+                            && permissions::stopped(&db, chat_id)?
+                        {
+                            db.execute("UPDATE actions SET status='failed',code='BotStopped',payload='',completed=?2 WHERE id=?1",params![id,now_ms()])?;
+                            continue;
+                        }
                         db.execute(
                             "UPDATE actions SET status=?2 WHERE id=?1",
                             params![id, if query { "querying" } else { "claimed" }],

@@ -89,6 +89,7 @@ fn apply_inner(
         return Ok(vec![]);
     };
     match plan {
+        CommandPlan::Push(args) => crate::push::apply(tx, event, &args, message_catalog, now),
         CommandPlan::Prepare(mut job) => {
             if let crate::media::MediaRequest::EventData(request) = &mut job.request {
                 request.owner = sender_id.clone();
@@ -182,11 +183,19 @@ fn apply_inner(
                 return Ok(Vec::new());
             };
             if tx.query_row(
-                "SELECT revision='event-v1' FROM sessions WHERE id=?1",
+                "SELECT revision IN ('event-v1','push-v1') FROM sessions WHERE id=?1",
                 [&id],
                 |r| r.get::<_, bool>(0),
             )? {
-                return crate::event_data::select(tx, &id, &payload, text, message_catalog, now);
+                return crate::event_data::select(
+                    tx,
+                    event,
+                    &id,
+                    &payload,
+                    pending.is_some(),
+                    message_catalog,
+                    now,
+                );
             }
             let Some(catalog) = catalog else {
                 return Ok(vec![(

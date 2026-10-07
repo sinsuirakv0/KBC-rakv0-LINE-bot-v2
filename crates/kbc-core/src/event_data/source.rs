@@ -7,7 +7,7 @@ use crate::{Result, assets::AssetService, messages::Messages};
 use std::{collections::HashMap, sync::Arc};
 
 const BASE: &str = "https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-event/main/data";
-pub(super) struct Source {
+pub(crate) struct Source {
     http: Arc<AssetService>,
     metadata: Metadata,
 }
@@ -18,7 +18,7 @@ pub(super) struct GachaListData {
     pub short_series_names: NameMaps,
     pub series_mappings: MappingMaps,
 }
-pub(super) struct GachaLookupData {
+pub(crate) struct GachaLookupData {
     pub gacha: GachaJson,
     pub gacha_names: NameMaps,
     pub series_names: NameMaps,
@@ -61,7 +61,7 @@ impl Source {
         let text = self.http.get_text(&format!("{BASE}/{name}.json")).await?;
         Ok(serde_json::from_str(text.trim_start_matches('\u{feff}'))?)
     }
-    pub async fn fetch_json_with_mappings(&self) -> Result<GachaJsonWithMappings> {
+    pub(super) async fn fetch_json_with_mappings(&self) -> Result<GachaJsonWithMappings> {
         let mapping = |mode| async move {
             let text = self.http.get_text(&format!("https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-assets/main/jp/sitedata/Data/GatyaData_Option_Set{mode}.tsv")).await?;
             parse_mapping(&text)
@@ -81,7 +81,7 @@ impl Source {
             },
         })
     }
-    pub async fn fetch_schedule_data(&self) -> Result<GachaListData> {
+    pub(super) async fn fetch_schedule_data(&self) -> Result<GachaListData> {
         let (data, item, names) = tokio::try_join!(
             self.metadata.gatya(self.fetch_gacha_json().await?),
             self.fetch_item_json(),

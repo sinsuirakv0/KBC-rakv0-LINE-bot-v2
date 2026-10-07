@@ -10,6 +10,7 @@
 ・skd -イベントスケジュール(リーク含む)
 [bot関係]
 ・ping -応答確認
+・push -予約・イベント・ガチャ通知
 ・pushsetting -通知設定
 ・bot -botの設定
 ・test -実環境でのbot試験

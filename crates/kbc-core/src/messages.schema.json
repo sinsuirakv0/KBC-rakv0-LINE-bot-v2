@@ -778,5 +778,79 @@
   ],
   "event.item_not_found": [
     "id"
-  ]
+  ],
+  "push.invalid_time": [],
+  "push.past": [],
+  "push.too_far": [],
+  "push.invalid_advance": [],
+  "push.invalid_event": [],
+  "push.capacity": [],
+  "push.content_limit": [],
+  "push.reminder_label": [
+    "name"
+  ],
+  "push.reminder_default": [],
+  "push.reminder_saved": [
+    "date"
+  ],
+  "push.reminder_count": [
+    "count"
+  ],
+  "push.status_entry": [
+    "kind",
+    "id",
+    "advance"
+  ],
+  "push.configured": [
+    "target",
+    "state",
+    "advance"
+  ],
+  "push.removed": [],
+  "push.event_hint": [],
+  "push.all_event": [],
+  "push.all_gacha": [],
+  "push.daily": [],
+  "push.not_found": [
+    "query"
+  ],
+  "push.too_many": [],
+  "push.choices": [
+    "page",
+    "pages",
+    "lines",
+    "navigation"
+  ],
+  "push.started": [
+    "id",
+    "name",
+    "date",
+    "end"
+  ],
+  "push.ending": [
+    "id",
+    "name",
+    "end"
+  ],
+  "push.before": [
+    "id",
+    "name",
+    "minutes",
+    "date"
+  ],
+  "push.daily_root": [
+    "date"
+  ],
+  "push.no_schedule": [],
+  "push.status_page": [
+    "page",
+    "pages"
+  ],
+  "push.status_hint": [],
+  "push.event_kind": [],
+  "push.gacha_kind": [],
+  "push.rare_kind": [],
+  "push.event_gacha_kind": [],
+  "push.normal_kind": [],
+  "push.selection_unavailable": []
 }

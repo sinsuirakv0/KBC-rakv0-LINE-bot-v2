@@ -143,6 +143,7 @@ async fn reply_selection_survives_restart_and_checks_owner_and_expiry() {
                 messages: vec!["1. 17000 event".into()],
                 selection: Some(Selection {
                     kind: "sale".into(),
+                    push: None,
                     choices: vec![17000],
                 }),
             },

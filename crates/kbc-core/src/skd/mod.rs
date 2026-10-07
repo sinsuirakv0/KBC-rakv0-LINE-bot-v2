@@ -168,6 +168,16 @@ pub(crate) fn complete(
     {
         return Ok(());
     }
+    if event_id.starts_with("push:event:")
+        && event_id.ends_with(":daily")
+        && !tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM push_subscriptions WHERE chat=?1 AND kind='daily')",
+            [chat_id],
+            |r| r.get::<_, bool>(0),
+        )?
+    {
+        return Ok(());
+    }
     let root = result
         .message_id
         .as_ref()

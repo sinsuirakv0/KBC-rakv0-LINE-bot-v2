@@ -139,6 +139,7 @@ impl Formatter<'_> {
             messages: self.single_message(text)?,
             selection: selectable.then(|| Selection {
                 kind: "sale".into(),
+                push: None,
                 choices: matches.into_iter().map(|(id, _)| id).collect(),
             }),
         })

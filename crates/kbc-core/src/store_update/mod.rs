@@ -211,7 +211,8 @@ impl Runtime {
         tokio::join!(
             self.store_loop(StorePlatform::Android),
             self.store_loop(StorePlatform::Ios),
-            self.schedule_loop()
+            self.schedule_loop(),
+            self.push_loop()
         );
         self.store_worker_active
             .store(false, std::sync::atomic::Ordering::Release);
