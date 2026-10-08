@@ -50,6 +50,11 @@ fn status(
 ) -> Result<()> {
     let catalog = &runtime.content.messages;
     let stats = runtime.stats_from_db(tx)?;
+    let adapter = runtime
+        .runtime_status
+        .lock()
+        .map_err(|_| "RuntimeStatusLock")?
+        .clone();
     let (all, local) = permissions::stop_state(tx, identity(event).1)?;
     let last: Option<i64> =
         tx.query_row("SELECT max(received) FROM events", [], |row| row.get(0))?;
@@ -63,7 +68,7 @@ fn status(
         },
         all = flag(catalog, all),
         local = flag(catalog, local),
-        uptime = (now - runtime.started_at_ms).max(0) / 1000,
+        uptime = duration(catalog, (now - runtime.started_at_ms).max(0) / 1000),
         role = role(
             catalog,
             permissions::rank(
@@ -76,14 +81,38 @@ fn status(
         oc_role = oc_role,
         received = last.map_or_else(
             || message!(catalog, "common.not_set").into(),
-            |at| format!("{}", (now - at).max(0) / 1000)
+            |at| message!(
+                catalog,
+                "bot.elapsed",
+                duration = duration(catalog, (now - at).max(0) / 1000)
+            )
         ),
-        waiting = stats.queued_actions,
+        outstanding = stats.queued_actions
+            + stats.claimed_actions
+            + stats.sending_actions
+            + stats.querying_actions
+            + stats.preparing_media
+            + stats.unknown_actions,
+        capacity = crate::MAX_ACTIONS,
+        waiting = stats.queued_deliveries,
+        query_waiting = stats.queued_queries,
+        media_waiting = stats.queued_media,
+        scheduled = stats.scheduled_actions,
         queries = stats.querying_actions,
         sending = stats.claimed_actions + stats.sending_actions,
         unknown = stats.unknown_actions,
-        media = stats.preparing_media,
-        logs = stats.pending_logs
+        media = stats.media_jobs,
+        media_capacity = crate::media::MAX_MEDIA_JOBS,
+        logs = stats.pending_logs,
+        resources = runtime_status(catalog, adapter.as_ref(), now),
+        query_capacity = adapter.as_ref().map_or_else(
+            || message!(catalog, "common.unavailable").into(),
+            |status| status.query_workers.to_string()
+        ),
+        delivery_capacity = adapter.as_ref().map_or_else(
+            || message!(catalog, "common.unavailable").into(),
+            |status| status.delivery_workers.to_string()
+        )
     );
     text_action(
         tx,
@@ -95,6 +124,111 @@ fn status(
         now,
     )?;
     Ok(())
+}
+
+fn duration(catalog: &crate::messages::Messages, seconds: i64) -> String {
+    message!(
+        catalog,
+        "bot.duration",
+        hours = seconds / 3600,
+        minutes = seconds / 60 % 60,
+        seconds = seconds % 60
+    )
+}
+
+fn runtime_status(
+    catalog: &crate::messages::Messages,
+    status: Option<&kbc_protocol::RuntimeStatus>,
+    now: i64,
+) -> String {
+    let Some(status) = status else {
+        return message!(catalog, "bot.runtime_unavailable").into();
+    };
+    let unavailable = message!(catalog, "common.unavailable");
+    let scope = |container| {
+        if container {
+            message!(catalog, "bot.scope_container")
+        } else {
+            message!(catalog, "bot.scope_process")
+        }
+    };
+    let cpu = status.cpu_core_percent.map_or_else(
+        || unavailable.into(),
+        |percent| {
+            let allocation = status
+                .cpu_limit_cores
+                .filter(|cores| *cores > 0.0)
+                .map_or_else(
+                    || unavailable.into(),
+                    |cores| {
+                        message!(
+                            catalog,
+                            "bot.cpu_allocation",
+                            percent = format!("{:.1}", percent / cores),
+                            cores = format!("{cores:.2}")
+                        )
+                    },
+                );
+            message!(
+                catalog,
+                "bot.cpu_usage",
+                percent = format!("{percent:.1}"),
+                allocation = allocation
+            )
+        },
+    );
+    let memory = status
+        .memory_limit_bytes
+        .filter(|limit| *limit > 0.0)
+        .map_or_else(
+            || unavailable.into(),
+            |limit| {
+                message!(
+                    catalog,
+                    "bot.memory_limit",
+                    limit = format!("{:.1}", limit / 1048576.0),
+                    percent = format!("{:.1}", status.memory_used_bytes / limit * 100.0)
+                )
+            },
+        );
+    let receiver = match status.receiver_state.as_str() {
+        "receiving" => message!(catalog, "bot.receiver_receiving"),
+        "syncing" => message!(catalog, "bot.receiver_syncing"),
+        "reconnecting" => message!(catalog, "bot.receiver_reconnecting"),
+        "starting" => message!(catalog, "bot.receiver_starting"),
+        "stopped" => message!(catalog, "bot.stopped"),
+        _ => unavailable,
+    };
+    message!(
+        catalog,
+        "bot.runtime_status",
+        branch = status.branch.as_deref().unwrap_or(unavailable),
+        commit = status.commit.as_ref().map_or_else(
+            || unavailable.into(),
+            |value| value.chars().take(7).collect::<String>()
+        ),
+        dirty = if status.dirty {
+            message!(catalog, "bot.build_dirty")
+        } else {
+            ""
+        },
+        receiver = receiver,
+        chats = status.joined_chats,
+        cpu = cpu,
+        cpu_scope = scope(status.cpu_container),
+        window = format!("{:.0}", status.cpu_sample_seconds),
+        memory = format!("{:.1}", status.memory_used_bytes / 1048576.0),
+        memory_limit = memory,
+        memory_scope = scope(status.memory_container),
+        rss = format!("{:.1}", status.process_rss_bytes / 1048576.0),
+        age = (now - status.sampled_at_ms).max(0) / 1000,
+        api_waiting = status.api_queued,
+        api_capacity = status.api_queue_capacity,
+        api_active = status.api_active,
+        api_concurrency = status.api_concurrency,
+        cooldown = duration(catalog, (i64::from(status.api_cooldown_ms) + 999) / 1000),
+        rate_limits = status.api_rate_limits
+    )
 }
 
 pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {

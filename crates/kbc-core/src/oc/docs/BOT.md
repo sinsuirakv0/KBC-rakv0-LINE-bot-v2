@@ -50,7 +50,7 @@ smoke:ocはOC管理人・副官・BOT mod・一般参加者の拒否、BOT管理
 
 ### statusと保存
 
-`!bot status`は稼働・全体/個別停止設定・現在の稼働秒数・本人のBOT/OC権限・最終イベント受付・配送待ち/照会/配送中/unknown/素材準備・未同期ログ件数を表示する。情報はCoreの現在の状態。最終イベント受付は受信接続のheartbeatや受信健全性の証明ではない。旧版のNode heap / RSS、認証更新、再ログイン履歴、累計稼働時間、API Schedulerの内部情報はこの表示に含めず、旧計測値を新しく測ったようには扱わない。状態確認は停止・ミュート中も受け付け、保存済み情報だけで返す。LINEへのContext照会を行わず、本人のBOT権限はSQLite、OC権限は未取得と表示する。現在のOC権限が必要なら!bot setting statusを使う。HTTP・Timer・専用Workerは追加しない。
+`!bot status`は稼働・全体/個別停止設定・時間分秒の稼働時間・本人のBOT権限・最終イベント受付・照会/配送/素材/予定時刻待ち・結果不明・未同期ログを表示する。2026-10-09のProtocol v22からAdapterのCPU・メモリ・API枠・受信状態・ビルド情報も表示する。停止・ミュート中も受け付け、LINEへのContext照会を行わない。本人のBOT権限はSQLite、OC権限は未取得と表示する。現在のOC権限は!bot setting statusで確認する。資源計測は既存60秒metrics Timerを使い、専用API・Timer・Workerは追加しない。[値の意味・関数・上限・検証](../../../../../apps/line/docs/RUNTIME_STATUS.md)。
 
 permissions.jsonのSQUARE admin/mod、OC個別botStops、globalBotStopをCore起動時のtransactionで初回だけ取り込む。重複権限はadmin優先。実際のMIDはコード・公開repoへ埋め込まない。`bot_permissions_imported`で再取り込みを防ぎ、変更はSQLiteのbot_roles / bot_stopsを正本にする。毎分の既存暗号化GitHub snapshotに含める。旧settings/permissions.jsonへの書き戻しは行わず、旧版と新版はそれぞれ別の正本を持つ。再起動しても解除済みの権限を旧ファイルから復活させない。ローカルDB消失時は最後の成功したsnapshotから復元し、退避後の変更が失われ得る契約は従来どおり。
 

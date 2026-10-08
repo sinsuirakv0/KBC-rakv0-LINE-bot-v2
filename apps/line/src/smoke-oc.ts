@@ -186,10 +186,23 @@ try {
   // LINE照会が完了していなくても、状態確認はローカル情報で返信する。
   await message("!oc status", user);
   const heldQuery = await core.nextQueryAction(); assert(heldQuery);
+  core.updateRuntimeStatus({ sampledAtMs: Date.now(), cpuCorePercent: 10, cpuLimitCores: 0.2, cpuSampleSeconds: 60,
+    cpuContainer: true, memoryUsedBytes: 200 * 1048576, memoryLimitBytes: 512 * 1048576, memoryContainer: true,
+    processRssBytes: 100 * 1048576, apiQueued: 3, apiQueueCapacity: 32, apiActive: 2, apiConcurrency: 2,
+    apiCooldownMs: 61000, apiRateLimits: 1, queryWorkers: 2, deliveryWorkers: 2, receiverState: "receiving",
+    joinedChats: 12, branch: "main", commit: "2b1ae5d", dirty: false });
+  await message("!oc status", user);
+  assert.equal(core.stats().queuedQueries, 1);
+  assert.equal(core.stats().queuedDeliveries, 0);
   await message("o.bot status", user);
-  const quickStatus = await drain();
-  assert(!quickStatus.some(action => action.type === "ocApi"));
-  assert(texts(quickStatus).includes("稼働時間") && texts(quickStatus).includes("未取得"));
+  assert.equal(core.stats().queuedDeliveries, 1);
+  const quickAction = await core.nextAction(); assert(quickAction?.type === "sendMessage");
+  assert(quickAction.text.includes("main 2b1ae5d") && quickAction.text.includes("50.0%（0.20コア）"));
+  assert(quickAction.text.includes("200.0 MiB / 512.0 MiB（39.1%）"));
+  assert(quickAction.text.includes("照会待ち: 1 / 2048") && quickAction.text.includes("照会処理中: 1 / 2"));
+  assert(quickAction.text.includes("API待機: 3 / 32") && quickAction.text.includes("0時間1分1秒"));
+  assert(/稼働時間: \d+時間\d+分\d+秒/.test(quickAction.text));
+  await deliverAction(client, core, gate, quickAction, service); await drain();
   await deliverAction(client, core, gate, heldQuery, service); await drain();
   // 個別停止と全体停止は独立。ログは継続し、副官は全体停止を解除できない。
   await message("!bot stop all", co); assert(texts(await drain()).includes("実行権限"));

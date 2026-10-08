@@ -46,15 +46,24 @@
     "all",
     "local",
     "uptime",
-    "role",
-    "oc_role",
-    "received",
+    "resources",
+    "outstanding",
+    "capacity",
+    "query_waiting",
     "waiting",
+    "media_waiting",
+    "scheduled",
     "queries",
+    "query_capacity",
     "sending",
-    "unknown",
+    "delivery_capacity",
     "media",
-    "logs"
+    "media_capacity",
+    "unknown",
+    "logs",
+    "received",
+    "role",
+    "oc_role"
   ],
   "bot.stop": [],
   "bot.stopped": [],
@@ -899,5 +908,54 @@
   ],
   "purge.stop_usage": [],
   "purge.stop_requested": [],
-  "purge.cancelled": []
+  "purge.cancelled": [],
+  "bot.build_dirty": [],
+  "bot.cpu_allocation": [
+    "percent",
+    "cores"
+  ],
+  "bot.cpu_usage": [
+    "percent",
+    "allocation"
+  ],
+  "bot.duration": [
+    "hours",
+    "minutes",
+    "seconds"
+  ],
+  "bot.elapsed": [
+    "duration"
+  ],
+  "bot.memory_limit": [
+    "limit",
+    "percent"
+  ],
+  "bot.receiver_receiving": [],
+  "bot.receiver_reconnecting": [],
+  "bot.receiver_starting": [],
+  "bot.receiver_syncing": [],
+  "bot.runtime_status": [
+    "branch",
+    "commit",
+    "dirty",
+    "receiver",
+    "chats",
+    "cpu_scope",
+    "cpu",
+    "window",
+    "memory_scope",
+    "memory",
+    "memory_limit",
+    "rss",
+    "age",
+    "api_waiting",
+    "api_capacity",
+    "api_active",
+    "api_concurrency",
+    "cooldown",
+    "rate_limits"
+  ],
+  "bot.runtime_unavailable": [],
+  "bot.scope_container": [],
+  "bot.scope_process": []
 }

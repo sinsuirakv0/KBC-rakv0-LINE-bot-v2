@@ -49,3 +49,6 @@ help/test-mention.txtは!test mention-labelの専用案内。入口のhelp/test.
 2026-10-08、過去投稿削除の開始案内・停止受付・制御終了はmessages/commands.txtのpurge.started / stop_usage / stop_requested / cancelledで変更する。purge.resultは参加地点・取得終端の件数を追加。help/oc-admin.txtに停止リプライとミュート維持、help/bot.txtに照会なしのstatusを記載した。操作語や権限は文面変更では変わらない。
 
 2026-10-09、help/oc-admin.txtへ同じOC・完全一致名の再参加時のmute継承と、同名設定の一括解除を追記した。自動継承のための新しい利用者向け通知は追加せず、silentを含む既存警告文面を使う。[仕様・関数](../../crates/kbc-core/src/oc/docs/OC.md)。
+
+
+2026-10-09、bot.statusを時間分秒・資源計測・共有待機枠表示へ更新した。CPU・メモリ・稼働ビルド・受信/APIの文面は同じmessages/bot.txtのbot.runtime_status、単位とラベルはbot.duration / cpu_usage / cpu_allocation / memory_limit / scope_* / receiver_*へ集約する。差し込み項目はschemaと同時更新し、help/bot.txtへ案内を追記した。indexの一覧は変更しない。[項目の意味](../../apps/line/docs/RUNTIME_STATUS.md)。
