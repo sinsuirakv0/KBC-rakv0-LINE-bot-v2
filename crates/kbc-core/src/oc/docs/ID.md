@@ -44,3 +44,14 @@ remember → decorationsが受信contentMetadataのSTK項目とREPLACE.sticon.re
 `commands::sessions::apply_inner → oc::select_id → selection::select` が本人・トーク・最新prompt・期限を照合した後にページ移動／番号選択する。ID Sessionには検索素材snapshotを読み込まない。ページ変更はpending_payloadへ書き、Runtime::complete_actionの送信成功で確定し、旧一覧を管理者削除する。通信前の確定失敗は旧一覧へ戻り、unknownは照合まで切替待ち。SQLite snapshotで再起動後も継続する。名前検索時の公開・LINE照会の有限上限は変更しない。
 
 2026-10-08、既存OC Smokeに16人のメンションなし候補を追加し、1件の直接表示・10人表示・番号選択・2p/次・範囲外・別人・通常会話の番号・送信失敗での旧ページ復帰・切替中の待機・成功後の旧一覧削除・再起動後の選択・古いpromptの無視・終了・非メンション送信を確認した。build、型検査、Clippy全target、fmt、文面393キー／470呼出、Command・文面・受信基盤のSmokeも通過。LINE通信は0件。LINEJS公開版はnpm registryで3.4.2を再確認し変更なし。実LINEでの名前候補表示と削除権限差は未確認。
+
+
+## 2026-10-08：部分名で0件になる報告への補完
+
+利用者は「健康おじさん」に対し「健」「おじ」で0件と報告。Coreの部分一致はこの両方を受理するが、旧id.tsのgetMembersによる一覧照合・searchSquareMembersの空displayName補完が移植時に欠落し、名前フィルタの結果だけに依存していた。また投稿から得たlog_membersの名前は状態が空文字のまま保存され、JOINED限定のキャッシュ照合から除外されていた。実LINEが0件を返した直接の理由は未確認で、APIの非公開マッチ仕様や利用者の入力ミスと断定しない。
+
+search_pageは名前指定を先に使い、completeで候補が0件なら、JOINEDは実行トークのgetSquareChatMembersで取得した一覧をCore内のmatches_nameで照合する。oldのLEFT / KICK_OUT / BANNEDは空displayNameのOCディレクトリで補完する。Lookup.fallbackとscannedはdefault付きで永続Jobへ追加し、旧continuationを復元できる。新しいWorkerは追加しない。Protocol v19のMembersへ任意chatMembersを追加し、AdapterはtrueのときだけgetSquareChatMembersを使う。旧保存要求では未指定なので従来の名前検索へ復元する。照会先トークの親OCと各返却memberの所属を検査し、別OCの結果を混ぜない。名前指定と補完を合計して状態ごとに20人×最大4取得（通常は合計80人、初回0件なら補完は最大60人）、候補上限20人を維持する。oldは各状態で同じ上限。全件を無制限に取得せず、上限で続きがある場合は従来の絞り込み案内を付ける。まだ取得していない範囲の参加者まで見つけられる保証はない。
+
+保存名はJOINED / 数値2 / 状態未取得を通常検索の候補にする。既知のLEFT / KICK_OUT / BANNEDはoldのみ。状態未取得をJOINEDに書き換えず、一覧と詳細は共通の「未取得」文面で表示する。候補の状態は検索時点の観測で、現在の参加を保証しない。処分コマンドの現在所属・権限確認は変更しない。
+
+末尾logではAPIから取得した件数も表示し、0件取得と取得後の照合結果を区別できるようにした。これは延べ取得件数で、状態やページを跨いだユニーク人数ではない。2026-10-08、OC Smokeで「健」「おじ」の名前フィルタを0件にし、getSquareChatMembersを実行トークへ20人指定で呼んで「健康おじさん」を解決する経路を確認した。状態未取得の保存名も候補にし、状態を未取得として表示することを確認。build、型検査、Clippy全target、fmt、文面393キー／472呼出、OC・Command・文面・保存復元・受信基盤のSmokeは通過。実LINE通信0件、本番の該当アカウントでの返値・常駐負荷は未検証。

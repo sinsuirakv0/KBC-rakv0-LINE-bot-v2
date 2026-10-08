@@ -33,7 +33,7 @@ txtと同梱検索を受付でAction化する。検索の走査は不変snapshot
 
 ## Bridge
 
-`kbc-protocol`のRust型から`apps/line/src/protocol/generated/`を生成する。本人・返信先・送信ID・画像URLとOC操作を追加したLINE専用Protocol v18。NativeとAdapterを同時に更新し、旧Adapterと混在させない。`kbc-node`は変換とRuntime呼出だけを行う。
+`kbc-protocol`のRust型から`apps/line/src/protocol/generated/`を生成する。本人・返信先・送信ID・画像URLとOC操作を追加したLINE専用Protocol v19。NativeとAdapterを同時に更新し、旧Adapterと混在させない。`kbc-node`は変換とRuntime呼出だけを行う。
 
 JSからNativeへの設定・Batch・結果は型付きDTOをJSON文字列化して渡す。N-APIのserde Value変換では整数の時刻がf64として入ってi64の復元に失敗したため、この小さな境界では整数表現を保つ。出力はplain DTO。大きな画像・SDKオブジェクトをこの経路へ渡さない。
 
@@ -90,3 +90,6 @@ Protocol v18はMessageMentionに任意additional（MID・UTF-16位置）を追�
 2026-10-08、pushの設定・トーク別走査位置・未走査範囲の重複印を同じSQLiteへ追加した。予約は未来期限の既存actions、名前解決は既存準備Worker、監視はrun_store_monitorsの寿命・HTTP枠へ接続する。push通知の取り出し時も停止を確認する。Protocol v18とAdapterは維持する。[入力・関数・上限・復旧](../src/push/docs/PUSH.md)。
 
 2026-10-08、名前検索の複数候補は共通sessionsへid-v1として保存する。返信時のneeds_searchから除き、素材snapshotを読み込まず番号を処理する。OCのtext_actionが初回promptを作り、ページ操作は共通Actionと送信確定・清掃を使う。[IDの関数と検証](../src/oc/docs/ID.md)。
+
+
+Protocol v19はMembersに任意chatMembersを追加する。!idの名前検索が0件なら、実行トークの参加者一覧を既存照会Workerで補完し、Coreで部分一致する。旧保存要求・Jobの追加項目はdefaultで復元する。NativeとAdapterは同時更新する。[境界・上限・検証](../src/oc/docs/ID.md)。

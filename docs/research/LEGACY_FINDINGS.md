@@ -109,3 +109,6 @@ Stream検証は受信経路を選ぶための知見であり、旧Botの無反�
 旧LINE c6796e0のpush.ts、reminders/time.ts・store.ts・scheduler.ts、eventPush/catalog.ts・schedule.ts・daily.ts・policy.ts・scheduler.tsを確認した。数字は分後、日付はJSTで、旧予約は本文必須。個別IDはsale.json掲載と先行トーク登録が必要で、102/112を含む予定では他のIDを扱わなかった。全イベントは開始のみ、個別は開始・終了10分前・任意の事前通知、dailyは22時に翌日予定をスレッドへ送る。各旧schedulerが直接LINEへ送信し、失敗は別途再試行していた。
 
 新版は利用者指定で本文省略・未掲載ID登録・ガチャ個別と全件を追加し、候補を選ぶ目的を通知設定に限定する。dailyの指定は旧dailyの移植として確認済み。保存・配送は共通Outboxを使う。[確定した仕様と関数](../../crates/kbc-core/src/push/docs/PUSH.md)。
+
+
+2026-10-08、旧id.tsのsearchMembersはSquareChat.getMembersの一覧と名前フィルタ検索を併用し、名前指定で一致しなければ空displayNameで補完していた。SDK3.4.2のgetMembersもgetSquareChatMembersの継続取得であることを確認。新版の部分名0件報告に対し、無制限な一覧取得を持ち込まず、既存Members要求へ任意chatMembersを追加し、参加者一覧API・旧状態の空displayName補完と状態未取得の保存名を候補として扱う。[修正・上限・確認範囲](../../crates/kbc-core/src/oc/docs/ID.md)。

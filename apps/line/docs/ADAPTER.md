@@ -46,7 +46,7 @@ LINEJSの最新公開版は2026-10-03のnpm再確認でも3.4.2。npm配布物re
 
 ## Commandの追加境界
 
-Protocol v18。通常返信の実送信IDをCoreへ渡し、候補promptへ結び付ける。管理者削除はsquare.destroyMessageへ渡し、新しい返信成功後に実行する。OCのメディアはoid省略のOBS reqseq upload自身が投稿し、空のIMAGE/VIDEOを先に送らない。画像・動画・GIF・ファイルの素材準備はRust共通Worker、BlobとLINEJS入出力はAdapterが扱う。uploadMediaも共通API枠・実fetch直前のsending記録を通し、HTTP statusを共通transportで検査する。動画durationはCoreの実Frame数から渡す。メディア自体はrelatedMessageId付き返信にならない。通信後の不明結果はunknownで自動再投稿しない。[Media Worker](../../../crates/kbc-core/docs/MEDIA.md) と [実素材実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) を参照。
+Protocol v19。通常返信の実送信IDをCoreへ渡し、候補promptへ結び付ける。管理者削除はsquare.destroyMessageへ渡し、新しい返信成功後に実行する。OCのメディアはoid省略のOBS reqseq upload自身が投稿し、空のIMAGE/VIDEOを先に送らない。画像・動画・GIF・ファイルの素材準備はRust共通Worker、BlobとLINEJS入出力はAdapterが扱う。uploadMediaも共通API枠・実fetch直前のsending記録を通し、HTTP statusを共通transportで検査する。動画durationはCoreの実Frame数から渡す。メディア自体はrelatedMessageId付き返信にならない。通信後の不明結果はunknownで自動再投稿しない。[Media Worker](../../../crates/kbc-core/docs/MEDIA.md) と [実素材実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) を参照。
 
 通知47のNICE / LOVEは既存ProtocolのReactionNotifiedへ正規化するが、ページ操作には使わない。利用者指定でリアクション方式を廃止し、一覧へのテキストリプライへ戻した。SquareDirectoryは旧snapshotのReactions要求を外部通信なしで完了し、getMessageReactionsを呼ばない。[旧案の調査・スタンプの仕様と未確認点](REACTIONS_AND_STICKERS.md)。
 
@@ -105,3 +105,6 @@ Protocol v17。deliverActionはthreadRootIdがある通常テキストをgetSqua
 ## 複数メンション（v18、2026-10-05）
 
 MessageMention.additionalの最大8件を先頭と合わせてMENTION.MENTIONEESへ変換する。Inspectは最大9メンバー、同じ既存枠で順番に取得し、所属を照合する。旧DTOのadditionalなしは以前の単独entryを維持する。同一範囲の複数entryが全対象の通知になるかは実機で確認し、Adapterの送信成功だけでは証明しない。[テスト仕様](../../../crates/kbc-core/src/oc/docs/TEST_MENTION.md)。
+
+
+2026-10-08、Protocol v19のMembers.chatMembers=trueではgetSquareChatMembersを実行トーク・20人/ページで取得する。JOINEDと空queryに限定し、親OCと返却memberの所属を確認する。未指定は従来のsearchSquareMembers。判断・補完回数・名前照合・候補選択は[Core](../../../crates/kbc-core/src/oc/docs/ID.md)に置き、独自Queue・cache・常時巡回を追加しない。
