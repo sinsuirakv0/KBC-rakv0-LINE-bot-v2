@@ -20,6 +20,17 @@ pub struct NativeCore {
 #[napi]
 impl NativeCore {
     #[napi]
+    pub fn update_runtime_status(&self, status: String) -> Result<()> {
+        if status.len() > 4096 {
+            return Err(Error::from_reason("RuntimeStatusTooLarge"));
+        }
+        convert(
+            self.runtime
+                .update_runtime_status(convert(serde_json::from_str(&status))?),
+        )
+    }
+
+    #[napi]
     pub fn checkpoint(&self, stream: String) -> Result<Option<String>> {
         convert(self.runtime.checkpoint(&stream))
     }

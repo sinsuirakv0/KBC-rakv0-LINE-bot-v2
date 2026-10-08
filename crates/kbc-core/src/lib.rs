@@ -34,6 +34,7 @@ const RETENTION_MS: i64 = 48 * 60 * 60 * 1000;
 
 pub struct Runtime {
     database: Mutex<Connection>,
+    runtime_status: Mutex<Option<RuntimeStatus>>,
     wake: Notify,
     stopped: AtomicBool,
     next_cleanup_ms: AtomicI64,
@@ -156,6 +157,7 @@ impl Runtime {
         db.execute("DELETE FROM sessions WHERE expires<=?1", [now_ms()])?;
         Ok(Self {
             database: Mutex::new(db),
+            runtime_status: Mutex::new(None),
             wake: Notify::new(),
             stopped: AtomicBool::new(false),
             next_cleanup_ms: AtomicI64::new(0),
@@ -186,6 +188,14 @@ impl Runtime {
                 |row| row.get(0),
             )
             .optional()?)
+    }
+
+    pub fn update_runtime_status(&self, status: RuntimeStatus) -> Result<()> {
+        *self
+            .runtime_status
+            .lock()
+            .map_err(|_| "RuntimeStatusLock")? = Some(status);
+        Ok(())
     }
 
     pub fn persistence_revision(&self) -> Result<String> {
@@ -768,6 +778,11 @@ impl Runtime {
                 |row| row.get(0),
             )?)
         };
+        let (queued_queries, queued_deliveries, queued_media, scheduled_actions) = db.query_row(
+            "SELECT COALESCE(sum(due<=?1 AND json_extract(payload,'$.type')='ocApi' AND json_extract(payload,'$.request.type') IN ('context','member','chats','members','joinedChats','inspect','reactions','history')),0),
+            COALESCE(sum(due<=?1 AND json_extract(payload,'$.type')<>'prepareMedia' AND NOT (json_extract(payload,'$.type')='ocApi' AND COALESCE(json_extract(payload,'$.request.type'),'') IN ('context','member','chats','members','joinedChats','inspect','reactions','history'))),0),
+            COALESCE(sum(due<=?1 AND json_extract(payload,'$.type')='prepareMedia'),0),COALESCE(sum(due>?1),0)
+            FROM actions WHERE status='queued'", [now_ms()], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?;
         Ok(CoreStats {
             retained_events: db.query_row("SELECT count(*) FROM events", [], |row| row.get(0))?,
             max_retained_events: self.max_retained_events,
@@ -790,6 +805,11 @@ impl Runtime {
                 [],
                 |r| r.get(0),
             )?,
+            queued_queries,
+            queued_deliveries,
+            queued_media,
+            scheduled_actions,
+            media_jobs: db.query_row("SELECT count(*) FROM actions WHERE status IN ('queued','claimed','preparing','sending','querying','unknown') AND (json_extract(payload,'$.type')='prepareMedia' OR json_extract(payload,'$.attachment') IS NOT NULL)", [], |row| row.get(0))?,
         })
     }
 

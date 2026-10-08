@@ -1,7 +1,7 @@
 ﻿use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTOCOL_VERSION: u32 = 21;
+pub const PROTOCOL_VERSION: u32 = 22;
 
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -497,4 +497,37 @@ pub struct CoreStats {
     pub querying_actions: u32,
     pub pending_logs: u32,
     pub pending_log_bytes: u32,
+    pub queued_queries: u32,
+    pub queued_deliveries: u32,
+    pub queued_media: u32,
+    pub scheduled_actions: u32,
+    pub media_jobs: u32,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeStatus {
+    #[ts(type = "number")]
+    pub sampled_at_ms: i64,
+    pub cpu_core_percent: Option<f64>,
+    pub cpu_limit_cores: Option<f64>,
+    pub cpu_sample_seconds: f64,
+    pub cpu_container: bool,
+    pub memory_used_bytes: f64,
+    pub memory_limit_bytes: Option<f64>,
+    pub memory_container: bool,
+    pub process_rss_bytes: f64,
+    pub api_queued: u32,
+    pub api_queue_capacity: u32,
+    pub api_active: u32,
+    pub api_concurrency: u32,
+    pub api_cooldown_ms: u32,
+    pub api_rate_limits: u32,
+    pub query_workers: u32,
+    pub delivery_workers: u32,
+    pub receiver_state: String,
+    pub joined_chats: u32,
+    pub branch: Option<String>,
+    pub commit: Option<String>,
+    pub dirty: bool,
 }
