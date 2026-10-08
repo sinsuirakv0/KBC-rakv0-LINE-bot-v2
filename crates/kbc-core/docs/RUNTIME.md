@@ -88,3 +88,5 @@ Protocol v18はMessageMentionに任意additional（MID・UTF-16位置）を追�
 2026-10-07、gatya・sale・itemは受付をPrepareMediaへ変換し、外部HTTPを保存transactionの外で実行する。saleの候補は共通sessions tableへ最大9 IDを保存し、送信成功後30秒まで有効。event-v1のSession操作では検索索引を読み込まない。Protocol v18を維持する。[処理経路](../src/event_data/docs/COMMANDS.md)。
 
 2026-10-08、pushの設定・トーク別走査位置・未走査範囲の重複印を同じSQLiteへ追加した。予約は未来期限の既存actions、名前解決は既存準備Worker、監視はrun_store_monitorsの寿命・HTTP枠へ接続する。push通知の取り出し時も停止を確認する。Protocol v18とAdapterは維持する。[入力・関数・上限・復旧](../src/push/docs/PUSH.md)。
+
+2026-10-08、名前検索の複数候補は共通sessionsへid-v1として保存する。返信時のneeds_searchから除き、素材snapshotを読み込まず番号を処理する。OCのtext_actionが初回promptを作り、ページ操作は共通Actionと送信確定・清掃を使う。[IDの関数と検証](../src/oc/docs/ID.md)。
