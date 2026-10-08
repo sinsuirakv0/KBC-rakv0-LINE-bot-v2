@@ -32,3 +32,7 @@ id.square = "OC ID\nMID: {square}"
 
 id.choices = "メンバーを選択してください（{page}/{pages}ページ）\n{lines}\n\nこの一覧へのリプライで1〜10：IDを表示\n{navigation}\n終了：受付を終える{footer}"
 id.choice = "{number}. {name}（{state}）\nMID: {member}"
+remote.invalid_chat = "talkID:にはmで始まるトークMIDを1つ指定してください。"
+remote.id_usage = "talkID:はメンバー名の検索・pMIDの取得に使えます。例: !id 名前 talkID:m..."
+remote.denied = "別トークの照会・設定はBOT管理者専用です。"
+remote.lookup_failed = "対象トークへ接続できませんでした。Botの参加状況を確認してください。\nAPI: {code}"

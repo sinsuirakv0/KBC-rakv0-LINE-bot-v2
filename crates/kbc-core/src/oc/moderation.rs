@@ -48,7 +48,7 @@ pub fn mute(runtime: &Runtime, tx: &Transaction<'_>, event: &CoreEvent, now: i64
         return Ok(false);
     };
     delete(tx, event, "mute", now)?;
-    if notice(tx, &format!("mute:{square}:{sender}"), 60000, now)? {
+    if !mute.silent && notice(tx, &format!("mute:{square}:{sender}"), 60000, now)? {
         let label = format!("@{}", mute.name);
         let text = message!(
             message_catalog,
@@ -806,6 +806,8 @@ fn signal_job(
         id_lookup: None,
         target_member: None,
         test: None,
+        remote: None,
+        purge: None,
     }
 }
 pub fn confirm_left(

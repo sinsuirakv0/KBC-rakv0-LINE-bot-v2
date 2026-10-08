@@ -7,6 +7,8 @@ pub(crate) use id::select as select_id;
 mod legacy;
 mod moderation;
 mod policy;
+mod purge;
+mod remote;
 mod store_setting;
 mod test;
 mod test_reply;
@@ -39,6 +41,8 @@ struct Mute {
     until: Option<i64>,
     name: String,
     since: i64,
+    #[serde(default)]
+    silent: bool,
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct Template {
@@ -67,6 +71,11 @@ enum Phase {
     Id,
     TestInspect,
     MemberNotice,
+    Remote,
+    MuteHistory,
+    MuteDelete,
+    MuteChats,
+    MuteInspect,
 }
 #[derive(Serialize, Deserialize)]
 struct Job {
@@ -86,6 +95,10 @@ struct Job {
     target_member: Option<OcMember>,
     #[serde(default)]
     test: Option<test::Plan>,
+    #[serde(default)]
+    remote: Option<remote::Target>,
+    #[serde(default)]
+    purge: Option<purge::Purge>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 enum Session {
@@ -358,7 +371,7 @@ fn request(
     let read = request.is_read();
     job.phase = phase;
     job.step += 1;
-    let (event, chat, _, _, _) = identity(&job.event);
+    let (event, _, _, _, _) = identity(&job.event);
     // 同じ退出イベントの処分照会と名前照会を別のActionとして保存する。
     let scope = if matches!(job.phase, Phase::MemberNotice) {
         "member-name"
@@ -369,7 +382,11 @@ fn request(
     let action = CoreAction::OcApi {
         action_id: action_id.clone(),
         event_id: event.into(),
-        chat_id: chat.into(),
+        chat_id: if matches!(job.phase, Phase::MuteHistory | Phase::MuteDelete) {
+            purge::chat(job)?.into()
+        } else {
+            remote::chat(job).into()
+        },
         request,
         continuation: serde_json::to_string(job)?,
         created_at_ms: now,
@@ -414,7 +431,7 @@ fn history(
     } else {
         identity(&job.event).3
     };
-    tx.execute("INSERT INTO oc_history(square,target,actor,operation,status,detail,at,target_name,actor_name,reason) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",params![context.square_id,target,actor_id,job.operation,status,detail.chars().take(300).collect::<String>(),now,target_name,actor_name,commands::reason(message_catalog, job)])?;
+    tx.execute("INSERT INTO oc_history(square,target,actor,operation,status,detail,at,target_name,actor_name,reason) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",params![remote::context(job)?.square_id,target,actor_id,job.operation,status,detail.chars().take(300).collect::<String>(),now,target_name,actor_name,commands::reason(message_catalog, job)])?;
     tx.execute("DELETE FROM oc_history WHERE id IN (SELECT id FROM oc_history ORDER BY id DESC LIMIT -1 OFFSET 2048)",[])?;
     Ok(())
 }
@@ -503,6 +520,8 @@ pub fn ingest(
             id_lookup: None,
             target_member: None,
             test: None,
+            remote: None,
+            purge: None,
         };
         let authority = job.input.name == "authority";
         request(
@@ -536,6 +555,8 @@ pub fn ingest(
             id_lookup: None,
             target_member: None,
             test: None,
+            remote: None,
+            purge: None,
         };
         request(
             tx,
@@ -590,6 +611,18 @@ pub fn complete(
     if matches!(job.phase, Phase::MemberNotice) {
         return moderation::complete_notice(runtime, tx, &job, result, now);
     }
+    if matches!(job.phase, Phase::Remote) {
+        return remote::complete(runtime, tx, &mut job, result, now);
+    }
+    if matches!(
+        job.phase,
+        Phase::MuteHistory | Phase::MuteDelete | Phase::MuteChats | Phase::MuteInspect
+    ) {
+        if resolving {
+            return Ok(());
+        }
+        return purge::complete(runtime, tx, &mut job, result, now);
+    }
     if job.input.name == "test" && matches!(job.phase, Phase::Mutation) {
         return test::mutated(message_catalog, tx, &job, action, result, resolving, now);
     }
@@ -641,6 +674,9 @@ pub fn complete(
             if identity(&job.event).4 < now - 60000 {
                 return reply(tx, &job, message!(message_catalog, "mod.complete_04"), now);
             }
+            if remote::prepare(runtime, tx, &mut job, now)? {
+                return Ok(());
+            }
             if job.input.name == "store-setting" {
                 store_setting::execute(runtime, tx, &job, now)
             } else if job.input.name == "bot" {
@@ -678,6 +714,10 @@ pub fn complete(
         Phase::Id => id::complete(message_catalog, tx, &mut job, result, now),
         Phase::TestInspect => unreachable!(),
         Phase::MemberNotice => unreachable!(),
+        Phase::Remote => unreachable!(),
+        Phase::MuteHistory | Phase::MuteDelete | Phase::MuteChats | Phase::MuteInspect => {
+            unreachable!()
+        }
     }
 }
 fn sent_prompt(

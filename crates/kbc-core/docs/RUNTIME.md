@@ -93,3 +93,5 @@ Protocol v18はMessageMentionに任意additional（MID・UTF-16位置）を追�
 
 
 Protocol v19はMembersに任意chatMembersを追加する。!idの名前検索が0件なら、実行トークの参加者一覧を既存照会Workerで補完し、Coreで部分一致する。旧保存要求・Jobの追加項目はdefaultで復元する。NativeとAdapterは同時更新する。[境界・上限・検証](../src/oc/docs/ID.md)。
+
+Protocol v20。遠隔OCのInspectとOC全体の履歴削除を既存OC Job / actionsへ保存する。Historyは既存照会Worker、DeleteMessagesは20件以下で既存配送Workerを共有する。明確なILLEGAL_ARGUMENTだけ小分け、unknownは非再実行。通常受信のcheckpointは変更しない。[状態・期限・範囲](../src/oc/docs/REMOTE_MUTE.md)。

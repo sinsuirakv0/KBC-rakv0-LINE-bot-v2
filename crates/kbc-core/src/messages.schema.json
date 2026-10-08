@@ -866,5 +866,30 @@
   "push.rare_kind": [],
   "push.event_gacha_kind": [],
   "push.normal_kind": [],
-  "push.selection_unavailable": []
+  "push.selection_unavailable": [],
+  "remote.invalid_chat": [],
+  "remote.id_usage": [],
+  "remote.denied": [],
+  "remote.lookup_failed": [
+    "code"
+  ],
+  "purge.usage": [],
+  "purge.no_authority": [],
+  "purge.limit": [],
+  "purge.unknown": [],
+  "purge.failed": [],
+  "purge.stalled": [],
+  "purge.finished": [],
+  "purge.result": [
+    "square",
+    "rooms",
+    "completed",
+    "scanned",
+    "deleted",
+    "pending",
+    "remaining",
+    "code",
+    "reason"
+  ],
+  "purge.chat_limit": []
 }

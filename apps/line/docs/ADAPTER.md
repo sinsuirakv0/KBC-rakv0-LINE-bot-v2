@@ -111,4 +111,4 @@ MessageMention.additionalの最大8件を先頭と合わせてMENTION.MENTIONEES
 
 ## 2026-10-08：独立した履歴取得と小分け削除
 
-Protocol v20のHistoryは採用LINEJS 3.4.2の生成Thrift定義でfetchSquareChatEventsへFORWARD/BACKWARD・inclusive・独立cursorを渡す。返すDTOは50イベント以内の件数とmessage ID / sender IDだけ。chatの親squareと各message.toを照合する。DeleteMessagesは同じsquareに属するchatへのdestroyMessagesで1〜20件の重複なしIDに限定。共通ApiSchedulerとsending境界を使い、構造化ILLEGAL_ARGUMENTだけfailedとしてCoreの件数縮小へ戻し、それ以外の通信後失敗はunknown。受信poll.sync・checkpoint・独自Queueは追加変更しない。[Coreの共通Outbox](../../../crates/kbc-core/src/oc/docs/OC.md)。
+Protocol v20のHistoryは採用LINEJS 3.4.2の生成Thrift定義でfetchSquareChatEventsへFORWARD/BACKWARD・inclusive・独立cursorを渡す。返すDTOは50イベント以内の件数とmessage ID / sender IDだけ。chatの親squareと各message.toを照合する。DeleteMessagesは同じsquareに属するchatへのdestroyMessagesで1〜20件の重複なしIDに限定。共通ApiSchedulerとsending境界を使い、構造化ILLEGAL_ARGUMENTだけfailedとしてCoreの件数縮小へ戻し、それ以外の通信後失敗はunknown。受信poll.sync・checkpoint・独自Queueは追加変更しない。[Coreの権限・走査状態・制約](../../../crates/kbc-core/src/oc/docs/REMOTE_MUTE.md)。

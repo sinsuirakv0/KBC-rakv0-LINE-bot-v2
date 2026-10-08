@@ -224,7 +224,7 @@ fn matches_name(name: &str, query: &str) -> bool {
 }
 pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
     let message_catalog = &runtime.content.messages;
-    let context = job.context.as_ref().ok_or("MissingIdContext")?.clone();
+    let context = remote::context(job)?.clone();
     let args = &job.input.args;
     let mode = args.first().map(String::as_str).unwrap_or("");
     if matches!(mode, "message" | "msg" | "reply" | "metadata") {
@@ -385,12 +385,7 @@ fn search_page(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
     };
     let api = OcRequest::Members {
         chat_members: (lookup.fallback && state == "JOINED").then_some(true),
-        square_id: job
-            .context
-            .as_ref()
-            .ok_or("MissingIdContext")?
-            .square_id
-            .clone(),
+        square_id: remote::context(job)?.square_id.clone(),
         query: if lookup.fallback {
             String::new()
         } else {
@@ -409,7 +404,8 @@ pub fn complete(
     now: i64,
 ) -> Result<()> {
     let response = result.oc_result.as_ref().ok_or("MissingIdResult")?;
-    let square = &job.context.as_ref().ok_or("MissingIdContext")?.square_id;
+    let target_square = remote::context(job)?.square_id.clone();
+    let square = &target_square;
     if job.operation == "id-chats" {
         let mut lines = vec![message!(message_catalog, "id.complete_01").into()];
         for chat in &response.chats {

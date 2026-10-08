@@ -543,7 +543,7 @@ impl Runtime {
                     "SELECT a.id,a.payload,a.due FROM actions a WHERE a.status='queued'
                     AND json_extract(a.payload,'$.type')<>'prepareMedia'
                     AND ?1=COALESCE(json_extract(a.payload,'$.type')='ocApi'
-                        AND json_extract(a.payload,'$.request.type') IN ('context','member','chats','members','joinedChats','inspect','reactions'),0)
+                        AND json_extract(a.payload,'$.request.type') IN ('context','member','chats','members','joinedChats','inspect','reactions','history'),0)
                     AND (?1=1 OR NOT EXISTS (SELECT 1 FROM actions b WHERE b.chat=a.chat AND b.status IN ('claimed','sending')))
                     AND (json_extract(a.payload,'$.threadRootId') IS NULL OR NOT EXISTS
                         (SELECT 1 FROM actions b WHERE b.event_id=a.event_id AND b.chat=a.chat AND b.rowid<a.rowid

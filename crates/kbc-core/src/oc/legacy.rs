@@ -117,6 +117,7 @@ pub fn import_legacy(db: &mut Connection, path: Option<&str>) -> Result<()> {
                 Mute {
                     until,
                     since: time(mute, "mutedAt")?,
+                    silent: false,
                     name: mute
                         .get("displayName")
                         .and_then(Value::as_str)

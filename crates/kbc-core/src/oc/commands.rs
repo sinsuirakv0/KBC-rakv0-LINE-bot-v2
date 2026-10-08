@@ -68,7 +68,7 @@ fn setup_menu(message_catalog: &crate::messages::Messages, settings: &Settings) 
 }
 pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
     let message_catalog = &runtime.content.messages;
-    let context = job.context.as_ref().ok_or("MissingOcContext")?.clone();
+    let context = remote::context(job)?.clone();
     let name = job.input.name.as_str();
     if name == "kicktest" {
         return reply(
@@ -152,12 +152,13 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
         );
     }
     let mut value = settings(tx, &context.square_id)?;
-    value.source_chat = Some(identity(&job.event).1.into());
+    value.source_chat = Some(remote::chat(job).into());
     value.bot_member = Some(context.bot_member_id.clone());
     value
         .mutes
         .retain(|_, mute| mute.until.is_none_or(|until| until > now));
-    let arg = job.input.args.first().map(String::as_str).unwrap_or("");
+    let first_arg = job.input.args.first().cloned().unwrap_or_default();
+    let arg = first_arg.as_str();
     match name {
         "setup" => {
             if arg == "status" {
@@ -427,6 +428,23 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
             );
         }
         "mute" => {
+            let alltalk = job
+                .input
+                .args
+                .iter()
+                .filter(|arg| arg.as_str() == "alltalk")
+                .count();
+            if alltalk > 0 {
+                if alltalk != 1
+                    || job.input.args.iter().any(|arg| {
+                        matches!(arg.as_str(), "off" | "del" | "remove" | "解除" | "list")
+                    })
+                {
+                    return reply(tx, job, message!(message_catalog, "purge.usage"), now);
+                }
+                job.input.args.retain(|arg| arg != "alltalk");
+                job.purge = Some(purge::Purge::default());
+            }
             if arg == "list" {
                 let page = job
                     .input
@@ -649,7 +667,8 @@ pub fn next_target(
         } else {
             job.results.join("\n")
         };
-        if let Some(context) = &job.context
+        if job.remote.is_none()
+            && let Some(context) = &job.context
             && let Some(room) = settings(tx, &context.square_id)?.mod_room
             && room != identity(&job.event).1
         {
@@ -691,7 +710,7 @@ pub fn target(
         .as_ref()
         .and_then(|value| value.member.clone())
         .ok_or("MissingOcMember")?;
-    let context = job.context.as_ref().ok_or("MissingOcContext")?;
+    let context = remote::context(job)?.clone();
     if member.square_id != context.square_id || job.targets.first() != Some(&member.member_id) {
         return reply(
             tx,
@@ -712,9 +731,9 @@ pub fn target(
                     && !arg.starts_with('@')
             })
             .map(String::as_str)
-            .unwrap_or("");
+            .unwrap_or(if job.purge.is_some() { "inf" } else { "" });
         let mut value = settings(tx, &context.square_id)?;
-        value.source_chat = Some(identity(&job.event).1.into());
+        value.source_chat = Some(remote::chat(job).into());
         value.bot_member = Some(context.bot_member_id.clone());
         if matches!(duration, "off" | "del" | "remove" | "解除") {
             value.mutes.remove(&member.member_id);
@@ -733,6 +752,7 @@ pub fn target(
                     until,
                     name: member.name.clone(),
                     since: now,
+                    silent: job.remote.is_some(),
                 },
             );
         } else {
@@ -777,7 +797,10 @@ pub fn target(
                 )
             },
         );
-        if let Some(room) = value.mod_room.filter(|room| room != identity(&job.event).1) {
+        if let Some(room) = value
+            .mod_room
+            .filter(|room| job.remote.is_none() && room != identity(&job.event).1)
+        {
             text_action(
                 tx,
                 &job.event,
@@ -797,7 +820,11 @@ pub fn target(
                 now,
             )?;
         }
-        return reply(tx, job, text, now);
+        reply(tx, job, text, now)?;
+        if job.purge.is_some() {
+            return purge::start(tx, job, now);
+        }
+        return Ok(());
     }
     if member.member_id == context.bot_member_id
         || policy::role_rank(&member.role) != 1

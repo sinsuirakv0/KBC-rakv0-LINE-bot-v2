@@ -11,3 +11,7 @@
 kickはBOTモデレーター以上、muteはOC管理者またはBOTモデレーター以上。
 その他の設定はOC管理者・副官にも許可されます。
 setup・副官部屋・入退室通知・審議にはBOT管理者またはOC管理者・副官が必要です。
+
+!oc mute ... talkID:mMID はBOT管理者専用の遠隔設定です。
+!oc mute alltalk userID:pMID [時間|inf] [talkID:mMID] はミュートとOC内の参加トークの過去投稿削除。
+結果は実行トークだけに送り、遠隔ミュートの警告は送りません。詳細は !oc adminhelp。

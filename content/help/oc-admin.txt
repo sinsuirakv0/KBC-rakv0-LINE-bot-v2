@@ -23,6 +23,16 @@
 !oc mute @対象 170 / 0:17 / 8/7-0:17 / inf
 !oc mute @対象 off / mute list
   発言の管理者削除。OC管理者またはBOT mod以上
+!oc mute userID:pMID inf talkID:mMID
+!oc mute userID:pMID off talkID:mMID
+!oc mute list talkID:mMID
+  別トークの親OCへ設定・解除・一覧取得。BOT管理者専用。
+  返信は実行トークだけ。遠隔で登録したミュートは警告なしで発言を削除。
+!oc mute alltalk userID:pMID [時間|inf] [talkID:mMID]
+  OC全体でミュートし、参加中の本・サブトークから本人の過去投稿を削除。
+  時間省略は無期限。履歴削除には対象OCでBotの管理者・副官権限が必要。
+  20件ずつ削除し、明確な引数拒否で件数を縮小。成否不明なら停止。
+  未参加トーク・スレッド内・取得不能な古い投稿は対象外。上限や停止は返信で案内。
 !oc kick @対象 理由 / kick pで始まるMID 理由
   直接再参加禁止へ更新。BOT mod以上・1回8人まで
 !oc history / kick history

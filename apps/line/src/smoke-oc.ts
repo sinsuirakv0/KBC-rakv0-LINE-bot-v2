@@ -18,6 +18,7 @@ const square = mid("s", "1"), chat = mid("m", "1"), sub = mid("m", "2");
 const admin = mid("p", "1"), co = mid("p", "2"), mod = mid("p", "3"), user = mid("p", "4"), bot = mid("p", "5");
 const owner = mid("p", "9");
 const labChat = mid("m", "b"), labSquare = mid("s", "b"), labBot = mid("p", "c"), labUser = mid("p", "d"), labAdmin = mid("p", "e"), labCo = mid("p", "f");
+const labSub = mid("m", "a");
 const roles = new Map([[admin, "ADMIN"], [co, "CO_ADMIN"], [mod, "MEMBER"], [user, "MEMBER"], [bot, "CO_ADMIN"]]);
 for (const [id, role] of [[labBot, "MEMBER"], [labUser, "MEMBER"], [labAdmin, "ADMIN"], [labCo, "CO_ADMIN"]]) roles.set(id!, role!);
 const states = new Map<string, string>();
@@ -40,8 +41,8 @@ const client = new BaseClient({ device: "DESKTOPWIN" });
 const member = (id: string) => ({ squareMemberMid: id, squareMid: [labBot, labUser, labAdmin, labCo].includes(id) ? labSquare : square, displayName: names.get(id) ?? (id === user ? "参加者🙂" : "メンバー"),
   role: roles.get(id) ?? "MEMBER", membershipState: states.get(id) ?? "JOINED", revision: 7n });
 let failMutation = false;
-client.square.getSquareChat = async ({ squareChatMid }) => ({ squareChat: { squareChatMid, squareMid: squareChatMid === labChat ? labSquare : square, name: "検証", type: "SQUARE_DEFAULT" },
-  squareChatMember: { squareMemberMid: squareChatMid === labChat ? labBot : bot } }) as Awaited<ReturnType<typeof client.square.getSquareChat>>;
+client.square.getSquareChat = async ({ squareChatMid }) => ({ squareChat: { squareChatMid, squareMid: [labChat, labSub].includes(squareChatMid) ? labSquare : square, name: "検証", type: "SQUARE_DEFAULT" },
+  squareChatMember: { squareMemberMid: [labChat, labSub].includes(squareChatMid) ? labBot : bot } }) as Awaited<ReturnType<typeof client.square.getSquareChat>>;
 const memberLookups: string[] = [], failedNameLookups = new Set<string>();
 client.square.getSquareMember = async ({ squareMemberMid }) => {
   memberLookups.push(squareMemberMid);
@@ -133,7 +134,7 @@ async function drain() {
     const next = db.prepare("SELECT payload FROM actions WHERE status='queued' AND due<=? ORDER BY due,rowid LIMIT 1").get(Date.now() + 100) as { payload: string } | undefined;
     if (!next) return actions.slice(start);
     const data = JSON.parse(next.payload) as CoreAction;
-    const action = await (data.type === "ocApi" && ["context", "member", "chats", "members", "joinedChats", "inspect"].includes(data.request.type) ? core.nextQueryAction() : core.nextAction());
+    const action = await (data.type === "ocApi" && ["context", "member", "chats", "members", "joinedChats", "inspect", "history"].includes(data.request.type) ? core.nextQueryAction() : core.nextAction());
     assert(action); actions.push(action);
     await deliverAction(client, core, gate, action, service);
   }
@@ -623,5 +624,121 @@ try {
   core.shutdown(); core = createCore(config);
   await message("9", admin, currentPrompt()); assert(texts(await drain()).includes("仕様が更新されました"));
   assert.equal(settings().main, chatChoices[9]!.squareChatMid);
-  console.log(JSON.stringify({ ok: true, scenarios: ["permissions-session-query-restart-unknown", "mute-url-media", "push-notification-oc-leave"] }));
+  // 遠隔の照会先・ミュート先を、返信先と混同しない。OC管理人・BOT modは遠隔操作不可。
+  names.set(labUser, "遠隔の健康さん"); names.set(labCo, "遠隔の健康さん2");
+  states.delete(labUser); states.delete(labCo); states.delete(labBot); roles.set(labBot, "CO_ADMIN");
+  idSearchFilterMiss = false; idSearchMembers = [labUser, labCo];
+  const sourceOnly = (values: CoreAction[]) => {
+    for (const action of values) if (action.type === "sendMessage") assert.equal(action.chatId, chat);
+  };
+  await message(`o.id 健康 talkID:${labChat}`, admin);
+  const deniedRemote = await drain(); assert(texts(deniedRemote).includes("専用"));
+  assert(!deniedRemote.some(action => action.type === "ocApi" && action.request.type === "inspect"));
+  await message(`o.id 健康 talkID:${labChat}`, mod); assert(texts(await drain()).includes("BOT管理者専用"));
+  await message(`o.id 健康 talkID:${labChat}`, owner);
+  const remoteChoices = await drain(); sourceOnly(remoteChoices); assert(texts(remoteChoices).includes(labUser));
+  assert(remoteChoices.some(action => action.type === "ocApi" && action.request.type === "members" && action.request.squareId === labSquare && action.chatId === labChat));
+  const remotePrompt = db.prepare("SELECT prompt FROM sessions WHERE chat=? AND owner=?").get(chat, owner)?.prompt as string;
+  await message("1", owner, remotePrompt); const remoteSelected = await drain(); sourceOnly(remoteSelected); assert(texts(remoteSelected).includes(labUser));
+  idSearchFilterMiss = true; idSearchMembers = [labUser];
+  await message(`!id 健 talkID:${labChat}`, owner); const remoteFallback = await drain(); sourceOnly(remoteFallback);
+  assert(texts(remoteFallback).includes(labUser)); assert.equal(chatMemberCalls.at(-1), labChat);
+  await message(`!id 健 talkID:${labSquare}`, owner); assert(texts(await drain()).includes("mで始まる"));
+  await message(`!id 健 talkID:${labChat} talkID:${sub}`, owner); assert(texts(await drain()).includes("1つ"));
+  await message(`!oc mute userID:${labUser} inf talkID:${labChat}`, mod); assert(texts(await drain()).includes("BOT管理者専用"));
+  await message(`!oc mute userID:${labUser} inf talkID:${labChat}`, owner);
+  const remoteMute = await drain(); sourceOnly(remoteMute);
+  const remoteSettings = () => JSON.parse((db.prepare("SELECT payload FROM oc_settings WHERE square=?").get(labSquare) as { payload: string }).payload);
+  assert.equal(remoteSettings().mutes[labUser].silent, true);
+  assert.equal(remoteSettings().source_chat, labChat);
+  await message(`!oc mute list talkID:${labChat}`, owner); const remoteList = await drain(); sourceOnly(remoteList); assert(texts(remoteList).includes(labUser));
+  assert.equal(db.prepare("SELECT square FROM oc_history WHERE target=? AND operation='mute' ORDER BY id DESC LIMIT 1").get(labUser)?.square, labSquare);
+  core.shutdown(); core = createCore(config);
+  const silentPost = await message("ミュート後の発言", labUser, undefined, labChat, { squareId: labSquare, botMemberId: labBot });
+  const silentActions = await drain(); assert(deleted.includes(silentPost)); assert.equal(texts(silentActions), "");
+  const silentSubPost = await message("サブトークの発言", labUser, undefined, labSub, { squareId: labSquare, botMemberId: labBot });
+  assert.equal(texts(await drain()), ""); assert(deleted.includes(silentSubPost));
+  await message(`!oc mute ${labUser} off talkID:${labChat}`, owner); sourceOnly(await drain()); assert(!remoteSettings().mutes[labUser]);
+  failedNameLookups.add(labUser);
+  await message(`!oc mute ${labUser} inf talkID:${labChat}`, owner);
+  const failedRemoteMember = await drain(); sourceOnly(failedRemoteMember); assert(texts(failedRemoteMember).includes(labUser));
+  failedNameLookups.delete(labUser);
+  // 過去投稿は本文をCoreへ渡さず、複数ページから本人だけ選び、結果不明で停止する。
+  type HistoryPage = Awaited<ReturnType<typeof client.square.fetchSquareChatEvents>>;
+  const historyPages: Array<HistoryPage | Error> = [];
+  client.square.fetchMyEvents = async options => {
+    const continued = options?.continuationToken === "lab-next";
+    if (continued) assert.equal(options?.syncToken, "fixture-directory");
+    return { syncToken: "fixture-directory", continuationToken: continued ? undefined : "lab-next", subscription: { subscriptionId: 1n },
+      events: (continued ? [labSub] : [labChat, chat]).map(id => ({ type: "NOTIFIED_CREATE_SQUARE_CHAT_MEMBER", payload: { notifiedCreateSquareChatMember: { chat: {
+        squareChatMid: id, squareMid: id === chat ? square : labSquare, name: "検証", type: "SQUARE_DEFAULT" } } } })) } as unknown as Awaited<ReturnType<typeof client.square.fetchMyEvents>>;
+  };
+  const historyCalls: Array<{ chat: unknown; sync: unknown; token: unknown; direction: unknown }> = [];
+  client.request.request = (async (params: unknown, method: string) => {
+    assert.equal(method, "fetchSquareChatEvents");
+    const fields = (params as Array<[number, number, Array<[number, number, unknown]>]>)[0]![2];
+    const field = (id: number) => fields.find(item => item[1] === id)?.[2];
+    assert([labChat, labSub].includes(field(2) as string)); assert.equal(field(4), 50); assert.equal(field(9), undefined);
+    historyCalls.push({ chat: field(2), sync: field(3), token: field(7), direction: field(5) });
+    const page = historyPages.shift(); assert(page, "UnexpectedHistoryRead"); if (page instanceof Error) throw page;
+    return page;
+  }) as typeof client.request.request;
+  const historyPage = (sync: string, entries: Array<[string, string]> = [], token?: string, room = labChat) => ({ syncToken: sync, continuationToken: token,
+    events: entries.map(([id, from]) => ({ type: "RECEIVE_MESSAGE", payload: { receiveMessage: { squareMessage: { message: { id, from, to: room } } } } })) }) as HistoryPage;
+  const bulkCalls: string[][] = []; let failBulk = false, maxBulk = 20;
+  client.square.destroyMessages = async options => gate.run("destroyMessages", async () => {
+    assert(options);
+    assert([labChat, labSub].includes(options.request?.squareChatMid!)); assert.equal(options.request?.threadMid, undefined);
+    gate.beforeFetch(); assert.equal(core.stats().sendingActions, 1);
+    bulkCalls.push(options.request!.messageIds!);
+    assert(options.request!.messageIds!.length <= 20);
+    if (options.request!.messageIds!.length > maxBulk) throw Object.assign(new Error("BatchRejected"), { data: { errorCode: "ILLEGAL_ARGUMENT" } });
+    if (failBulk) throw new Error("DisconnectedAfterDeletionRequest");
+    return {} as Awaited<ReturnType<typeof client.square.destroyMessages>>;
+  });
+  historyPages.push(historyPage("latest"), historyPage("older1", [["101", labUser], ["102", labCo], ["103", labUser], ["106", mid("u", "1")]], "page2"),
+    historyPage("older2", [["103", labUser], ["104", labUser]]), historyPage("end"), historyPage("sub-latest"),
+    historyPage("sub-older", [["105", labUser]], undefined, labSub), historyPage("sub-end"));
+  await message(`!oc mute alltalk userID:${labUser} talkID:${labChat}`, owner);
+  const purged = await drain(); sourceOnly(purged); assert(texts(purged).includes("削除API成功: 4件"));
+  assert(texts(purged).includes("走査終了: 2件"));
+  assert.deepEqual(bulkCalls, [["101", "103"], ["104"], ["105"]]); assert.equal(historyPages.length, 0);
+  assert.notEqual(historyCalls[0]!.direction, historyCalls[1]!.direction);
+  assert.equal(historyCalls[1]!.sync, "latest"); assert.equal(historyCalls[2]!.token, "page2");
+  assert.equal(core.checkpoint("account"), String(sequence));
+  maxBulk = 1;
+  historyPages.push(historyPage("latest"), historyPage("older", Array.from({ length: 24 }, (_, index) => [String(300 + index), labUser])),
+    historyPage("end"), historyPage("sub-latest"), historyPage("sub-end"));
+  const adaptiveStart = bulkCalls.length;
+  await message(`!oc mute alltalk ${labUser} inf talkID:${labChat}`, owner);
+  const adaptive = await drain(); sourceOnly(adaptive); assert(texts(adaptive).includes("削除API成功: 24件"));
+  assert.deepEqual(bulkCalls.slice(adaptiveStart, adaptiveStart + 5).map(ids => ids.length), [20, 10, 5, 2, 1]);
+  maxBulk = 20;
+  historyPages.push(historyPage("latest"), historyPage("older", [["201", labUser]])); failBulk = true;
+  await message(`!oc mute alltalk ${labUser} inf talkID:${labChat}`, owner);
+  const uncertain = await drain(); sourceOnly(uncertain); assert(texts(uncertain).includes("結果が不明"));
+  assert(texts(uncertain).includes("最後の未完了バッチ: 1件"));
+  const bulkCount = bulkCalls.length; core.shutdown(); core = createCore(config); await drain(); assert.equal(bulkCalls.length, bulkCount);
+  failBulk = false;
+  historyPages.push(historyPage("latest"), new Error("HistoryUnavailable"));
+  await message(`!oc mute alltalk ${labUser} inf talkID:${labChat}`, owner);
+  const unavailableHistory = await drain(); sourceOnly(unavailableHistory); assert(texts(unavailableHistory).includes("失敗したため停止"));
+  assert.equal(bulkCalls.length, bulkCount);
+  historyPages.push(historyPage("latest"), historyPage("wrong-scope", [["501", labUser]], undefined, chat));
+  await message(`!oc mute alltalk ${labUser} talkID:${labChat}`, owner);
+  const wrongScope = await drain(); sourceOnly(wrongScope); assert(texts(wrongScope).includes("InvalidHistoryMessage"));
+  assert.equal(bulkCalls.length, bulkCount);
+  roles.set(labBot, "MEMBER");
+  await message(`!oc mute alltalk ${labUser} talkID:${labChat}`, owner);
+  const noAuthority = await drain(); sourceOnly(noAuthority); assert(texts(noAuthority).includes("管理者・副官権限"));
+  assert.equal(bulkCalls.length, bulkCount); assert.equal(historyPages.length, 0);
+  await message(`!oc mute alltalk ${labUser} off talkID:${labChat}`, owner); assert(texts(await drain()).includes("併用できません"));
+  // 実行トーク自身は従来のOC管理者権限を保ち、Botの削除権限だけ改めて照会する。
+  roles.set(labBot, "CO_ADMIN"); roles.set(labAdmin, "ADMIN");
+  historyPages.push(historyPage("latest"), historyPage("end"), historyPage("sub-latest"), historyPage("sub-end"));
+  await message(`!oc mute alltalk ${labUser}`, labAdmin, undefined, labChat, { squareId: labSquare, botMemberId: labBot });
+  const localPurge = await drain(); assert(texts(localPurge).includes("走査終了: 2件"));
+  for (const action of localPurge) if (action.type === "sendMessage") assert.equal(action.chatId, labChat);
+  assert.equal(remoteSettings().mutes[labUser].silent, false);
+  console.log(JSON.stringify({ ok: true, scenarios: ["permissions-session-query-restart-unknown", "mute-url-media", "push-notification-oc-leave", "remote-id-mute-purge"] }));
 } finally { controller.abort(); core.shutdown(); db.close(); }
