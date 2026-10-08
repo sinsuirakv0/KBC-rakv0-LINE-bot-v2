@@ -30,15 +30,81 @@ fn delete(tx: &Transaction<'_>, event: &CoreEvent, reason: &str, now: i64) -> Re
     tx.execute("DELETE FROM oc_history WHERE id IN (SELECT id FROM oc_history ORDER BY id DESC LIMIT -1 OFFSET 2048)",[])?;
     Ok(())
 }
+// 同じOCの有効な名前設定を新MIDへコピーする。期限・警告設定は延長しない。
+fn inherit_mute(
+    tx: &Transaction<'_>,
+    event: &CoreEvent,
+    name: &str,
+    now: i64,
+    value: &mut Settings,
+) -> Result<bool> {
+    let Some(square) = square(event) else {
+        return Ok(false);
+    };
+    let (_, _, _, member, at) = identity(event);
+    if name.is_empty() || !member.starts_with('p') {
+        return Ok(false);
+    }
+    if value.bot_member.as_deref() == Some(member)
+        || value
+            .mutes
+            .get(member)
+            .is_some_and(|mute| mute.until.is_none_or(|until| until > now))
+    {
+        return Ok(false);
+    }
+    let inherited = value
+        .mutes
+        .values()
+        .filter(|mute| {
+            mute.name == name && mute.until.is_none_or(|until| until > now) && at >= mute.since
+        })
+        .max_by_key(|mute| mute.since)
+        .cloned();
+    let Some(mute) = inherited else {
+        return Ok(false);
+    };
+    value
+        .mutes
+        .retain(|_, mute| mute.until.is_none_or(|until| until > now));
+    if value.mutes.len() >= 100 {
+        return Ok(false);
+    }
+    value.mutes.insert(member.into(), mute);
+    save_settings(tx, square, value)?;
+    Ok(true)
+}
 pub fn mute(runtime: &Runtime, tx: &Transaction<'_>, event: &CoreEvent, now: i64) -> Result<bool> {
     let message_catalog = &runtime.content.messages;
     let Some(square) = square(event) else {
         return Ok(false);
     };
     let (root, chat, _, sender, at) = identity(event);
-    let value = settings(tx, square)?;
+    let mut value = settings(tx, square)?;
     if value.bot_member.as_deref() == Some(sender) {
         return Ok(false);
+    }
+    if !value.mutes.contains_key(sender)
+        && value
+            .mutes
+            .values()
+            .any(|mute| mute.until.is_none_or(|until| until > now))
+    {
+        let name = match event {
+            CoreEvent::MessageReceived {
+                sender_name: Some(name),
+                ..
+            } if !name.is_empty() => Some(
+                name.replace(['\r', '\n'], " ")
+                    .chars()
+                    .take(80)
+                    .collect::<String>(),
+            ),
+            _ => member_name(tx, square, sender)?,
+        };
+        if let Some(name) = name {
+            inherit_mute(tx, event, &name, now, &mut value)?;
+        }
     }
     let Some(mute) = value
         .mutes
@@ -463,7 +529,7 @@ pub fn member_event(
     {
         return Ok(());
     }
-    let value = settings(tx, square_id)?;
+    let mut value = settings(tx, square_id)?;
     if value.bot_member.as_ref() == Some(member_id) {
         return Ok(());
     }
@@ -481,7 +547,7 @@ pub fn member_event(
         .optional()?;
     if previous
         .as_ref()
-        .is_some_and(|(old, at, _)| old == state || at > created_at_ms)
+        .is_some_and(|(_, at, _)| at > created_at_ms)
     {
         return Ok(());
     }
@@ -489,6 +555,28 @@ pub fn member_event(
         member_name(tx, square_id, member_id)?
     } else {
         Some(display_name.clone())
+    };
+    if state == "JOINED"
+        && let Some(name) = known_name.as_deref()
+    {
+        inherit_mute(tx, event, name, now, &mut value)?;
+    }
+    if previous.as_ref().is_some_and(|(old, _, _)| old == state) {
+        return Ok(());
+    }
+    let mut name_lookup = if state == "JOINED"
+        && known_name.is_none()
+        && !value.mutes.contains_key(member_id)
+        && value.mutes.values().any(|mute| {
+            !mute.name.is_empty()
+                && mute.until.is_none_or(|until| until > now)
+                && *created_at_ms >= mute.since
+        }) {
+        let mut job = signal_job(event, &value, square_id, "", "member-mute");
+        job.event = event.clone();
+        Some(job)
+    } else {
+        None
     };
     // 代替ラベルは観測済みの名前として保存しない。
     let name = known_name.clone().unwrap_or_default();
@@ -527,23 +615,28 @@ pub fn member_event(
                     now,
                 )?;
             } else if template.mention || template.text.contains("<name>") {
-                let mut job = signal_job(event, &value, square_id, "", "member-notice");
+                let mut job = name_lookup
+                    .take()
+                    .unwrap_or_else(|| signal_job(event, &value, square_id, "", "member-notice"));
                 job.event = event.clone();
                 job.input.body = destination.into();
                 job.deferred = Some(serde_json::to_string(&template)?);
-                request(
-                    tx,
-                    &mut job,
-                    OcRequest::Member {
-                        member_id: member_id.clone(),
-                    },
-                    Phase::MemberNotice,
-                    now,
-                )?;
+                name_lookup = Some(job);
             } else {
                 send_notice(message_catalog, tx, event, destination, &template, "", now)?;
             }
         }
+    }
+    if let Some(mut job) = name_lookup {
+        request(
+            tx,
+            &mut job,
+            OcRequest::Member {
+                member_id: member_id.clone(),
+            },
+            Phase::MemberNotice,
+            now,
+        )?;
     }
     if !(value.left || value.danger || value.cohort) {
         return Ok(());
@@ -645,6 +738,7 @@ pub fn complete_notice(
     let CoreEvent::MemberChanged {
         square_id,
         member_id,
+        state,
         created_at_ms,
         ..
     } = &job.event
@@ -662,6 +756,10 @@ pub fn complete_notice(
                 && !member.name.is_empty()
         });
     let name = if let Some(member) = member {
+        if state == "JOINED" && matches!(member.state.as_str(), "JOINED" | "2") {
+            let mut value = settings(tx, square_id)?;
+            inherit_mute(tx, &job.event, &member.name, now, &mut value)?;
+        }
         tx.execute(
             "UPDATE oc_presence SET name=?3 WHERE square=?1 AND member=?2 AND name='' AND at<=?4",
             params![square_id, member_id, member.name, created_at_ms],
@@ -681,8 +779,10 @@ pub fn complete_notice(
             )
         })
     };
-    let template: Template =
-        serde_json::from_str(job.deferred.as_deref().ok_or("MissingMemberNotice")?)?;
+    let Some(template) = job.deferred.as_deref() else {
+        return Ok(());
+    };
+    let template: Template = serde_json::from_str(template)?;
     send_notice(
         message_catalog,
         tx,

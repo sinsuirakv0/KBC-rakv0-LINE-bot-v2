@@ -19,6 +19,7 @@ const admin = mid("p", "1"), co = mid("p", "2"), mod = mid("p", "3"), user = mid
 const owner = mid("p", "9");
 const labChat = mid("m", "b"), labSquare = mid("s", "b"), labBot = mid("p", "c"), labUser = mid("p", "d"), labAdmin = mid("p", "e"), labCo = mid("p", "f");
 const labSub = mid("m", "a");
+const labMembers = new Set([labBot, labUser, labAdmin, labCo]);
 const roles = new Map([[admin, "ADMIN"], [co, "CO_ADMIN"], [mod, "MEMBER"], [user, "MEMBER"], [bot, "CO_ADMIN"]]);
 for (const [id, role] of [[labBot, "MEMBER"], [labUser, "MEMBER"], [labAdmin, "ADMIN"], [labCo, "CO_ADMIN"]]) roles.set(id!, role!);
 const states = new Map<string, string>();
@@ -38,7 +39,7 @@ let core = createCore(config);
 const db = new DatabaseSync(config.databasePath);
 const controller = new AbortController(), gate = new ApiScheduler(controller.signal, 2, 1);
 const client = new BaseClient({ device: "DESKTOPWIN" });
-const member = (id: string) => ({ squareMemberMid: id, squareMid: [labBot, labUser, labAdmin, labCo].includes(id) ? labSquare : square, displayName: names.get(id) ?? (id === user ? "参加者🙂" : "メンバー"),
+const member = (id: string) => ({ squareMemberMid: id, squareMid: labMembers.has(id) ? labSquare : square, displayName: names.get(id) ?? (id === user ? "参加者🙂" : "メンバー"),
   role: roles.get(id) ?? "MEMBER", membershipState: states.get(id) ?? "JOINED", revision: 7n });
 let failMutation = false;
 client.square.getSquareChat = async ({ squareChatMid }) => ({ squareChat: { squareChatMid, squareMid: [labChat, labSub].includes(squareChatMid) ? labSquare : square, name: "検証", type: "SQUARE_DEFAULT" },
@@ -799,5 +800,46 @@ try {
   const localPurge = await drain(); assert(texts(localPurge).includes("走査終了: 2件"));
   for (const action of localPurge) if (action.type === "sendMessage") assert.equal(action.chatId, labChat);
   assert.equal(remoteSettings().mutes[labUser].silent, false);
+  // MIDを変えた同名参加者へ期限と無通知設定を引き継ぎ、解除時は旧MIDもまとめて除く。
+  const rejoined = "p" + "ab".repeat(15) + "01", unnamedJoin = "p" + "ab".repeat(15) + "02";
+  const wrongName = "p" + "ab".repeat(15) + "03", failedJoin = "p" + "ab".repeat(15) + "04";
+  const expiredJoin = "p" + "ab".repeat(15) + "05";
+  for (const id of [rejoined, unnamedJoin, wrongName, failedJoin, expiredJoin]) labMembers.add(id);
+  async function labJoin(id: string, name: string, at = Date.now()) {
+    await submitEvent({ type: "memberChanged", eventId: `rejoin-${sequence}`, squareId: labSquare, chatId: labSub,
+      memberId: id, displayName: name, state: "JOINED", scope: "chat", createdAtMs: at });
+  }
+  await message(`!oc mute ${labUser} 170 talkID:${labChat}`, owner); await drain();
+  const originalMute = remoteSettings().mutes[labUser];
+  await labJoin(rejoined, names.get(labUser)!); assert.equal((await drain()).length, 0);
+  assert.deepEqual(remoteSettings().mutes[rejoined], originalMute);
+  const inheritedPost = await message("改名後の投稿", rejoined, undefined, labChat,
+    { squareId: labSquare, botMemberId: labBot, senderName: "変更後の名前" });
+  assert.equal(texts(await drain()), ""); assert(deleted.includes(inheritedPost));
+  await labJoin(wrongName, "遠隔の健康"); await drain(); assert(!remoteSettings().mutes[wrongName]);
+  await submitEvent({ type: "memberChanged", eventId: `other-oc-${sequence}`, squareId: square, chatId: sub,
+    memberId: wrongName, displayName: names.get(labUser)!, state: "JOINED", scope: "chat", createdAtMs: Date.now() });
+  await drain(); assert(!settings().mutes[wrongName]);
+  names.set(unnamedJoin, names.get(labUser)!);
+  await labJoin(unnamedJoin, ""); core.shutdown(); core = createCore(config);
+  assert.equal(texts(await drain()), ""); assert.deepEqual(remoteSettings().mutes[unnamedJoin], originalMute);
+  assert.equal(memberLookups.filter(id => id === unnamedJoin).length, 1);
+  failedNameLookups.add(failedJoin); await labJoin(failedJoin, ""); await drain();
+  assert(!remoteSettings().mutes[failedJoin]);
+  const firstNamedPost = await message("最初の投稿", failedJoin, undefined, labSub,
+    { squareId: labSquare, botMemberId: labBot, senderName: names.get(labUser)! });
+  assert.equal(texts(await drain()), ""); assert(deleted.includes(firstNamedPost));
+  assert.deepEqual(remoteSettings().mutes[failedJoin], originalMute);
+  failedNameLookups.delete(failedJoin);
+  await message(`!oc mute ${labCo} 170 talkID:${labChat}`, owner); await drain();
+  names.set(rejoined, "変更後の名前");
+  await message(`!oc mute ${rejoined} off talkID:${labChat}`, owner); await drain();
+  for (const id of [labUser, rejoined, unnamedJoin, failedJoin]) assert(!remoteSettings().mutes[id]);
+  assert(remoteSettings().mutes[labCo]);
+  await labJoin(expiredJoin, names.get(labUser)!); await drain(); assert(!remoteSettings().mutes[expiredJoin]);
+  await message(`!oc mute ${labUser} 170 talkID:${labChat}`, owner); await drain();
+  const expiredSettings = remoteSettings(); expiredSettings.mutes[labUser].until = Date.now() - 1;
+  db.prepare("UPDATE oc_settings SET payload=? WHERE square=?").run(JSON.stringify(expiredSettings), labSquare);
+  await labJoin(expiredJoin, names.get(labUser)!); await drain(); assert(!remoteSettings().mutes[expiredJoin]);
   console.log(JSON.stringify({ ok: true, scenarios: ["permissions-session-query-restart-unknown", "mute-url-media", "push-notification-oc-leave", "remote-id-mute-purge"] }));
 } finally { controller.abort(); core.shutdown(); db.close(); }

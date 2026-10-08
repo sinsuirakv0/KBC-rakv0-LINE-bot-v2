@@ -736,7 +736,15 @@ pub fn target(
         value.source_chat = Some(remote::chat(job).into());
         value.bot_member = Some(context.bot_member_id.clone());
         if matches!(duration, "off" | "del" | "remove" | "解除") {
-            value.mutes.remove(&member.member_id);
+            // 改名後も登録時の名前を使い、旧MIDからの再適用も一緒に止める。
+            let name = value
+                .mutes
+                .get(&member.member_id)
+                .map_or(&member.name, |mute| &mute.name)
+                .clone();
+            value.mutes.retain(|id, mute| {
+                id != &member.member_id && (name.is_empty() || mute.name != name)
+            });
         } else if let Some(until) = policy::mute_until(duration, now) {
             if value.mutes.len() >= 100 && !value.mutes.contains_key(&member.member_id) {
                 return reply(

@@ -47,3 +47,5 @@ help/test-mention.txtは!test mention-labelの専用案内。入口のhelp/test.
 2026-10-08、talkIDによる遠隔検索・無通知mute・alltalk履歴削除の案内をhelp/id・help/oc-adminへ追加。利用者向け文面は既存id.txtのremote.*、commands.txtのpurge.*へ集約し、ファイル数上限を増やさない。[権限・削除範囲](../../crates/kbc-core/src/oc/docs/REMOTE_MUTE.md)。
 
 2026-10-08、過去投稿削除の開始案内・停止受付・制御終了はmessages/commands.txtのpurge.started / stop_usage / stop_requested / cancelledで変更する。purge.resultは参加地点・取得終端の件数を追加。help/oc-admin.txtに停止リプライとミュート維持、help/bot.txtに照会なしのstatusを記載した。操作語や権限は文面変更では変わらない。
+
+2026-10-09、help/oc-admin.txtへ同じOC・完全一致名の再参加時のmute継承と、同名設定の一括解除を追記した。自動継承のための新しい利用者向け通知は追加せず、silentを含む既存警告文面を使う。[仕様・関数](../../crates/kbc-core/src/oc/docs/OC.md)。

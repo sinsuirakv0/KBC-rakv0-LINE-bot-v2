@@ -23,6 +23,8 @@
 !oc mute @対象 170 / 0:17 / 8/7-0:17 / inf
 !oc mute @対象 off / mute list
   発言の管理者削除。OC管理者またはBOT mod以上
+  同じOCの同名（完全一致）の再参加者にも、元の期限・警告設定を引き継ぎます。
+  解除は同名の旧MID・新MIDをまとめて解除。別人でも同じ名前なら対象になります。
 !oc mute userID:pMID inf talkID:mMID
 !oc mute userID:pMID off talkID:mMID
 !oc mute list talkID:mMID
