@@ -113,6 +113,18 @@ export class SquareDirectory {
       if (!Array.isArray(response.events) || response.events.length > 50 || typeof response.syncToken !== "string"
           || response.syncToken.length > 2048 || (response.continuationToken != null && typeof response.continuationToken !== "string")
           || (response.continuationToken?.length ?? 0) > 2048) throw new Error("InvalidHistoryPage");
+      const timestamp = (value: unknown) => { const number = Number(value); return Number.isSafeInteger(number) && number > 0 ? number : null; };
+      const joins = response.events.flatMap(event => {
+        const payload = event.payload;
+        const joined = payload?.notifiedJoinSquareChat;
+        const created = payload?.notifiedCreateSquareChatMember;
+        const squareMember = payload?.notifiedCreateSquareMember?.squareMember;
+        const memberId = joined?.squareChatMid === chatId ? joined.joinedMember?.squareMemberMid
+          : (created?.chat?.squareChatMid === chatId || created?.chatMember?.squareChatMid === chatId)
+            && ["1", "JOINED"].includes(String(created?.chatMember?.membershipState)) ? created?.chatMember?.squareMemberMid
+          : squareMember?.squareMid === request.squareId && ["2", "JOINED"].includes(String(squareMember.membershipState)) ? squareMember.squareMemberMid : undefined;
+        return memberId && /^p[0-9a-f]{8,63}$/i.test(memberId) ? [{ memberId, createdAtMs: timestamp(event.createdTime) }] : [];
+      });
       const messages = response.events.flatMap(event => {
         const payload = event.payload;
         const value = (payload?.receiveMessage ?? payload?.sendMessage ?? payload?.notificationMessage)?.squareMessage?.message;
@@ -120,9 +132,9 @@ export class SquareDirectory {
         // 本人pMIDに結び付かないシステム通知は削除候補へ入れない。
         if (typeof value.from !== "string" || !/^p[0-9a-f]{8,63}$/i.test(value.from)) return [];
         if (value.to !== chatId || typeof value.id !== "string" || !/^[0-9]{1,32}$/.test(value.id)) throw new Error("InvalidHistoryMessage");
-        return [{ messageId: value.id, senderId: value.from }];
+        return [{ messageId: value.id, senderId: value.from, createdAtMs: timestamp(value.createdTime) }];
       });
-      result.history = { eventCount: response.events.length, messages, syncToken: response.syncToken, continuationToken: response.continuationToken || null };
+      result.history = { eventCount: response.events.length, messages, joins, syncToken: response.syncToken, continuationToken: response.continuationToken || null };
     } else if (request.type === "deleteMessages") {
       const chat = await this.chat(chatId);
       if (chat.squareChat.squareMid !== request.squareId || !request.messageIds.length || request.messageIds.length > 20

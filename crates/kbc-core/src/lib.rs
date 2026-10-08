@@ -549,7 +549,10 @@ impl Runtime {
                         (SELECT 1 FROM actions b WHERE b.event_id=a.event_id AND b.chat=a.chat AND b.rowid<a.rowid
                          AND json_valid(b.payload) AND json_extract(b.payload,'$.threadRootId') IS NOT NULL
                          AND b.status NOT IN ('sent','failed')))
-                    ORDER BY a.due,a.rowid LIMIT 1", [query],
+                    ORDER BY CASE WHEN a.due<=?2 THEN 0 ELSE 1 END,
+                        CASE WHEN a.due<=?2 AND ?1=1 AND json_extract(a.payload,'$.request.type') IN ('history','joinedChats')
+                        AND json_extract(json_extract(a.payload,'$.continuation'),'$.purge') IS NOT NULL THEN 1 ELSE 0 END,
+                        a.due,a.rowid LIMIT 1", params![query,now_ms()],
                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).optional()?;
                 match next {
                     Some((id, payload, due)) if due <= now_ms() => {

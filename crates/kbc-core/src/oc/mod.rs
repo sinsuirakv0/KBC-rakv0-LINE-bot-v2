@@ -102,6 +102,9 @@ struct Job {
 }
 #[derive(Clone, Serialize, Deserialize)]
 enum Session {
+    Purge {
+        cancelled: bool,
+    },
     Setup,
     Chats {
         chats: Vec<OcChat>,
@@ -276,7 +279,10 @@ fn text_action(
         CoreEvent::MessageReceived { text, .. } => bot::parse(text).is_some_and(|input| {
             input.name == "bot"
                 && input.args.first().is_some_and(|arg| {
-                    matches!(arg.to_ascii_lowercase().as_str(), "start" | "stop")
+                    matches!(
+                        arg.to_ascii_lowercase().as_str(),
+                        "start" | "stop" | "status"
+                    )
                 })
         }),
         _ => false,
@@ -392,7 +398,12 @@ fn request(
         created_at_ms: now,
     };
     insert_action(tx, &action, now)?;
-    if read {
+    if read
+        && !matches!(
+            job.phase,
+            Phase::MuteInspect | Phase::MuteChats | Phase::MuteHistory
+        )
+    {
         tx.execute(
             "UPDATE actions SET due=?2 WHERE id=?1",
             params![action_id, identity(&job.event).4.min(now)],
@@ -467,6 +478,11 @@ pub fn ingest(
     };
     id::remember(tx, event)?;
     if bot_member_id.as_ref() == Some(actor) {
+        return Ok(true);
+    }
+    if bot_management::quick_status(runtime, tx, event, text, now)?
+        || purge::stop_reply(runtime, tx, event, now)?
+    {
         return Ok(true);
     }
     if crate::permissions::stopped(tx, identity(event).1)? && !bot_management::is_start(text) {

@@ -797,10 +797,9 @@ pub fn target(
                 )
             },
         );
-        if let Some(room) = value
-            .mod_room
-            .filter(|room| job.remote.is_none() && room != identity(&job.event).1)
-        {
+        if let Some(room) = value.mod_room.filter(|room| {
+            job.remote.is_none() && job.purge.is_none() && room != identity(&job.event).1
+        }) {
             text_action(
                 tx,
                 &job.event,
@@ -820,11 +819,10 @@ pub fn target(
                 now,
             )?;
         }
-        reply(tx, job, text, now)?;
         if job.purge.is_some() {
-            return purge::start(tx, job, now);
+            return purge::start(runtime, tx, job, text, now);
         }
-        return Ok(());
+        return reply(tx, job, text, now);
     }
     if member.member_id == context.bot_member_id
         || policy::role_rank(&member.role) != 1
@@ -1188,6 +1186,7 @@ fn session_reply(
     let value: Session = serde_json::from_str(&payload)?;
     let context = job.context.as_ref().ok_or("MissingOcContext")?.clone();
     match value {
+        Session::Purge { .. } => reply(tx, job, message!(message_catalog, "purge.stop_usage"), now),
         Session::Setup => {
             let (first, tail) = word(&body);
             let enabled = !matches!(first, "off" | "del");

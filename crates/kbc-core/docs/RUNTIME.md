@@ -33,7 +33,7 @@ txtと同梱検索を受付でAction化する。検索の走査は不変snapshot
 
 ## Bridge
 
-`kbc-protocol`のRust型から`apps/line/src/protocol/generated/`を生成する。本人・返信先・送信ID・画像URLとOC操作を追加したLINE専用Protocol v19。NativeとAdapterを同時に更新し、旧Adapterと混在させない。`kbc-node`は変換とRuntime呼出だけを行う。
+`kbc-protocol`のRust型から`apps/line/src/protocol/generated/`を生成する。本人・返信先・送信ID・画像URLとOC操作を追加したLINE専用Protocol v21。NativeとAdapterを同時に更新し、旧Adapterと混在させない。`kbc-node`は変換とRuntime呼出だけを行う。
 
 JSからNativeへの設定・Batch・結果は型付きDTOをJSON文字列化して渡す。N-APIのserde Value変換では整数の時刻がf64として入ってi64の復元に失敗したため、この小さな境界では整数表現を保つ。出力はplain DTO。大きな画像・SDKオブジェクトをこの経路へ渡さない。
 
@@ -45,7 +45,7 @@ JSからNativeへの設定・Batch・結果は型付きDTOをJSON文字列化し
 
 初期OC対応ではMemberChanged、メッセージのOC・媒体・メンション情報、OcRequest / Resultを追加した。submit_batchの安価な候補判定からoc::ingestへ入り、照会結果と後続Actionをcomplete_actionのtransactionで確定する。[OC実装](../src/oc/docs/OC.md)を参照。
 
-next_query_actionはcontext / member / chatsの読み取りだけをqueryingへ変える。1照会Workerが処理し、同じ宛先の通常claimed / sendingを塞がない。queryingは起動時queuedに戻す。membership / reportは通常配送のsending契約を使い、再起動・通信後失敗ではunknownとして保持する。通信前の確定失敗はclaimedからfailedにできる。OCの権限照会中でもpingを配送することをオフライン検証した。
+next_query_actionはcontext / member / chats / members / joinedChats / inspect / reactions / historyの読み取りをqueryingへ変える。2照会Workerが処理し、同じ宛先の通常claimed / sendingを塞がない。queryingは起動時queuedに戻す。membership / reportは通常配送のsending契約を使い、再起動・通信後失敗ではunknownとして保持する。通信前の確定失敗はclaimedからfailedにできる。OCの権限照会中でもpingを配送することをオフライン検証した。
 
 eventsは本文を持たないが、未完了OC照会のcontinuationには元入力と必要なCommandPlanを一時保持する。完了時は既存契約どおりpayloadを空にし、unknownは照合まで保持する。OC設定・対話・短期状態も同じSQLiteとbyte上限を共有する。
 
@@ -95,3 +95,7 @@ Protocol v18はMessageMentionに任意additional（MID・UTF-16位置）を追�
 Protocol v19はMembersに任意chatMembersを追加する。!idの名前検索が0件なら、実行トークの参加者一覧を既存照会Workerで補完し、Coreで部分一致する。旧保存要求・Jobの追加項目はdefaultで復元する。NativeとAdapterは同時更新する。[境界・上限・検証](../src/oc/docs/ID.md)。
 
 Protocol v20。遠隔OCのInspectとOC全体の履歴削除を既存OC Job / actionsへ保存する。Historyは既存照会Worker、DeleteMessagesは20件以下で既存配送Workerを共有する。明確なILLEGAL_ARGUMENTだけ小分け、unknownは非再実行。通常受信のcheckpointは変更しない。[状態・期限・範囲](../src/oc/docs/REMOTE_MUTE.md)。
+
+2026-10-08、Protocol v21は履歴messageの任意投稿時刻と参加境界DTOを追加した。新規Purge読み取りのdueは元イベントの時刻へ戻さず、現在時刻を使う。next_action_modeは期限到来したActionを先に選び、Purgeのhistory / joinedChatsだけ通常の照会より後に選ぶ。旧snapshotの古いdueもこの優先度で処理する。全API共通枠は増やさない。通常照会が常時続く場合のPurge完了時間は保証せず、既存10分上限を維持する。
+
+!bot statusはoc::ingestから保存済み情報で直接SendMessageを登録し、Context照会を省く。停止・ミュート中も状態確認を受け付ける。権限変更や他のコマンドの現在権限照会は維持する。Purge開始時の返信IDは既存oc_sessionsへ結び付け、本人の停止リプライを照会なしで受け付ける。[停止・参加地点・取得終端の関数](../src/oc/docs/REMOTE_MUTE.md)。

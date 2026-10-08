@@ -1,7 +1,7 @@
 ﻿use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTOCOL_VERSION: u32 = 20;
+pub const PROTOCOL_VERSION: u32 = 21;
 
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -440,6 +440,8 @@ pub struct OcResult {
 pub struct OcHistoryPage {
     pub event_count: u32,
     pub messages: Vec<OcHistoryMessage>,
+    #[serde(default)]
+    pub joins: Vec<OcHistoryJoin>,
     pub sync_token: String,
     pub continuation_token: Option<String>,
 }
@@ -449,6 +451,17 @@ pub struct OcHistoryPage {
 pub struct OcHistoryMessage {
     pub message_id: String,
     pub sender_id: String,
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub created_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct OcHistoryJoin {
+    pub member_id: String,
+    #[ts(type = "number | null")]
+    pub created_at_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]

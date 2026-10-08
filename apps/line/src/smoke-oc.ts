@@ -128,7 +128,7 @@ async function message(text: string, actor = admin, replyToMessageId?: string, t
   return id;
 }
 const actions: CoreAction[] = [];
-async function drain() {
+async function drain(afterAction?: (action: CoreAction) => Promise<void>) {
   const start = actions.length;
   for (let count = 0; count < 100; count++) {
     const next = db.prepare("SELECT payload FROM actions WHERE status='queued' AND due<=? ORDER BY due,rowid LIMIT 1").get(Date.now() + 100) as { payload: string } | undefined;
@@ -137,6 +137,7 @@ async function drain() {
     const action = await (data.type === "ocApi" && ["context", "member", "chats", "members", "joinedChats", "inspect", "history"].includes(data.request.type) ? core.nextQueryAction() : core.nextAction());
     assert(action); actions.push(action);
     await deliverAction(client, core, gate, action, service);
+    await afterAction?.(action);
   }
   throw new Error("FixtureDidNotDrain");
 }
@@ -181,12 +182,21 @@ try {
   await message("!bot admin", user); assert(texts(await drain()).includes(owner));
   await message("!bot status", user); const botStatus = texts(await drain());
   assert(botStatus.includes("稼働時間") && botStatus.includes("配送待ち") && botStatus.includes("結果不明"));
+  // LINE照会が完了していなくても、状態確認はローカル情報で返信する。
+  await message("!oc status", user);
+  const heldQuery = await core.nextQueryAction(); assert(heldQuery);
+  await message("o.bot status", user);
+  const quickStatus = await drain();
+  assert(!quickStatus.some(action => action.type === "ocApi"));
+  assert(texts(quickStatus).includes("稼働時間") && texts(quickStatus).includes("未取得"));
+  await deliverAction(client, core, gate, heldQuery, service); await drain();
   // 個別停止と全体停止は独立。ログは継続し、副官は全体停止を解除できない。
   await message("!bot stop all", co); assert(texts(await drain()).includes("実行権限"));
   await message("!bot stop", co); await drain();
   const pendingLogs = core.stats().pendingLogs;
   await message("!ping", user); assert.equal((await drain()).length, 0);
   assert(core.stats().pendingLogs > pendingLogs);
+  await message("!bot status", user); assert(texts(await drain()).includes("停止中"));
   await message("!ping", user, undefined, sub); assert(texts(await drain()).length > 0);
   await message("!bot stop all", owner, undefined, sub); await drain();
   core.shutdown(); core = createCore(config);
@@ -666,6 +676,7 @@ try {
   // 過去投稿は本文をCoreへ渡さず、複数ページから本人だけ選び、結果不明で停止する。
   type HistoryPage = Awaited<ReturnType<typeof client.square.fetchSquareChatEvents>>;
   const historyPages: Array<HistoryPage | Error> = [];
+  let onHistory: (() => Promise<void>) | undefined;
   client.square.fetchMyEvents = async options => {
     const continued = options?.continuationToken === "lab-next";
     if (continued) assert.equal(options?.syncToken, "fixture-directory");
@@ -681,10 +692,12 @@ try {
     assert([labChat, labSub].includes(field(2) as string)); assert.equal(field(4), 50); assert.equal(field(9), undefined);
     historyCalls.push({ chat: field(2), sync: field(3), token: field(7), direction: field(5) });
     const page = historyPages.shift(); assert(page, "UnexpectedHistoryRead"); if (page instanceof Error) throw page;
+    const hook = onHistory; onHistory = undefined; await hook?.();
     return page;
   }) as typeof client.request.request;
-  const historyPage = (sync: string, entries: Array<[string, string]> = [], token?: string, room = labChat) => ({ syncToken: sync, continuationToken: token,
-    events: entries.map(([id, from]) => ({ type: "RECEIVE_MESSAGE", payload: { receiveMessage: { squareMessage: { message: { id, from, to: room } } } } })) }) as HistoryPage;
+  const historyPage = (sync: string, entries: Array<[string, string, number?]> = [], token?: string, room = labChat) => ({ syncToken: sync, continuationToken: token,
+    events: entries.map(([id, from, at]) => ({ type: "RECEIVE_MESSAGE", payload: { receiveMessage: { squareMessage: { message: {
+      id, from, to: room, createdTime: at == null ? undefined : BigInt(at) } } } } })) }) as HistoryPage;
   const bulkCalls: string[][] = []; let failBulk = false, maxBulk = 20;
   client.square.destroyMessages = async options => gate.run("destroyMessages", async () => {
     assert(options);
@@ -706,6 +719,52 @@ try {
   assert.notEqual(historyCalls[0]!.direction, historyCalls[1]!.direction);
   assert.equal(historyCalls[1]!.sync, "latest"); assert.equal(historyCalls[2]!.token, "page2");
   assert.equal(core.checkpoint("account"), String(sequence));
+  assert.equal(remoteSettings().mutes[labUser].until, null);
+  // 次の取得がqueuedの段階なら、そのActionを取り出す前に停止できる。
+  historyPages.push(historyPage("queued-stop-latest"));
+  const queuedHistoryStart = historyCalls.length;
+  await message(`!oc mute alltalk ${labUser} talkID:${labChat}`, owner);
+  const queuedStop = await drain(async action => {
+    if (action.type !== "ocApi" || action.request.type !== "history") return;
+    const control = db.prepare("SELECT prompt FROM oc_sessions WHERE chat=? AND owner=?").get(chat, owner) as { prompt: string };
+    await message("停止", owner, control.prompt);
+  });
+  assert(texts(queuedStop).includes("リプライによる停止"));
+  assert.equal(historyCalls.length - queuedHistoryStart, 1);
+  assert.equal(bulkCalls.length, 3); assert.equal(remoteSettings().mutes[labUser].until, null);
+  // 参加地点より古い本人の投稿には進まず、他OCの通常照会を履歴の次ページより先に処理する。
+  const joinedPage = historyPage("joined", [["601", labUser, 3000], ["602", labUser, 1000]]);
+  joinedPage.events.push({ type: "NOTIFIED_JOIN_SQUARE_CHAT", createdTime: 2000n, payload: {
+    notifiedJoinSquareChat: { squareChatMid: labChat, joinedMember: member(labUser) } } } as HistoryPage["events"][number]);
+  historyPages.push(historyPage("latest"), joinedPage, historyPage("sub-latest"), historyPage("sub-end"));
+  onHistory = async () => { await message("!oc status", admin); await message("!bot status", user); };
+  const joinBulkStart = bulkCalls.length;
+  await message(`!oc mute alltalk ${labUser} talkID:${labChat}`, owner);
+  const boundedPurge = await drain(); sourceOnly(boundedPurge);
+  assert(texts(boundedPurge).includes("参加地点: 1件 / 取得終端: 1件"));
+  assert(texts(boundedPurge).includes("稼働時間"));
+  assert.deepEqual(bulkCalls.slice(joinBulkStart), [["601"]]);
+  const firstHistory = boundedPurge.findIndex(action => action.type === "ocApi" && action.request.type === "history");
+  const normalLookup = boundedPurge.findIndex((action, index) => index > firstHistory && action.type === "ocApi" && action.request.type === "context" && action.chatId === chat);
+  const secondHistory = boundedPurge.findIndex((action, index) => index > firstHistory && action.type === "ocApi" && action.request.type === "history");
+  assert(normalLookup > firstHistory && normalLookup < secondHistory);
+  assert.equal(historyPages.length, 0); assert.equal(remoteSettings().mutes[labUser].until, null);
+  // 停止リプライは開始した本人だけ。取得中でも後続の履歴・削除を生成しない。
+  historyPages.push(historyPage("stop-latest"));
+  const stopBulkStart = bulkCalls.length, stopHistoryStart = historyCalls.length;
+  onHistory = async () => {
+    const control = db.prepare("SELECT prompt,payload FROM oc_sessions WHERE chat=? AND owner=?").get(chat, owner) as { prompt: string; payload: string };
+    assert(control.prompt);
+    await message("停止", user, control.prompt);
+    assert.equal(JSON.parse((db.prepare("SELECT payload FROM oc_sessions WHERE chat=? AND owner=?").get(chat, owner) as { payload: string }).payload).Purge.cancelled, false);
+    await message("停止", owner, control.prompt);
+  };
+  await message(`!oc mute alltalk ${labUser} talkID:${labChat}`, owner);
+  const stoppedPurge = await drain(); sourceOnly(stoppedPurge);
+  assert(texts(stoppedPurge).includes("停止を受け付けました") && texts(stoppedPurge).includes("リプライによる停止"));
+  assert.equal(historyCalls.length - stopHistoryStart, 1); assert.equal(bulkCalls.length, stopBulkStart);
+  assert.equal(db.prepare("SELECT id FROM oc_sessions WHERE chat=? AND owner=?").get(chat, owner), undefined);
+  assert.equal(remoteSettings().mutes[labUser].until, null);
   maxBulk = 1;
   historyPages.push(historyPage("latest"), historyPage("older", Array.from({ length: 24 }, (_, index) => [String(300 + index), labUser])),
     historyPage("end"), historyPage("sub-latest"), historyPage("sub-end"));

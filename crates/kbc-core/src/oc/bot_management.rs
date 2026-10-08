@@ -19,43 +19,91 @@ pub fn is_start_job(job: &Job) -> bool {
             .is_some_and(|arg| arg.eq_ignore_ascii_case("start"))
 }
 
+// 状態確認は権限変更を伴わないため、LINE照会を待たず保存済み情報だけで返す。
+pub fn quick_status(
+    runtime: &Runtime,
+    tx: &Transaction<'_>,
+    event: &CoreEvent,
+    text: &str,
+    now: i64,
+) -> Result<bool> {
+    if !bot::parse(text).is_some_and(|input| {
+        input.name == "bot" && input.args.len() == 1 && input.args[0].eq_ignore_ascii_case("status")
+    }) {
+        return Ok(false);
+    }
+    status(
+        runtime,
+        tx,
+        event,
+        message!(&runtime.content.messages, "common.unavailable"),
+        now,
+    )?;
+    Ok(true)
+}
+fn status(
+    runtime: &Runtime,
+    tx: &Transaction<'_>,
+    event: &CoreEvent,
+    oc_role: &str,
+    now: i64,
+) -> Result<()> {
+    let catalog = &runtime.content.messages;
+    let stats = runtime.stats_from_db(tx)?;
+    let (all, local) = permissions::stop_state(tx, identity(event).1)?;
+    let last: Option<i64> =
+        tx.query_row("SELECT max(received) FROM events", [], |row| row.get(0))?;
+    let body = message!(
+        catalog,
+        "bot.status",
+        state = if all || local {
+            message!(catalog, "bot.stopped")
+        } else {
+            message!(catalog, "bot.running")
+        },
+        all = flag(catalog, all),
+        local = flag(catalog, local),
+        uptime = (now - runtime.started_at_ms).max(0) / 1000,
+        role = role(
+            catalog,
+            permissions::rank(
+                tx,
+                square(event).unwrap_or(""),
+                identity(event).1,
+                identity(event).3
+            )?
+        ),
+        oc_role = oc_role,
+        received = last.map_or_else(
+            || message!(catalog, "common.not_set").into(),
+            |at| format!("{}", (now - at).max(0) / 1000)
+        ),
+        waiting = stats.queued_actions,
+        queries = stats.querying_actions,
+        sending = stats.claimed_actions + stats.sending_actions,
+        unknown = stats.unknown_actions,
+        media = stats.preparing_media,
+        logs = stats.pending_logs
+    );
+    text_action(
+        tx,
+        event,
+        "bot-status",
+        identity(event).1,
+        body,
+        TextDelivery::default(),
+        now,
+    )?;
+    Ok(())
+}
+
 pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
     let catalog = &runtime.content.messages;
     let context = job.context.as_ref().ok_or("MissingOcContext")?;
     let args = &job.input.args;
     let action = args.first().map_or("", String::as_str).to_ascii_lowercase();
     match action.as_str() {
-        "status" if args.len() == 1 => {
-            let stats = runtime.stats_from_db(tx)?;
-            let (all, local) = permissions::stop_state(tx, identity(&job.event).1)?;
-            let last: Option<i64> =
-                tx.query_row("SELECT max(received) FROM events", [], |row| row.get(0))?;
-            let body = message!(
-                catalog,
-                "bot.status",
-                state = if all || local {
-                    message!(catalog, "bot.stopped")
-                } else {
-                    message!(catalog, "bot.running")
-                },
-                all = flag(catalog, all),
-                local = flag(catalog, local),
-                uptime = (now - runtime.started_at_ms).max(0) / 1000,
-                role = role(catalog, bot_rank(tx, job)?),
-                oc_role = context.actor.role,
-                received = last.map_or_else(
-                    || message!(catalog, "common.not_set").into(),
-                    |at| format!("{}", (now - at).max(0) / 1000)
-                ),
-                waiting = stats.queued_actions,
-                queries = stats.querying_actions,
-                sending = stats.claimed_actions + stats.sending_actions,
-                unknown = stats.unknown_actions,
-                media = stats.preparing_media,
-                logs = stats.pending_logs
-            );
-            reply(tx, job, body, now)
-        }
+        "status" if args.len() == 1 => status(runtime, tx, &job.event, &context.actor.role, now),
         "start" | "stop"
             if args.len() == 1 || (args.len() == 2 && args[1].eq_ignore_ascii_case("all")) =>
         {

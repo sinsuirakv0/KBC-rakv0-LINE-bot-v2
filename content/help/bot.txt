@@ -2,6 +2,7 @@
 
 !bot status
   稼働時間・停止設定・BOT権限・配送待ちなどを表示
+  LINEへの権限照会を待たず応答。OC権限は未取得と表示します。
 !bot name 名前
   このOCのBotの表示名を変更（BOT管理者のみ）
 !bot admin [talkID:<sMIDまたはmMID>] [3p]
@@ -25,5 +26,5 @@ BOT管理者は遠隔設定可。OC管理人は同じOCだけ設定可。
 !bot stop all / !bot start all
   全体の停止・再開（BOT管理者のみ）
 全体停止を解除しても、個別停止は維持します。
-停止中はstartだけ受け付け、受信ログの保存は続けます。
+停止中もstartとstatusを受け付け、受信ログの保存は続けます。
 o.でも同じコマンドを使えます。案内は !help bot。

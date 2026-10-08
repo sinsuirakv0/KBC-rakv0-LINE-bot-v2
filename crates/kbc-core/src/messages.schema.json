@@ -889,7 +889,15 @@
     "pending",
     "remaining",
     "code",
-    "reason"
+    "reason",
+    "joined",
+    "history"
   ],
-  "purge.chat_limit": []
+  "purge.chat_limit": [],
+  "purge.started": [
+    "text"
+  ],
+  "purge.stop_usage": [],
+  "purge.stop_requested": [],
+  "purge.cancelled": []
 }

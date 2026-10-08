@@ -6,7 +6,7 @@
 
 2026-10-04、NOTIFIED_LEAVE_SQUARE_CHATのsquareMember.displayNameを正規化DTOへ保持する修正を追加した。採用SDKのSquareEventNotifiedLeaveSquareChatのThrift項目でsquareMemberを確認。名前がない場合の観測名参照と通知対象だけの追加照会は[Core](../../../crates/kbc-core/src/oc/docs/OC.md)で行い、Adapterの受信中に名前APIを追加しない。
 
-`main → AuthStorage.load → SDK login → createCore → Receiver.run + 2本の配送loop + 1本の照会loop`。
+`main → AuthStorage.load → SDK login → createCore → Receiver.run + 2本の配送loop + 2本の照会loop`。
 
 | 関数・状態 | 働き・相互関係 |
 | --- | --- |
@@ -46,7 +46,7 @@ LINEJSの最新公開版は2026-10-03のnpm再確認でも3.4.2。npm配布物re
 
 ## Commandの追加境界
 
-Protocol v20。通常返信の実送信IDをCoreへ渡し、候補promptへ結び付ける。管理者削除はsquare.destroyMessageへ渡し、新しい返信成功後に実行する。OCのメディアはoid省略のOBS reqseq upload自身が投稿し、空のIMAGE/VIDEOを先に送らない。画像・動画・GIF・ファイルの素材準備はRust共通Worker、BlobとLINEJS入出力はAdapterが扱う。uploadMediaも共通API枠・実fetch直前のsending記録を通し、HTTP statusを共通transportで検査する。動画durationはCoreの実Frame数から渡す。メディア自体はrelatedMessageId付き返信にならない。通信後の不明結果はunknownで自動再投稿しない。[Media Worker](../../../crates/kbc-core/docs/MEDIA.md) と [実素材実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) を参照。
+Protocol v21。通常返信の実送信IDをCoreへ渡し、候補promptへ結び付ける。管理者削除はsquare.destroyMessageへ渡し、新しい返信成功後に実行する。OCのメディアはoid省略のOBS reqseq upload自身が投稿し、空のIMAGE/VIDEOを先に送らない。画像・動画・GIF・ファイルの素材準備はRust共通Worker、BlobとLINEJS入出力はAdapterが扱う。uploadMediaも共通API枠・実fetch直前のsending記録を通し、HTTP statusを共通transportで検査する。動画durationはCoreの実Frame数から渡す。メディア自体はrelatedMessageId付き返信にならない。通信後の不明結果はunknownで自動再投稿しない。[Media Worker](../../../crates/kbc-core/docs/MEDIA.md) と [実素材実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) を参照。
 
 通知47のNICE / LOVEは既存ProtocolのReactionNotifiedへ正規化するが、ページ操作には使わない。利用者指定でリアクション方式を廃止し、一覧へのテキストリプライへ戻した。SquareDirectoryは旧snapshotのReactions要求を外部通信なしで完了し、getMessageReactionsを呼ばない。[旧案の調査・スタンプの仕様と未確認点](REACTIONS_AND_STICKERS.md)。
 
@@ -60,7 +60,7 @@ normalizeEventは本文なしの画像・動画、OC全体のmember状態、ト�
 
 Profile要求は実行トークのOC / Bot MIDと照合して、updateSquareMemberのDISPLAY_NAMEだけを更新する。引数なしとrevisionを検査する。Bot独自の文字数・改行・制御文字の制限は設けず、未加工の名前を渡す。Member照会では表示用DTOとは別のrawMemberNameを返す。Profile更新応答は完全なDTOとして扱わず、その後にgetSquareMemberを1回行い、SDKの未加工displayName・所属・参加状態と比較して成功を確認する。[Bot名変更の入力・権限・関数](../../../crates/kbc-core/src/oc/docs/BOT.md)。
 
-context / member / chats / members / joinedChatsはnextQueryActionから1本の照会loopで取得する。通常配送は2本のままで、全RPCは既存ApiSchedulerの同じ上限を共有する。membershipはupdateSquareMember(updatedAttrs=[5], revision付き)、通報はreportSquareMessage(SCAM)。更新・通報も実fetch直前にsendingを保存し、通信後失敗を自動再試行しない。読み取りはfailedで確定でき、再起動は再取得する。
+context / member / chats / members / joinedChatsはnextQueryActionから2本の照会loopで取得する。通常配送は2本のままで、全RPCは既存ApiSchedulerの同じ上限を共有する。membershipはupdateSquareMember(updatedAttrs=[5], revision付き)、通報はreportSquareMessage(SCAM)。更新・通報も実fetch直前にsendingを保存し、通信後失敗を自動再試行しない。読み取りはfailedで確定でき、再起動は再取得する。
 
 入退室のメンションはRustがUTF-16位置を作り、AdapterはMENTIONへ変換する。通常通知の空relatedMessageIdはSDKへundefinedで渡す。[OCの仕様・上限・検証](../../../crates/kbc-core/src/oc/docs/OC.md)。ノート・threadのURL削除と参加イベントの実OC網羅性は後続調査。
 
@@ -90,7 +90,7 @@ normalizeEventsのsourceはpush / chat / pollを区別する。MemberChangedに�
 
 ## 管理下OCのテスト操作（v8）
 
-Inspectはトークcacheを更新し、対象Botの現在roleと最大2メンバーのOC・MIDを確認する。RolesはROLE属性とrevisionでupdateSquareMembersを呼び、返値の変更対象・役割を確認する。Postはメンション付き通常投稿、Deleteは管理者削除。deliverActionは各API名に対応したSendAttemptを使い、実fetch直前のsending・30秒期限・unknownの契約を共有する。対象許可・引数・previewはRustに置く。既存の2配送・1照会・全RPC枠を共有し、背景APIを追加しない。[OCテストの仕様と検証](../../../crates/kbc-core/src/oc/docs/TEST_OC.md)。
+Inspectはトークcacheを更新し、対象Botの現在roleと最大2メンバーのOC・MIDを確認する。RolesはROLE属性とrevisionでupdateSquareMembersを呼び、返値の変更対象・役割を確認する。Postはメンション付き通常投稿、Deleteは管理者削除。deliverActionは各API名に対応したSendAttemptを使い、実fetch直前のsending・30秒期限・unknownの契約を共有する。対象許可・引数・previewはRustに置く。既存の2配送・2照会・全RPC枠を共有し、背景APIを追加しない。[OCテストの仕様と検証](../../../crates/kbc-core/src/oc/docs/TEST_OC.md)。
 
 2026-10-04、利用者向け文面を[共通カタログ](../../../crates/kbc-core/docs/MESSAGES.md)へ分離した。Protocol v14のSticker.textはCoreで設定した代替文をSTKTXTへ渡すための項目。旧保存Actionは従来の代替文へ復元し、NativeとAdapterを同時に更新する。
 
@@ -111,4 +111,6 @@ MessageMention.additionalの最大8件を先頭と合わせてMENTION.MENTIONEES
 
 ## 2026-10-08：独立した履歴取得と小分け削除
 
-Protocol v20のHistoryは採用LINEJS 3.4.2の生成Thrift定義でfetchSquareChatEventsへFORWARD/BACKWARD・inclusive・独立cursorを渡す。返すDTOは50イベント以内の件数とmessage ID / sender IDだけ。chatの親squareと各message.toを照合する。DeleteMessagesは同じsquareに属するchatへのdestroyMessagesで1〜20件の重複なしIDに限定。共通ApiSchedulerとsending境界を使い、構造化ILLEGAL_ARGUMENTだけfailedとしてCoreの件数縮小へ戻し、それ以外の通信後失敗はunknown。受信poll.sync・checkpoint・独自Queueは追加変更しない。[Coreの権限・走査状態・制約](../../../crates/kbc-core/src/oc/docs/REMOTE_MUTE.md)。
+Protocol v20のHistoryは採用LINEJS 3.4.2の生成Thrift定義でfetchSquareChatEventsへFORWARD/BACKWARD・inclusive・独立cursorを渡す。返すDTOは50イベント以内の件数とmessage ID / sender ID・投稿時刻。Protocol v21では参加者MID・参加イベント時刻も返す。notifiedJoinSquareChat、同じトークのJOINEDなnotifiedCreateSquareChatMember、同じOCのJOINEDなnotifiedCreateSquareMemberから取り出す。本文は渡さない。chatの親squareと各message.toを照合する。DeleteMessagesは同じsquareに属するchatへのdestroyMessagesで1〜20件の重複なしIDに限定。共通ApiSchedulerとsending境界を使い、構造化ILLEGAL_ARGUMENTだけfailedとしてCoreの件数縮小へ戻し、それ以外の通信後失敗はunknown。受信poll.sync・checkpoint・独自Queueは追加変更しない。[Coreの権限・走査状態・制約](../../../crates/kbc-core/src/oc/docs/REMOTE_MUTE.md)。
+
+2026-10-08、履歴削除による他OCの照会待ちを抑えるため照会loopを1本から2本へ変更した。個々のPurgeは結果保存後に次Actionを一つだけ生成するため、同じ履歴cursorを並列取得しない。全RPC共通ApiSchedulerの2並列・250ms・待機32件は維持し、Coreでは履歴・一覧のPurge読み取りを通常照会の後に選ぶ。LINEへのAPI制限値を増やす変更ではない。

@@ -50,7 +50,7 @@ smoke:ocはOC管理人・副官・BOT mod・一般参加者の拒否、BOT管理
 
 ### statusと保存
 
-`!bot status`は稼働・全体/個別停止設定・現在の稼働秒数・本人のBOT/OC権限・最終イベント受付・配送待ち/照会/配送中/unknown/素材準備・未同期ログ件数を表示する。情報はCoreの現在の状態。最終イベント受付は受信接続のheartbeatや受信健全性の証明ではない。旧版のNode heap / RSS、認証更新、再ログイン履歴、累計稼働時間、API Schedulerの内部情報はこの表示に含めず、旧計測値を新しく測ったようには扱わない。停止中はstartで再開後に確認する。HTTP・Timer・専用Workerは追加しない。
+`!bot status`は稼働・全体/個別停止設定・現在の稼働秒数・本人のBOT/OC権限・最終イベント受付・配送待ち/照会/配送中/unknown/素材準備・未同期ログ件数を表示する。情報はCoreの現在の状態。最終イベント受付は受信接続のheartbeatや受信健全性の証明ではない。旧版のNode heap / RSS、認証更新、再ログイン履歴、累計稼働時間、API Schedulerの内部情報はこの表示に含めず、旧計測値を新しく測ったようには扱わない。状態確認は停止・ミュート中も受け付け、保存済み情報だけで返す。LINEへのContext照会を行わず、本人のBOT権限はSQLite、OC権限は未取得と表示する。現在のOC権限が必要なら!bot setting statusを使う。HTTP・Timer・専用Workerは追加しない。
 
 permissions.jsonのSQUARE admin/mod、OC個別botStops、globalBotStopをCore起動時のtransactionで初回だけ取り込む。重複権限はadmin優先。実際のMIDはコード・公開repoへ埋め込まない。`bot_permissions_imported`で再取り込みを防ぎ、変更はSQLiteのbot_roles / bot_stopsを正本にする。毎分の既存暗号化GitHub snapshotに含める。旧settings/permissions.jsonへの書き戻しは行わず、旧版と新版はそれぞれ別の正本を持つ。再起動しても解除済みの権限を旧ファイルから復活させない。ローカルDB消失時は最後の成功したsnapshotから復元し、退避後の変更が失われ得る契約は従来どおり。
 
@@ -71,3 +71,5 @@ permissions.jsonのSQUARE admin/mod、OC個別botStops、globalBotStopをCore起
 一覧の観測名参照はOC/MIDの主キーで絞り、OCメンバー全件を候補ごとに走査しない。権限の最新判定はscope/memberの主キーを使うSQL一回となる。常駐HashMapよりSQL呼出が増えるが、変更・判定・応答の同じtransactionと再起動復元を優先する。停止した副官部屋へ審議promptを生成できない場合は、promptのない審議を保存しない。2026-10-06にnpm公開版3.4.2を再確認し、依存lockは変更していない。
 
 検証（2026-10-06）: build・TypeScript check・Clippy（workspace/all-targets/release/警告拒否）とRustテスト8件、OC・Command・文面・Persistence・SKD・受信配送・ログSmokeが通過した。OC Smokeで委任権限、遠隔操作、admin/modの降格と役割別解除、mMID登録のsMIDへの統合、解除後の再起動、status、個別/全体停止とstart allの独立性、停止中のログ継続を確認した。Rustの既存監視テストに、停止中の更新見送り・検知位置の保存・再開時の非再送と容量保持を加えた。実LINE APIへ変更・通知は送っていない。
+
+2026-10-08、bot_management::quick_statusはstatus単独を受信時に判定し、statusへ渡す。statusはstats_from_db・stop_state・rankを同じtransactionで読み、実行元へのtext_actionを登録する。通常のexecuteからも同じstatusを呼び、旧保存済みContext Jobに対応する。照会の滞留時も!pingと同じ通常配送経路へ応答を登録できる。送信API自体の障害・配送詰まりを回避できる保証ではない。オフライン検証では、未完了のContext照会を残した状態のo.bot statusと、個別停止中の!bot statusが追加LINE照会なしで応答した。
