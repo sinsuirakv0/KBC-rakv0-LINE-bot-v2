@@ -147,15 +147,28 @@ export class SquareDirectory {
       result.continuationToken = response.continuationToken || undefined;
     } else if (request.type === "members") {
       if (!["JOINED", "LEFT", "KICK_OUT", "BANNED"].includes(request.state)) throw new Error("InvalidMemberSearchState");
-      const response = await this.client.square.searchSquareMembers({ request: { squareMid: request.squareId,
-        searchOption: { membershipState: request.state as "JOINED" | "LEFT" | "KICK_OUT" | "BANNED", displayName: request.query,
-          memberRoles: [], ableToReceiveMessage: "NONE", ableToReceiveFriendRequest: "NONE", chatMidToExcludeMembers: "",
-          includingMe: true, excludeBlockedMembers: false, includingMeOnlyMatch: false },
-        limit: 20, continuationToken: request.continuationToken ?? undefined } });
-      if (!Array.isArray(response.members) || response.members.length > 20) throw new Error("InvalidMemberSearchPage");
-      result.members = response.members.map(memberDto);
+      let members: Member[], continuationToken: string | undefined;
+      if (request.chatMembers) {
+        if (request.state !== "JOINED" || request.query !== "") throw new Error("InvalidChatMemberSearch");
+        const chat = await this.chat(chatId);
+        if (chat.squareChat.squareMid !== request.squareId) throw new Error("ChatMemberScopeMismatch");
+        const response = await this.client.square.getSquareChatMembers({ squareChatMid: chatId,
+          limit: 20, continuationToken: request.continuationToken ?? undefined });
+        members = response.squareChatMembers;
+        continuationToken = response.continuationToken;
+      } else {
+        const response = await this.client.square.searchSquareMembers({ request: { squareMid: request.squareId,
+          searchOption: { membershipState: request.state as "JOINED" | "LEFT" | "KICK_OUT" | "BANNED", displayName: request.query,
+            memberRoles: [], ableToReceiveMessage: "NONE", ableToReceiveFriendRequest: "NONE", chatMidToExcludeMembers: "",
+            includingMe: true, excludeBlockedMembers: false, includingMeOnlyMatch: false },
+          limit: 20, continuationToken: request.continuationToken ?? undefined } });
+        members = response.members;
+        continuationToken = response.continuationToken;
+      }
+      if (!Array.isArray(members) || members.length > 20) throw new Error("InvalidMemberSearchPage");
+      result.members = members.map(memberDto);
       if (result.members.some(member => member.squareId !== request.squareId)) throw new Error("MemberSearchScopeMismatch");
-      result.continuationToken = response.continuationToken || undefined;
+      result.continuationToken = continuationToken || undefined;
     } else if (request.type === "membership") {
       if (!["BANNED", "KICK_OUT"].includes(request.state)) throw new Error("InvalidMembershipState");
       const response = await this.client.square.updateSquareMember({ request: { updatedAttrs: [5], updatedPreferenceAttrs: [],

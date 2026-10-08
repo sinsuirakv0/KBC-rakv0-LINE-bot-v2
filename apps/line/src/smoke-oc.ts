@@ -49,7 +49,18 @@ client.square.getSquareMember = async ({ squareMemberMid }) => {
   return { squareMember: member(squareMemberMid) } as Awaited<ReturnType<typeof client.square.getSquareMember>>;
 };
 let idSearchMembers = [user];
-client.square.searchSquareMembers = async () => ({ members: idSearchMembers.map(member) }) as Awaited<ReturnType<typeof client.square.searchSquareMembers>>;
+let idSearchFilterMiss = false;
+const idSearchQueries: string[] = [];
+client.square.searchSquareMembers = async options => {
+  const query = options?.request?.searchOption?.displayName ?? "";
+  idSearchQueries.push(query);
+  return { members: idSearchFilterMiss && query ? [] : idSearchMembers.map(member) } as Awaited<ReturnType<typeof client.square.searchSquareMembers>>;
+};
+const chatMemberCalls: string[] = [];
+client.square.getSquareChatMembers = async options => {
+  assert.equal(options.limit, 20); chatMemberCalls.push(options.squareChatMid);
+  return { squareChatMembers: idSearchMembers.map(member) } as Awaited<ReturnType<typeof client.square.getSquareChatMembers>>;
+};
 client.square.updateSquareMember = async options => gate.run("updateSquareMember", async () => {
   const updated = options?.request?.squareMember; assert(updated?.squareMemberMid);
   const profile = options?.request?.updatedAttrs?.includes("DISPLAY_NAME");
@@ -420,6 +431,24 @@ try {
   assert.equal(emojiSends.length, 0);
   await message("!id reply", user, sourceId); assert(texts(await drain()).includes(`元トークMID: ${sub}`));
   await message("!id 参加者", user); assert(texts(await drain()).includes(user));
+  // サーバーの名前フィルタが0件でも、有限な一覧取得とローカルの部分一致で解決する。
+  const healthMember = "p" + "123".padStart(32, "0"); names.set(healthMember, "健康おじさん");
+  idSearchMembers = [healthMember]; idSearchFilterMiss = true;
+  for (const query of ["健", "おじ"]) {
+    const before = idSearchQueries.length, beforeChat = chatMemberCalls.length;
+    await message(`!id ${query} log`, user); const result = texts(await drain());
+    assert(result.includes(healthMember) && result.includes("健康おじさん"));
+    assert.deepEqual(idSearchQueries.slice(before), [query]);
+    assert.deepEqual(chatMemberCalls.slice(beforeChat), [chat]);
+    assert(result.includes("APIからの取得件数: 1"));
+  }
+  // 投稿由来の名前は参加状態が未確認でも候補にし、JOINEDとは表示しない。
+  db.prepare("INSERT OR REPLACE INTO log_members VALUES(?,?,?,?,?)").run(square, healthMember, "健康おじさん", Date.now(), "");
+  idSearchMembers = [];
+  await message("!id おじ", user); const observedName = texts(await drain());
+  assert(observedName.includes(healthMember) && observedName.includes("状態: 未取得"));
+  db.prepare("DELETE FROM log_members WHERE square=? AND member=?").run(square, healthMember);
+  idSearchFilterMiss = false;
   // メンションなしの名前検索と、送信確定前後・再起動を跨ぐ本人選択。
   idSearchMembers = Array.from({ length: 16 }, (_, index) => "p" + (100 + index).toString(16).padStart(32, "0"));
   idSearchMembers.forEach((id, index) => names.set(id, `候補🙂${index + 1}`));

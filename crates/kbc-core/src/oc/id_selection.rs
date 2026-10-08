@@ -36,7 +36,11 @@ fn page(value: &Selection, messages: &crate::messages::Messages) -> String {
                 number = index + 1,
                 name = name,
                 member = member.member_id,
-                state = member.state
+                state = if member.state.is_empty() {
+                    message!(messages, "common.unavailable")
+                } else {
+                    &member.state
+                }
             )
         })
         .collect::<Vec<_>>()

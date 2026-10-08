@@ -1,7 +1,7 @@
 ﻿use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTOCOL_VERSION: u32 = 18;
+pub const PROTOCOL_VERSION: u32 = 19;
 
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -299,6 +299,9 @@ pub enum OcRequest {
         continuation_token: Option<String>,
     },
     Members {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        chat_members: Option<bool>,
         square_id: String,
         query: String,
         state: String,

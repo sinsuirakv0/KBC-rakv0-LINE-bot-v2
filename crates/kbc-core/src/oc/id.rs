@@ -15,6 +15,10 @@ pub(super) struct Lookup {
     pages: usize,
     continuation_token: Option<String>,
     members: Vec<OcMember>,
+    #[serde(default)]
+    fallback: bool,
+    #[serde(default)]
+    scanned: usize,
 }
 #[derive(Serialize, Deserialize)]
 struct MessageRef {
@@ -194,7 +198,11 @@ fn person(message_catalog: &crate::messages::Messages, member: &OcMember) -> Str
         "id.person_01",
         arg0 = member.name,
         arg1 = member.member_id,
-        arg2 = member.state
+        arg2 = if member.state.is_empty() {
+            message!(message_catalog, "common.unavailable")
+        } else {
+            &member.state
+        }
     )
 }
 fn normalized(text: &str) -> String {
@@ -328,7 +336,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
         .collect::<std::result::Result<Vec<_>, _>>()?;
     let mut members = Vec::new();
     for (member_id, name, state) in cached {
-        if matches_name(&name, &query) && (old || state == "JOINED") {
+        if matches_name(&name, &query) && (old || matches!(state.as_str(), "" | "JOINED" | "2")) {
             members.push(OcMember {
                 member_id,
                 name,
@@ -350,6 +358,8 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
         pages: 0,
         continuation_token: None,
         members,
+        fallback: false,
+        scanned: 0,
     });
     search_page(tx, job, now)
 }
@@ -374,13 +384,18 @@ fn search_page(tx: &Transaction<'_>, job: &mut Job, now: i64) -> Result<()> {
         _ => "JOINED",
     };
     let api = OcRequest::Members {
+        chat_members: (lookup.fallback && state == "JOINED").then_some(true),
         square_id: job
             .context
             .as_ref()
             .ok_or("MissingIdContext")?
             .square_id
             .clone(),
-        query: lookup.query.nfkc().collect(),
+        query: if lookup.fallback {
+            String::new()
+        } else {
+            lookup.query.nfkc().collect()
+        },
         state: state.into(),
         continuation_token: lookup.continuation_token.clone(),
     };
@@ -443,6 +458,7 @@ pub fn complete(
         }
     }
     lookup.pages += 1;
+    lookup.scanned += response.members.len();
     let continued = response
         .continuation_token
         .as_ref()
@@ -451,9 +467,16 @@ pub fn complete(
         lookup.continuation_token = response.continuation_token.clone();
         return search_page(tx, job, now);
     }
+    // LINE側の名前絞り込みで候補が得られない場合だけ、残りの取得枠で一覧を照合する。
+    if !lookup.fallback && lookup.members.is_empty() && lookup.pages < 4 {
+        lookup.fallback = true;
+        lookup.continuation_token = None;
+        return search_page(tx, job, now);
+    }
     if lookup.old && lookup.state_index < 3 && lookup.members.len() < 20 {
         lookup.state_index += 1;
         lookup.pages = 0;
+        lookup.fallback = false;
         lookup.continuation_token = None;
         return search_page(tx, job, now);
     }
@@ -467,7 +490,8 @@ pub fn complete(
             "id.complete_09",
             arg0 = lookup.state_index + 1,
             arg1 = lookup.pages,
-            arg2 = lookup.members.len()
+            arg2 = lookup.members.len(),
+            arg3 = lookup.scanned
         ));
     }
     if lookup.members.len() > 1 {
