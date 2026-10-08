@@ -1,7 +1,7 @@
 ﻿use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub const PROTOCOL_VERSION: u32 = 19;
+pub const PROTOCOL_VERSION: u32 = 20;
 
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -313,6 +313,16 @@ pub enum OcRequest {
         revision: String,
         state: String,
     },
+    History {
+        square_id: String,
+        backward: bool,
+        sync_token: Option<String>,
+        continuation_token: Option<String>,
+    },
+    DeleteMessages {
+        square_id: String,
+        message_ids: Vec<String>,
+    },
     Profile {
         square_id: String,
         member_id: String,
@@ -361,6 +371,7 @@ impl OcRequest {
                 | Self::Chats { .. }
                 | Self::JoinedChats { .. }
                 | Self::Members { .. }
+                | Self::History { .. }
         )
     }
 }
@@ -399,6 +410,9 @@ pub struct OcChat {
 pub struct OcResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
+    pub history: Option<OcHistoryPage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub reaction: Option<OcReaction>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -419,6 +433,22 @@ pub struct OcResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub continuation_token: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct OcHistoryPage {
+    pub event_count: u32,
+    pub messages: Vec<OcHistoryMessage>,
+    pub sync_token: String,
+    pub continuation_token: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct OcHistoryMessage {
+    pub message_id: String,
+    pub sender_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]

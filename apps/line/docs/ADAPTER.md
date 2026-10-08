@@ -46,7 +46,7 @@ LINEJSの最新公開版は2026-10-03のnpm再確認でも3.4.2。npm配布物re
 
 ## Commandの追加境界
 
-Protocol v19。通常返信の実送信IDをCoreへ渡し、候補promptへ結び付ける。管理者削除はsquare.destroyMessageへ渡し、新しい返信成功後に実行する。OCのメディアはoid省略のOBS reqseq upload自身が投稿し、空のIMAGE/VIDEOを先に送らない。画像・動画・GIF・ファイルの素材準備はRust共通Worker、BlobとLINEJS入出力はAdapterが扱う。uploadMediaも共通API枠・実fetch直前のsending記録を通し、HTTP statusを共通transportで検査する。動画durationはCoreの実Frame数から渡す。メディア自体はrelatedMessageId付き返信にならない。通信後の不明結果はunknownで自動再投稿しない。[Media Worker](../../../crates/kbc-core/docs/MEDIA.md) と [実素材実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) を参照。
+Protocol v20。通常返信の実送信IDをCoreへ渡し、候補promptへ結び付ける。管理者削除はsquare.destroyMessageへ渡し、新しい返信成功後に実行する。OCのメディアはoid省略のOBS reqseq upload自身が投稿し、空のIMAGE/VIDEOを先に送らない。画像・動画・GIF・ファイルの素材準備はRust共通Worker、BlobとLINEJS入出力はAdapterが扱う。uploadMediaも共通API枠・実fetch直前のsending記録を通し、HTTP statusを共通transportで検査する。動画durationはCoreの実Frame数から渡す。メディア自体はrelatedMessageId付き返信にならない。通信後の不明結果はunknownで自動再投稿しない。[Media Worker](../../../crates/kbc-core/docs/MEDIA.md) と [実素材実験](../../../experiments/commands/docs/MEDIA_VERIFICATION.md) を参照。
 
 通知47のNICE / LOVEは既存ProtocolのReactionNotifiedへ正規化するが、ページ操作には使わない。利用者指定でリアクション方式を廃止し、一覧へのテキストリプライへ戻した。SquareDirectoryは旧snapshotのReactions要求を外部通信なしで完了し、getMessageReactionsを呼ばない。[旧案の調査・スタンプの仕様と未確認点](REACTIONS_AND_STICKERS.md)。
 
@@ -108,3 +108,7 @@ MessageMention.additionalの最大8件を先頭と合わせてMENTION.MENTIONEES
 
 
 2026-10-08、Protocol v19のMembers.chatMembers=trueではgetSquareChatMembersを実行トーク・20人/ページで取得する。JOINEDと空queryに限定し、親OCと返却memberの所属を確認する。未指定は従来のsearchSquareMembers。判断・補完回数・名前照合・候補選択は[Core](../../../crates/kbc-core/src/oc/docs/ID.md)に置き、独自Queue・cache・常時巡回を追加しない。
+
+## 2026-10-08：独立した履歴取得と小分け削除
+
+Protocol v20のHistoryは採用LINEJS 3.4.2の生成Thrift定義でfetchSquareChatEventsへFORWARD/BACKWARD・inclusive・独立cursorを渡す。返すDTOは50イベント以内の件数とmessage ID / sender IDだけ。chatの親squareと各message.toを照合する。DeleteMessagesは同じsquareに属するchatへのdestroyMessagesで1〜20件の重複なしIDに限定。共通ApiSchedulerとsending境界を使い、構造化ILLEGAL_ARGUMENTだけfailedとしてCoreの件数縮小へ戻し、それ以外の通信後失敗はunknown。受信poll.sync・checkpoint・独自Queueは追加変更しない。[Coreの共通Outbox](../../../crates/kbc-core/src/oc/docs/OC.md)。

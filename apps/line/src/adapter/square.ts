@@ -1,5 +1,6 @@
 ﻿import type { BaseClient } from "@evex/linejs/base";
 import type { OcRequest } from "../protocol/generated/OcRequest.js";
+import { LINEStruct } from "@evex/linejs/thrift";
 import type { OcResult } from "../protocol/generated/OcResult.js";
 import type { OcMember } from "../protocol/generated/OcMember.js";
 import type { OcChat } from "../protocol/generated/OcChat.js";
@@ -99,6 +100,34 @@ export class SquareDirectory {
       const member = (await this.client.square.getSquareMember({ squareMemberMid: request.memberId })).squareMember;
       result.member = memberDto(member);
       result.rawMemberName = member.displayName;
+    } else if (request.type === "history") {
+      const chat = await this.chat(chatId);
+      if (chat.squareChat.squareMid !== request.squareId) throw new Error("HistoryScopeMismatch");
+      if ((request.syncToken?.length ?? 0) > 2048 || (request.continuationToken?.length ?? 0) > 2048) throw new Error("HistoryCursorLimit");
+      // 履歴用cursorは通常受信のcheckpointやSDKのpoll.syncへ戻さない。
+      const response: Awaited<ReturnType<BaseClient["square"]["fetchSquareChatEvents"]>> = await this.client.request.request(
+        LINEStruct.SquareService_fetchSquareChatEvents_args({ request: { squareChatMid: chatId,
+          direction: request.backward ? "BACKWARD" : "FORWARD", inclusive: request.backward ? "ON" : undefined,
+          fetchType: "DEFAULT", limit: 50, syncToken: request.syncToken ?? "",
+          continuationToken: request.continuationToken ?? undefined } }), "fetchSquareChatEvents", this.client.square.protocolType, true, this.client.square.requestPath);
+      if (!Array.isArray(response.events) || response.events.length > 50 || typeof response.syncToken !== "string"
+          || response.syncToken.length > 2048 || (response.continuationToken != null && typeof response.continuationToken !== "string")
+          || (response.continuationToken?.length ?? 0) > 2048) throw new Error("InvalidHistoryPage");
+      const messages = response.events.flatMap(event => {
+        const payload = event.payload;
+        const value = (payload?.receiveMessage ?? payload?.sendMessage ?? payload?.notificationMessage)?.squareMessage?.message;
+        if (!value) return [];
+        // 本人pMIDに結び付かないシステム通知は削除候補へ入れない。
+        if (typeof value.from !== "string" || !/^p[0-9a-f]{8,63}$/i.test(value.from)) return [];
+        if (value.to !== chatId || typeof value.id !== "string" || !/^[0-9]{1,32}$/.test(value.id)) throw new Error("InvalidHistoryMessage");
+        return [{ messageId: value.id, senderId: value.from }];
+      });
+      result.history = { eventCount: response.events.length, messages, syncToken: response.syncToken, continuationToken: response.continuationToken || null };
+    } else if (request.type === "deleteMessages") {
+      const chat = await this.chat(chatId);
+      if (chat.squareChat.squareMid !== request.squareId || !request.messageIds.length || request.messageIds.length > 20
+          || new Set(request.messageIds).size !== request.messageIds.length || request.messageIds.some(id => !/^[0-9]{1,32}$/.test(id))) throw new Error("InvalidHistoryDeletion");
+      await this.client.square.destroyMessages({ request: { squareChatMid: chatId, messageIds: request.messageIds } });
     } else if (request.type === "inspect") {
       if (!/^m[0-9a-f]{8,63}$/i.test(request.chatId) || request.memberIds.length > 9
           || request.memberIds.some(id => !/^p[0-9a-f]{8,63}$/i.test(id))) throw new Error("InvalidInspectionTarget");
