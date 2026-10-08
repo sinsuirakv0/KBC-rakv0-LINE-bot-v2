@@ -250,6 +250,19 @@
   "common.unavailable": [],
   "common.unknown": [],
   "common.unlimited": [],
+  "id.choice": [
+    "number",
+    "name",
+    "member",
+    "state"
+  ],
+  "id.choices": [
+    "page",
+    "pages",
+    "lines",
+    "navigation",
+    "footer"
+  ],
   "id.complete_01": [],
   "id.complete_02": [
     "arg0",

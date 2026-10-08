@@ -2,6 +2,10 @@
 use crate::messages::message;
 use unicode_normalization::UnicodeNormalization;
 
+#[path = "id_selection.rs"]
+mod selection;
+pub(crate) use selection::select;
+
 #[derive(Serialize, Deserialize)]
 pub(super) struct Lookup {
     query: String,
@@ -453,21 +457,12 @@ pub fn complete(
         lookup.continuation_token = None;
         return search_page(tx, job, now);
     }
-    let mut text = if lookup.members.is_empty() {
-        message!(message_catalog, "id.complete_07").into()
-    } else {
-        lookup
-            .members
-            .iter()
-            .map(|member| person(message_catalog, member))
-            .collect::<Vec<_>>()
-            .join("\n\n")
-    };
+    let mut footer = String::new();
     if continued || lookup.members.len() >= 20 {
-        text.push_str(message!(message_catalog, "id.complete_08"));
+        footer.push_str(message!(message_catalog, "id.complete_08"));
     }
     if lookup.debug {
-        text.push_str(&message!(
+        footer.push_str(&message!(
             message_catalog,
             "id.complete_09",
             arg0 = lookup.state_index + 1,
@@ -475,7 +470,15 @@ pub fn complete(
             arg2 = lookup.members.len()
         ));
     }
-    reply(tx, job, text, now)
+    if lookup.members.len() > 1 {
+        let members = std::mem::take(&mut lookup.members);
+        return selection::start(message_catalog, tx, job, members, footer, now);
+    }
+    let text = lookup.members.first().map_or_else(
+        || message!(message_catalog, "id.complete_07").into(),
+        |member| person(message_catalog, member),
+    );
+    reply(tx, job, format!("{text}{footer}"), now)
 }
 fn message_reference(
     tx: &Transaction<'_>,

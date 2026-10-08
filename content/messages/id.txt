@@ -29,3 +29,6 @@ id.message_info_05 = "元メッセージの返信先ID: {related}\nservice: {arg
 id.message_info_06 = "元トーク・送信者は未観測です。直近48時間・8,192件までの受信済み情報を参照します。"
 id.person_01 = "ユーザーID\n名前: {arg0}\nMID: {arg1}\n状態: {arg2}"
 id.square = "OC ID\nMID: {square}"
+
+id.choices = "メンバーを選択してください（{page}/{pages}ページ）\n{lines}\n\nこの一覧へのリプライで1〜10：IDを表示\n{navigation}\n終了：受付を終える{footer}"
+id.choice = "{number}. {name}（{state}）\nMID: {member}"

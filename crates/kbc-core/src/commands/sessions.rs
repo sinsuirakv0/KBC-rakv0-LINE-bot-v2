@@ -183,6 +183,21 @@ fn apply_inner(
                 return Ok(Vec::new());
             };
             if tx.query_row(
+                "SELECT revision='id-v1' FROM sessions WHERE id=?1",
+                [&id],
+                |row| row.get::<_, bool>(0),
+            )? {
+                return crate::oc::select_id(
+                    tx,
+                    event,
+                    &id,
+                    &payload,
+                    pending.is_some(),
+                    message_catalog,
+                    now,
+                );
+            }
+            if tx.query_row(
                 "SELECT revision IN ('event-v1','push-v1') FROM sessions WHERE id=?1",
                 [&id],
                 |r| r.get::<_, bool>(0),

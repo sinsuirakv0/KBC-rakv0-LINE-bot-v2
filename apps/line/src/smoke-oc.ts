@@ -48,7 +48,8 @@ client.square.getSquareMember = async ({ squareMemberMid }) => {
   if (failedNameLookups.has(squareMemberMid)) throw new Error("NameLookupUnavailable");
   return { squareMember: member(squareMemberMid) } as Awaited<ReturnType<typeof client.square.getSquareMember>>;
 };
-client.square.searchSquareMembers = async () => ({ members: [member(user)] }) as Awaited<ReturnType<typeof client.square.searchSquareMembers>>;
+let idSearchMembers = [user];
+client.square.searchSquareMembers = async () => ({ members: idSearchMembers.map(member) }) as Awaited<ReturnType<typeof client.square.searchSquareMembers>>;
 client.square.updateSquareMember = async options => gate.run("updateSquareMember", async () => {
   const updated = options?.request?.squareMember; assert(updated?.squareMemberMid);
   const profile = options?.request?.updatedAttrs?.includes("DISPLAY_NAME");
@@ -419,6 +420,39 @@ try {
   assert.equal(emojiSends.length, 0);
   await message("!id reply", user, sourceId); assert(texts(await drain()).includes(`元トークMID: ${sub}`));
   await message("!id 参加者", user); assert(texts(await drain()).includes(user));
+  // メンションなしの名前検索と、送信確定前後・再起動を跨ぐ本人選択。
+  idSearchMembers = Array.from({ length: 16 }, (_, index) => "p" + (100 + index).toString(16).padStart(32, "0"));
+  idSearchMembers.forEach((id, index) => names.set(id, `候補🙂${index + 1}`));
+  await message("o.id 候補", user); const candidates = await drain();
+  const firstList = candidates.find(action => action.type === "sendMessage" && action.isPrompt);
+  assert(firstList?.type === "sendMessage"); assert.equal(firstList.mention, undefined); assert.equal(firstList.relatedMessageId, "");
+  assert(firstList.text.includes("1/2ページ") && firstList.text.includes("候補🙂10") && !firstList.text.includes("候補🙂11"));
+  assert(firstList.text.length <= 1500);
+  const idPrompt = () => (db.prepare("SELECT prompt FROM sessions WHERE chat=? AND owner=? AND revision='id-v1'").get(chat, user) as { prompt: string }).prompt;
+  const original = idPrompt();
+  await message("1", co, original); assert.equal((await drain()).length, 0);
+  await message("1", user); assert.equal((await drain()).length, 0);
+  await message("3p", user, original); assert(texts(await drain()).includes("ページ")); assert.equal(idPrompt(), original);
+  await message("次", user, original); const heldPage = await core.nextAction();
+  assert(heldPage?.type === "sendMessage" && heldPage.isPrompt);
+  await message("1", user, original);
+  assert(db.prepare("SELECT pending_payload FROM sessions WHERE chat=? AND owner=?").get(chat, user));
+  core.completeAction({ actionId: heldPage.actionId, status: "failed", code: "BeforeTransport" });
+  const waiting = texts(await drain()); assert(waiting.includes("一覧を切り替え")); assert.equal(idPrompt(), original);
+  await message("2p", user, original); const secondPage = await drain();
+  assert(texts(secondPage).includes("2/2ページ") && texts(secondPage).includes("候補🙂11"));
+  assert(secondPage.some(action => action.type === "deleteMessage" && action.messageId === original));
+  const latest = idPrompt(); assert.notEqual(latest, original);
+  core.shutdown(); core = createCore(config);
+  await message("1", user, original); assert.equal((await drain()).length, 0);
+  await message("1", user, latest); const selectedMember = await drain();
+  assert(texts(selectedMember).includes(idSearchMembers[10]!) && texts(selectedMember).includes("ユーザーID"));
+  assert(selectedMember.filter(action => action.type === "sendMessage").every(action => !action.mention && !action.relatedMessageId));
+  assert(!db.prepare("SELECT 1 FROM sessions WHERE chat=? AND owner=?").get(chat, user));
+  await message("!id 候補", user); await drain(); const cancelPrompt = idPrompt();
+  await message("終了", user, cancelPrompt); await drain();
+  assert(!db.prepare("SELECT 1 FROM sessions WHERE chat=? AND owner=?").get(chat, user));
+  idSearchMembers = [user];
   // 旧権限区分、本人への番号返信、照会待ちの通常配送と再起動。
   await message(`o.oc kick ${user}`, admin); assert(texts(await drain()).includes("実行権限"));
   await message("o.oc setup", mod); assert(texts(await drain()).includes("実行権限"));

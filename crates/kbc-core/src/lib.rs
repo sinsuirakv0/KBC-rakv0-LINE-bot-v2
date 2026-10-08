@@ -411,7 +411,7 @@ impl Runtime {
                 } = event
                 {
                     reply_to_message_id.is_some() && tx.query_row(
-                        "SELECT EXISTS(SELECT 1 FROM sessions WHERE chat=?1 AND owner=?2 AND prompt=?3 AND expires>?4 AND revision NOT IN ('event-v1','push-v1'))",
+                        "SELECT EXISTS(SELECT 1 FROM sessions WHERE chat=?1 AND owner=?2 AND prompt=?3 AND expires>?4 AND revision NOT IN ('event-v1','push-v1','id-v1'))",
                         params![chat_id, sender_id, reply_to_message_id, now], |row| row.get::<_, bool>(0))?
                 } else {
                     false

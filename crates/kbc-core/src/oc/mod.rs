@@ -3,6 +3,7 @@ mod bot;
 mod bot_management;
 mod commands;
 mod id;
+pub(crate) use id::select as select_id;
 mod legacy;
 mod moderation;
 mod policy;
