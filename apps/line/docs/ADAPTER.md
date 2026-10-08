@@ -114,3 +114,8 @@ MessageMention.additionalの最大8件を先頭と合わせてMENTION.MENTIONEES
 Protocol v20のHistoryは採用LINEJS 3.4.2の生成Thrift定義でfetchSquareChatEventsへFORWARD/BACKWARD・inclusive・独立cursorを渡す。返すDTOは50イベント以内の件数とmessage ID / sender ID・投稿時刻。Protocol v21では参加者MID・参加イベント時刻も返す。notifiedJoinSquareChat、同じトークのJOINEDなnotifiedCreateSquareChatMember、同じOCのJOINEDなnotifiedCreateSquareMemberから取り出す。本文は渡さない。chatの親squareと各message.toを照合する。DeleteMessagesは同じsquareに属するchatへのdestroyMessagesで1〜20件の重複なしIDに限定。共通ApiSchedulerとsending境界を使い、構造化ILLEGAL_ARGUMENTだけfailedとしてCoreの件数縮小へ戻し、それ以外の通信後失敗はunknown。受信poll.sync・checkpoint・独自Queueは追加変更しない。[Coreの権限・走査状態・制約](../../../crates/kbc-core/src/oc/docs/REMOTE_MUTE.md)。
 
 2026-10-08、履歴削除による他OCの照会待ちを抑えるため照会loopを1本から2本へ変更した。個々のPurgeは結果保存後に次Actionを一つだけ生成するため、同じ履歴cursorを並列取得しない。全RPC共通ApiSchedulerの2並列・250ms・待機32件は維持し、Coreでは履歴・一覧のPurge読み取りを通常照会の後に選ぶ。LINEへのAPI制限値を増やす変更ではない。
+
+
+## 2026-10-09：稼働状態の共有計測
+
+Protocol v22のRuntimeMonitorは既存60秒metrics Timerへ接続し、cgroup CPU/メモリを計測する。mainの照会・配送loop数は共通定数から起動と表示へ渡す。ApiScheduler.snapshotで待機・実行枠・制限待機を取得し、createCoreはBatch受付前に型付きDTOをNativeへ渡す。healthとmetricsも同じsnapshotを使う。LINE照会・受信cursor・RPCの並列数は変更しない。[値の意味と全関数](RUNTIME_STATUS.md)。

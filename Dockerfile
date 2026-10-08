@@ -15,6 +15,10 @@ RUN npm prune --omit=dev --ignore-scripts
 FROM node:24-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
+ARG NF_GIT_BRANCH
+ARG NF_GIT_SHA
+ENV BOT_BUILD_BRANCH=$NF_GIT_BRANCH
+ENV BOT_BUILD_COMMIT=$NF_GIT_SHA
 WORKDIR /app
 COPY --from=adapter /build/node_modules ./node_modules
 COPY --from=adapter /build/dist ./dist

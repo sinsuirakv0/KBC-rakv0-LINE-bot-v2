@@ -29,6 +29,14 @@ if (process.argv[2] === "generate") {
   if (!library) throw new Error("Unsupported platform");
   mkdirSync(resolve(root, "native"), { recursive: true });
   copyFileSync(resolve(root, "target/release", library), resolve(root, "native/kbc_node.node"));
+  const git = (...args) => {
+    const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+    return result.status === 0 ? result.stdout.trim() : undefined;
+  };
+  writeFileSync(resolve(root, "native/build-info.json"), JSON.stringify({
+    branch: git("branch", "--show-current"), commit: git("rev-parse", "HEAD"),
+    dirty: Boolean(git("status", "--porcelain", "--untracked-files=no")),
+  }));
   if (host?.endsWith("-gnullvm")) {
     copyFileSync(resolve(rustc("--print", "sysroot"), "lib/rustlib", host, "bin/libunwind.dll"), resolve(root, "native/libunwind.dll"));
   }

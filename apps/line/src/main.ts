@@ -10,6 +10,10 @@ import { ApiScheduler, errorCode, installApiScheduler } from "./adapter/api.js";
 import { Receiver } from "./adapter/receiver.js";
 import { deliverAction } from "./adapter/delivery.js";
 import { createCore, type NativeCore } from "./protocol/native.js";
+import { RuntimeMonitor } from "./adapter/runtime.js";
+
+const QUERY_WORKERS = 2;
+const DELIVERY_WORKERS = 2;
 
 function integerSetting(name: string, fallback: number, min: number, max: number): number {
   const value = Number(process.env[name] ?? fallback);
@@ -50,6 +54,9 @@ async function main(): Promise<void> {
   let core: NativeCore | undefined;
   let receiver: Receiver | undefined;
   let logs: LogSync | undefined;
+  const monitor = new RuntimeMonitor(gate, QUERY_WORKERS, DELIVERY_WORKERS,
+    () => ({ state: receiver?.status ?? "starting", chats: receiver?.metrics.listedChats ?? 0 }));
+  await monitor.initialize();
   let started = false;
   let shutdownTimer: NodeJS.Timeout | undefined;
   const deliveries = { sent: 0, failed: 0, unknown: 0, queued: 0, maxQueueWaitMs: 0 };
@@ -67,19 +74,18 @@ async function main(): Promise<void> {
     response.end(JSON.stringify({ state: receiver?.status ?? "starting", core: core?.stats(), api: gate.metrics,
       receiver: receiver?.metrics, deliveries, backup: persistence?.metrics,
       logs: logs?.metrics, searchData: searchData.metrics,
-      rssBytes: process.memoryUsage().rss, uptimeSeconds: process.uptime() }));
+      runtime: monitor.snapshot(), rssBytes: process.memoryUsage().rss, uptimeSeconds: process.uptime() }));
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(integerSetting("PORT", 3000, 1, 65535), "0.0.0.0", resolve);
   });
-  const cpuStart = process.cpuUsage();
-  const wallStart = Date.now();
   const metricsTimer = setInterval(() => {
-    const cpu = process.cpuUsage(cpuStart);
-    console.log(JSON.stringify({ kind: "metrics", state: receiver?.status, core: core?.stats(), api: gate.metrics,
-      receiver: receiver?.metrics, deliveries, cpuCorePercent: (cpu.user + cpu.system) / ((Date.now() - wallStart) * 10),
-      searchData: searchData.metrics, memory: process.memoryUsage() }));
+    void monitor.refresh().then(() => {
+      console.log(JSON.stringify({ kind: "metrics", state: receiver?.status, core: core?.stats(), api: gate.metrics,
+        receiver: receiver?.metrics, deliveries, runtime: monitor.snapshot(),
+        cpuCorePercent: monitor.snapshot().cpuCorePercent, searchData: searchData.metrics, memory: process.memoryUsage() }));
+    }).catch(error => console.error(JSON.stringify({ kind: "runtimeMetricsFailure", code: errorCode(error) })));
   }, 60000);
   const tasks: Promise<void>[] = [];
   try {
@@ -94,7 +100,7 @@ async function main(): Promise<void> {
       permissionsPath, legacyOcSettingsPath,
       ffmpegPath: process.env.FFMPEG_PATH?.trim() || (process.platform === "linux" ? "/usr/bin/ffmpeg" : undefined),
       motionRemoteUrl: process.env.MOTION_REMOTE_URL?.trim() || undefined,
-      motionRemoteSecret: process.env.MOTION_REMOTE_SECRET?.trim() || undefined });
+      motionRemoteSecret: process.env.MOTION_REMOTE_SECRET?.trim() || undefined }, () => monitor.snapshot());
     const directory = new SquareDirectory(client);
     receiver = new Receiver(client, core, gate, controller.signal, directory);
     const activeCore = core;
@@ -112,7 +118,8 @@ async function main(): Promise<void> {
       }
     };
     started = true;
-    tasks.push(receiver.run(), deliver(), deliver(), deliver(true), deliver(true), activeCore.runMediaJobs(), activeCore.runStoreMonitors());
+    tasks.push(receiver.run(), ...Array.from({ length: DELIVERY_WORKERS }, () => deliver()),
+      ...Array.from({ length: QUERY_WORKERS }, () => deliver(true)), activeCore.runMediaJobs(), activeCore.runStoreMonitors());
     tasks.push(searchData.run(controller.signal));
     if (persistence) tasks.push(persistence.run(activeCore, controller.signal));
     if (logs) tasks.push(logs.run(controller.signal));

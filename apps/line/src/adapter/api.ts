@@ -10,6 +10,7 @@ export function errorCode(error: unknown): string {
 }
 
 type Job = { execute: () => Promise<unknown>; resolve: (value: unknown) => void; reject: (error: unknown) => void };
+const MAX_API_QUEUE = 32;
 export type SendAttempt = { started: boolean; method?: "sendMessage" | "sendSquareThreadMessage" | "destroyMessage" | "destroyMessages" | "uploadMedia" | "updateSquareMember" | "updateSquareMembers" | "reportSquareMessage"; beforeSend: () => void };
 
 export class ApiScheduler {
@@ -26,6 +27,12 @@ export class ApiScheduler {
     signal.addEventListener("abort", () => {
       for (const job of this.queue.splice(0)) job.reject(new Error("Stopping"));
     }, { once: true });
+  }
+
+  snapshot() {
+    return { apiQueued: this.queue.length, apiQueueCapacity: MAX_API_QUEUE, apiActive: this.active,
+      apiConcurrency: this.concurrency, apiCooldownMs: Math.max(0, this.cooldownUntil - Date.now()),
+      apiRateLimits: this.metrics.rateLimits };
   }
 
   async run<T>(method: string, operation: () => Promise<T>): Promise<T> {
@@ -49,7 +56,7 @@ export class ApiScheduler {
     };
     // SDKのtoken更新・再要求は親RPCの枠内で順に動くため、二重に枠を取らない。
     if (this.scope.getStore()) return execute();
-    if (this.queue.length >= 32) throw Object.assign(new Error("ApiQueueFull"), { code: "ApiQueueFull" });
+    if (this.queue.length >= MAX_API_QUEUE) throw Object.assign(new Error("ApiQueueFull"), { code: "ApiQueueFull" });
     // 空いた枠を起こす別RPCのContextではなく、この要求の送信境界を引き継ぐ。
     const attempt = this.sendScope.getStore();
     return new Promise<T>((resolve, reject) => {

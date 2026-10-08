@@ -99,3 +99,6 @@ Protocol v20。遠隔OCのInspectとOC全体の履歴削除を既存OC Job / act
 2026-10-08、Protocol v21は履歴messageの任意投稿時刻と参加境界DTOを追加した。新規Purge読み取りのdueは元イベントの時刻へ戻さず、現在時刻を使う。next_action_modeは期限到来したActionを先に選び、Purgeのhistory / joinedChatsだけ通常の照会より後に選ぶ。旧snapshotの古いdueもこの優先度で処理する。全API共通枠は増やさない。通常照会が常時続く場合のPurge完了時間は保証せず、既存10分上限を維持する。
 
 !bot statusはoc::ingestから保存済み情報で直接SendMessageを登録し、Context照会を省く。停止・ミュート中も状態確認を受け付ける。権限変更や他のコマンドの現在権限照会は維持する。Purge開始時の返信IDは既存oc_sessionsへ結び付け、本人の停止リプライを照会なしで受け付ける。[停止・参加地点・取得終端の関数](../src/oc/docs/REMOTE_MUTE.md)。
+
+
+2026-10-09、Protocol v22はRuntimeStatusの型を追加し、Native経由の最新一件をRuntimeの独立Mutexへ保存する。DBや永続snapshotは更新しない。stats_from_dbはqueuedを期限到来した照会/配送/素材と未来期限に分類し、素材保持枠も集計する。bot statusは同じtransactionのCore統計とAdapter snapshotをキー文面へ渡す。RuntimeStatusのMutexは一回cloneして解放し、表示の組立てで再lockしない。[計測・分母・関数](../../../apps/line/docs/RUNTIME_STATUS.md)。

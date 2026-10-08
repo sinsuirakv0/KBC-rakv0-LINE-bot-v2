@@ -13,6 +13,26 @@ import { LINEStruct } from "@evex/linejs/thrift";
 import { TCompactProtocol } from "thrift";
 import { Receiver } from "./adapter/receiver.js";
 import { joinedChatPage } from "./adapter/square.js";
+import { readContainerResources } from "./adapter/runtime.js";
+
+// コンテナの0.2コア / 512MiBと、上限なし・読込失敗を区別する。
+const resourceFiles = new Map([['cpu.stat', 'usage_usec 1000000\n'], ['cpu.max', '20000 100000'],
+  ['memory.current', '209715200'], ['memory.max', '536870912']]);
+const readResource = async (path: string) => { const value = resourceFiles.get(path.replace('/sys/fs/cgroup/', ''));
+  if (value === undefined) throw new Error('ENOENT'); return value; };
+assert.deepEqual(await readContainerResources(readResource), { cpuMicros: 1000000, cpuLimitCores: 0.2,
+  memoryUsedBytes: 209715200, memoryLimitBytes: 536870912 });
+resourceFiles.set('cpu.max', 'max 100000'); resourceFiles.set('memory.max', 'max');
+assert.equal((await readContainerResources(readResource)).cpuLimitCores, null);
+assert.equal((await readContainerResources(readResource)).memoryLimitBytes, null);
+resourceFiles.clear();
+assert.deepEqual(await readContainerResources(readResource), { cpuMicros: null, cpuLimitCores: null,
+  memoryUsedBytes: null, memoryLimitBytes: null });
+resourceFiles.set('cpuacct/cpuacct.usage', '1000000000'); resourceFiles.set('cpu/cpu.cfs_quota_us', '20000');
+resourceFiles.set('cpu/cpu.cfs_period_us', '100000'); resourceFiles.set('memory/memory.usage_in_bytes', '209715200');
+resourceFiles.set('memory/memory.limit_in_bytes', '9223372036854771712');
+assert.deepEqual(await readContainerResources(readResource), { cpuMicros: 1000000, cpuLimitCores: 0.2,
+  memoryUsedBytes: 209715200, memoryLimitBytes: null });
 
 const directory = await mkdtemp(join(tmpdir(), "kbc-line-smoke-"));
 const config: CoreConfig = { databasePath: join(directory, "core.sqlite"), ownerId: "test-account" };
@@ -78,13 +98,19 @@ const controller = new AbortController();
 const gate = new ApiScheduler(controller.signal, 2, 10);
 let active = 0;
 let maximum = 0;
-await Promise.all(Array.from({ length: 8 }, () => gate.run("fakeRpc", async () => {
+const apiWork = Promise.all(Array.from({ length: 8 }, () => gate.run("fakeRpc", async () => {
   active++; maximum = Math.max(maximum, active);
   await gate.run("fakeRefresh", () => delay(20));
   active--;
 })));
+assert.equal(gate.snapshot().apiQueued, 6);
+assert.equal(gate.snapshot().apiActive, 2);
+assert.equal(gate.snapshot().apiQueueCapacity, 32);
+await apiWork;
 assert(maximum <= 2);
 assert.equal(gate.metrics.requests, 16);
+gate.cooldown(1);
+assert(gate.snapshot().apiCooldownMs > 0 && gate.snapshot().apiRateLimits === 1);
 controller.abort();
 
 // 完了履歴が満杯でも新規配送を受付し、本文を持たない重複IDは8,192件を越えて保持する。

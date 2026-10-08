@@ -184,3 +184,8 @@ build、型検査、3種類のSmoke、Clippy、BOM / LF / 資料リンク検査�
 2026-10-05、にゃんこストア更新通知を移植。追加環境変数は不要、初期登録は空。Protocol v16のNative/Adapterを同時に更新し、対象トークで!pushsetting android,iosを登録する。解除は同引数にoff、状態は!pushsetting status。基準・設定・通知は既存Core snapshotの退避対象。[状態と未確認点](../../crates/kbc-core/src/store_update/docs/STORE_UPDATE.md)。
 
 2026-10-05、SKD表示・更新通知の実装を追加。Protocol v17のNative/Adapterを同時に配備し、対象トークで!pushsetting skdを登録する。既存GitHub tokenがあれば履歴APIの認証にも使用し、追加のwebhook公開・secret設定は不要。親の送信ID・本文待機・通知先・検知基準は共通DB snapshotへ保存する。実OCでのスレッド送信と待機時間は未検証、今回の作業で本番配備は行っていない。[仕様・上限・未確認点](../../crates/kbc-core/src/skd/docs/SKD.md)。
+
+
+## 2026-10-09：bot statusの拡充（本番未配備）
+
+Protocol v22のNative/Adapterを同時に更新する。DockerfileがNorthflankのNF_GIT_BRANCH / NF_GIT_SHAビルド引数を稼働時のBOT_BUILD_BRANCH / BOT_BUILD_COMMITへ渡すため、新しくビルドしたimageからbranchと短縮commitを表示できる。注入されなかった値は未取得。資源計測は毎分・上限はcgroupから取得し、0.2コア/512MBをコードへ固定しない。追加secret・ディスク・LINE APIは不要。[計測範囲・検証と未確認点](../../apps/line/docs/RUNTIME_STATUS.md)。
