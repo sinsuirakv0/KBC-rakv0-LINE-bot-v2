@@ -957,5 +957,6 @@
   ],
   "bot.runtime_unavailable": [],
   "bot.scope_container": [],
-  "bot.scope_process": []
+  "bot.scope_process": [],
+  "moderation.confirm_left_unknown": ["arg0", "arg1", "reason"]
 }

@@ -24,6 +24,7 @@ const roles = new Map([[admin, "ADMIN"], [co, "CO_ADMIN"], [mod, "MEMBER"], [use
 for (const [id, role] of [[labBot, "MEMBER"], [labUser, "MEMBER"], [labAdmin, "ADMIN"], [labCo, "CO_ADMIN"]]) roles.set(id!, role!);
 const states = new Map<string, string>();
 const names = new Map<string, string>();
+const memberCreatedTimes = new Map<string, bigint>();
 const profileCalls: Array<{ member: string; square: string; name: string; revision: bigint }> = [];
 await writeFile(join(directory, "permissions.json"), JSON.stringify({ version: 1, roles: [
   { chatMid: square, userMid: mod, chatType: "SQUARE", role: "mod" },
@@ -40,7 +41,7 @@ const db = new DatabaseSync(config.databasePath);
 const controller = new AbortController(), gate = new ApiScheduler(controller.signal, 2, 1);
 const client = new BaseClient({ device: "DESKTOPWIN" });
 const member = (id: string) => ({ squareMemberMid: id, squareMid: labMembers.has(id) ? labSquare : square, displayName: names.get(id) ?? (id === user ? "参加者🙂" : "メンバー"),
-  role: roles.get(id) ?? "MEMBER", membershipState: states.get(id) ?? "JOINED", revision: 7n });
+  role: roles.get(id) ?? "MEMBER", membershipState: states.get(id) ?? "JOINED", revision: 7n, createdAt: memberCreatedTimes.get(id) });
 let failMutation = false;
 client.square.getSquareChat = async ({ squareChatMid }) => ({ squareChat: { squareChatMid, squareMid: [labChat, labSub].includes(squareChatMid) ? labSquare : square, name: "検証", type: "SQUARE_DEFAULT" },
   squareChatMember: { squareMemberMid: [labChat, labSub].includes(squareChatMid) ? labBot : bot } }) as Awaited<ReturnType<typeof client.square.getSquareChat>>;
@@ -145,9 +146,9 @@ async function drain(afterAction?: (action: CoreAction) => Promise<void>) {
 const texts = (values: CoreAction[]) => values.filter(a => a.type === "sendMessage").map(a => a.text).join("\n");
 const settings = () => JSON.parse((db.prepare("SELECT payload FROM oc_settings WHERE square=?").get(square) as { payload: string }).payload);
 const currentPrompt = () => (db.prepare("SELECT prompt FROM oc_sessions WHERE chat=? AND owner=?").get(chat, admin) as { prompt: string }).prompt;
-async function signal(id: string, state: string, scope = "square", targetChat = chat, at = Date.now()) {
+async function signal(id: string, state: string, scope = "square", targetChat = chat, at = Date.now(), extra: Partial<Extract<CoreEvent, { type: "memberChanged" }>> = {}) {
   return submitEvent({ type: "memberChanged", eventId: `member-${sequence}`, squareId: square, chatId: targetChat, memberId: id,
-    displayName: "参加者🙂", state, scope, memberCreatedAtMs: at, createdAtMs: at });
+    displayName: "参加者🙂", state, scope, memberCreatedAtMs: at, createdAtMs: at, ...extra });
 }
 try {
   // 旧権限区分と即時反映。OC管理人は同じOCだけ、BOT管理者は遠隔設定可。
@@ -562,10 +563,48 @@ try {
   assert(notification.text.includes("参加者🙂さん\nようこそ") && notification.text.includes("ID:")); assert.equal(notification.relatedMessageId, "");
   await signal(joined, "LEFT", "chat", sub, joinAt + 1); assert.equal((await drain()).length, 0); assert.equal(states.get(joined), undefined);
   states.set(joined, "LEFT"); await signal(joined, "LEFT", "square", chat, joinAt + 2); await drain(); assert.equal(states.get(joined), "BANNED");
+  // 時刻なしの先行通知を、後続の同一参加の情報で補完する。再起動しても初参加を保つ。
+  const incomplete = "p" + "61".repeat(16), incompleteAt = Date.now();
+  await signal(incomplete, "JOINED", "chat", chat, incompleteAt, { memberCreatedAtMs: undefined }); await drain();
+  await signal(incomplete, "JOINED", "square", chat, incompleteAt - 1, { memberCreatedAtMs: incompleteAt - 1 }); await drain();
+  assert.equal(db.prepare("SELECT first FROM oc_members WHERE member=?").get(incomplete)?.first, 1);
+  core.shutdown(); core = createCore(config);
+  states.set(incomplete, "LEFT"); await signal(incomplete, "LEFT", "square", chat, incompleteAt + 2); await drain();
+  assert.equal(states.get(incomplete), "BANNED");
+  // 同じトークの重複通知も補完し、参加時刻と参加回数を維持する。
+  const duplicateJoin = "p" + "62".repeat(16), duplicateAt = Date.now();
+  await signal(duplicateJoin, "JOINED", "chat", chat, duplicateAt, { memberCreatedAtMs: undefined }); await drain();
+  await signal(duplicateJoin, "JOINED", "chat", chat, duplicateAt - 1, { memberCreatedAtMs: duplicateAt }); await drain();
+  assert.deepEqual(db.prepare("SELECT joined,first,visits FROM oc_members WHERE member=?").get(duplicateJoin),
+    Object.assign(Object.create(null), { joined: duplicateAt, first: 1, visits: 1 }));
+  // 退出後に別scopeの古い参加通知が届いても、再参加として数えない。
+  const delayedJoin = "p" + "63".repeat(16), delayedAt = Date.now();
+  await signal(delayedJoin, "JOINED", "square", chat, delayedAt); await drain();
+  states.set(delayedJoin, "LEFT"); await signal(delayedJoin, "LEFT", "square", chat, delayedAt + 2);
+  await signal(delayedJoin, "JOINED", "chat", chat, delayedAt + 1);
+  assert.equal(db.prepare("SELECT visits FROM oc_members WHERE member=?").get(delayedJoin)?.visits, 1);
+  await drain(); assert.equal(states.get(delayedJoin), "BANNED");
+  // 全参加通知に作成時刻がなくても、既存の退出確認APIから補完できる。
+  const profileJoin = "p" + "64".repeat(16), profileAt = Date.now();
+  await signal(profileJoin, "JOINED", "chat", chat, profileAt, { memberCreatedAtMs: undefined }); await drain();
+  memberCreatedTimes.set(profileJoin, BigInt(profileAt)); states.set(profileJoin, "LEFT");
+  await signal(profileJoin, "LEFT", "square", chat, profileAt + 1, { memberCreatedAtMs: undefined });
+  const profileLeave = await drain(); assert.equal(states.get(profileJoin), "BANNED");
+  assert.equal(profileLeave.filter(action => action.type === "ocApi" && action.request.type === "member").length, 1);
   await message("o.oc watch danger on"); await drain(); await message("o.oc watch cohort on"); await drain();
   const newcomer = mid("p", "7"); await signal(newcomer, "JOINED"); await drain();
   await message("ﾁｰﾄの代行", newcomer); await drain(); assert.equal(states.get(newcomer), "KICK_OUT");
   await message("o.oc modroom set"); await drain();
+  const unconfirmed = "p" + "65".repeat(16), unconfirmedAt = Date.now();
+  await signal(unconfirmed, "JOINED", "chat", chat, unconfirmedAt, { memberCreatedAtMs: undefined }); await drain();
+  states.set(unconfirmed, "LEFT"); await signal(unconfirmed, "LEFT", "square", chat, unconfirmedAt + 1, { memberCreatedAtMs: undefined });
+  const unknownLeave = await drain(); assert(texts(unknownLeave).includes("初参加未確認"));
+  assert(!texts(unknownLeave).includes("再参加者") && states.get(unconfirmed) === "LEFT");
+  const existingMember = "p" + "66".repeat(16), existingAt = Date.now();
+  memberCreatedTimes.set(existingMember, BigInt(existingAt - 3600000));
+  await signal(existingMember, "JOINED", "chat", chat, existingAt, { memberCreatedAtMs: undefined }); await drain();
+  states.set(existingMember, "LEFT"); await signal(existingMember, "LEFT", "square", chat, existingAt + 1, { memberCreatedAtMs: undefined });
+  await drain(); assert.equal(states.get(existingMember), "LEFT");
   await message("!oc leftmessage set <name>さん退出"); await drain();
   const returning = mid("p", "b"); const returnAt = Date.now();
   await signal(returning, "JOINED", "square", chat, returnAt); await drain();
@@ -577,6 +616,10 @@ try {
   for (const digit of ["8", "9", "a"]) { await signal(mid("p", digit), "JOINED"); await drain(); }
   const cohortMember = mid("p", "a"); await message("招待はこちら https://example.com/docs/", cohortMember); const watched = await drain();
   assert(texts(watched).includes("自動処分なし")); assert.equal(states.get(cohortMember), undefined);
+  const oldIncomplete = "p" + "67".repeat(16), oldIncompleteAt = Date.now() - 180000;
+  await signal(oldIncomplete, "JOINED", "square", chat, oldIncompleteAt, { memberCreatedAtMs: undefined }); await drain();
+  await signal(oldIncomplete, "JOINED", "square", chat, Date.now(), { memberCreatedAtMs: oldIncompleteAt }); await drain();
+  assert.equal(db.prepare("SELECT cohort FROM oc_members WHERE member=?").get(oldIncomplete)?.cohort, 0);
   await message("https://allow.example/path", user); const review = await drain();
   assert(texts(review).includes("完全一致"));
   const storedCase = db.prepare("SELECT prompt FROM oc_cases WHERE url LIKE 'https://allow.example/%'").get() as { prompt: string };

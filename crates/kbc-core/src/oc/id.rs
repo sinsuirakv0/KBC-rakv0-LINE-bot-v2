@@ -344,6 +344,7 @@ pub fn execute(runtime: &Runtime, tx: &Transaction<'_>, job: &mut Job, now: i64)
                 role: String::new(),
                 state,
                 revision: "0".into(),
+                created_at_ms: None,
             });
             if members.len() == 20 {
                 break;

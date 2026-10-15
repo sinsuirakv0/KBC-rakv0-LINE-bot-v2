@@ -502,6 +502,97 @@ pub fn case(
     )?;
     Ok(())
 }
+fn first_join(created: Option<f64>, joined: i64) -> bool {
+    created.is_some_and(|created| {
+        created.is_finite() && created > 0.0 && (joined as f64 - created).abs() <= 120000.0
+    })
+}
+
+// 同じ参加の補完で回数・参加時刻・発言数を変えず、初参加の根拠だけを追加する。
+fn track_join(
+    runtime: &Runtime,
+    tx: &Transaction<'_>,
+    event: &CoreEvent,
+    value: &Settings,
+    name: &str,
+    now: i64,
+) -> Result<()> {
+    let CoreEvent::MemberChanged {
+        square_id,
+        chat_id,
+        member_id,
+        scope,
+        member_created_at_ms,
+        created_at_ms,
+        ..
+    } = event
+    else {
+        return Ok(());
+    };
+    if !(value.left || value.danger || value.cohort)
+        || (scope != "square" && value.main.as_ref() != Some(chat_id))
+    {
+        return Ok(());
+    }
+    let old: Option<(i64, bool, i64, String, i64)> = tx
+        .query_row(
+            "SELECT joined,first,visits,state,last FROM oc_members WHERE square=?1 AND member=?2",
+            params![square_id, member_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )
+        .optional()?;
+    // OC全体と本トークで別々に届く古い参加通知を、退出後の再参加に数えない。
+    if old
+        .as_ref()
+        .is_some_and(|(_, _, _, state, last)| state != "JOINED" && last >= created_at_ms)
+    {
+        return Ok(());
+    }
+    let joined = if let Some((joined, first, visits, _, _)) =
+        old.as_ref().filter(|(_, _, _, state, _)| state == "JOINED")
+    {
+        if *first || *visits != 1 || !first_join(*member_created_at_ms, *joined) {
+            return Ok(());
+        }
+        tx.execute(
+            "UPDATE oc_members SET first=1 WHERE square=?1 AND member=?2",
+            params![square_id, member_id],
+        )?;
+        *joined
+    } else {
+        let first = old.is_none() && first_join(*member_created_at_ms, *created_at_ms);
+        let visits = old.as_ref().map_or(1, |(_, _, visits, _, _)| visits + 1);
+        tx.execute("INSERT INTO oc_members(square,member,name,joined,first,visits,state,last) VALUES(?1,?2,?3,?4,?5,?6,'JOINED',?4) ON CONFLICT(square,member) DO UPDATE SET name=excluded.name,joined=excluded.joined,first=excluded.first,visits=excluded.visits,state='JOINED',last=excluded.last,messages=0,last_text='',cohort=0,suspicious=0",params![square_id,member_id,name,created_at_ms,first,visits])?;
+        tx.execute("DELETE FROM oc_members WHERE rowid IN (SELECT rowid FROM oc_members ORDER BY last DESC,rowid DESC LIMIT -1 OFFSET 8192)",[])?;
+        *created_at_ms
+    };
+    let message_catalog = &runtime.content.messages;
+    if value.cohort && joined >= now - 120000 {
+        let count:i64=tx.query_row("SELECT count(*) FROM oc_members WHERE square=?1 AND first=1 AND visits=1 AND joined>?2 AND state='JOINED'",params![square_id,joined-120000],|r|r.get(0))?;
+        if count >= 3 {
+            tx.execute("UPDATE oc_members SET cohort=?3 WHERE square=?1 AND first=1 AND visits=1 AND joined>?2 AND state='JOINED'",params![square_id,joined-120000,now+1800000])?;
+            if notice(
+                tx,
+                &format!("cohort:{square_id}:{}", joined / 120000),
+                120000,
+                now,
+            )? {
+                let job = signal_job(event, value, square_id, name, "cohort-log");
+                case(
+                    message_catalog,
+                    tx,
+                    &job,
+                    Some(member_id),
+                    None,
+                    message!(message_catalog, "moderation.member_event_01"),
+                    now,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn member_event(
     runtime: &Runtime,
     tx: &Transaction<'_>,
@@ -516,7 +607,6 @@ pub fn member_event(
         display_name,
         scope,
         state,
-        member_created_at_ms,
         created_at_ms,
         ..
     } = event
@@ -549,6 +639,13 @@ pub fn member_event(
         .as_ref()
         .is_some_and(|(_, at, _)| at > created_at_ms)
     {
+        if state == "JOINED"
+            && previous
+                .as_ref()
+                .is_some_and(|(state, _, _)| state == "JOINED")
+        {
+            track_join(runtime, tx, event, &value, display_name, now)?;
+        }
         return Ok(());
     }
     let known_name = if display_name.is_empty() {
@@ -562,6 +659,16 @@ pub fn member_event(
         inherit_mute(tx, event, name, now, &mut value)?;
     }
     if previous.as_ref().is_some_and(|(old, _, _)| old == state) {
+        if state == "JOINED" {
+            track_join(
+                runtime,
+                tx,
+                event,
+                &value,
+                known_name.as_deref().unwrap_or_default(),
+                now,
+            )?;
+        }
         return Ok(());
     }
     let mut name_lookup = if state == "JOINED"
@@ -644,51 +751,20 @@ pub fn member_event(
     if scope != "square" && value.main.as_ref() != Some(chat_id) {
         return Ok(());
     }
-    let old: Option<(i64, bool, i64, String)> = tx
+    if state == "JOINED" {
+        return track_join(runtime, tx, event, &value, &name, now);
+    }
+    let old: Option<(i64, i64)> = tx
         .query_row(
-            "SELECT joined,first,visits,state FROM oc_members WHERE square=?1 AND member=?2",
+            "SELECT joined,last FROM oc_members WHERE square=?1 AND member=?2",
             params![square_id, member_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?;
-    if state == "JOINED" {
-        if old
-            .as_ref()
-            .is_some_and(|(_, _, _, state)| state == "JOINED")
-        {
-            return Ok(());
-        }
-        let first = old.is_none()
-            && member_created_at_ms.is_some_and(|at| {
-                at.is_finite() && ((*created_at_ms as f64) - at).abs() <= 120000.0
-            });
-        let visits = old.as_ref().map_or(1, |(_, _, visits, _)| visits + 1);
-        tx.execute("INSERT INTO oc_members(square,member,name,joined,first,visits,state,last) VALUES(?1,?2,?3,?4,?5,?6,'JOINED',?4) ON CONFLICT(square,member) DO UPDATE SET name=excluded.name,joined=excluded.joined,first=excluded.first,visits=excluded.visits,state='JOINED',last=excluded.last,messages=0,last_text='',cohort=0,suspicious=0",params![square_id,member_id,name,created_at_ms,first,visits])?;
-        tx.execute("DELETE FROM oc_members WHERE rowid IN (SELECT rowid FROM oc_members ORDER BY last DESC,rowid DESC LIMIT -1 OFFSET 8192)",[])?;
-        if value.cohort {
-            let count:i64=tx.query_row("SELECT count(*) FROM oc_members WHERE square=?1 AND first=1 AND visits=1 AND joined>?2 AND state='JOINED'",params![square_id,created_at_ms-120000],|r|r.get(0))?;
-            if count >= 3 {
-                tx.execute("UPDATE oc_members SET cohort=?3 WHERE square=?1 AND first=1 AND visits=1 AND joined>?2 AND state='JOINED'",params![square_id,created_at_ms-120000,now+1800000])?;
-                if notice(
-                    tx,
-                    &format!("cohort:{square_id}:{}", created_at_ms / 120000),
-                    120000,
-                    now,
-                )? {
-                    let job = signal_job(event, &value, square_id, &name, "cohort-log");
-                    case(
-                        message_catalog,
-                        tx,
-                        &job,
-                        Some(member_id),
-                        None,
-                        message!(message_catalog, "moderation.member_event_01"),
-                        now,
-                    )?;
-                }
-            }
-        }
-    } else if let Some((joined, _, _, _)) = old
+    if old.as_ref().is_some_and(|(_, last)| last > created_at_ms) {
+        return Ok(());
+    }
+    if let Some((joined, _)) = old
         && *created_at_ms >= joined
         && *created_at_ms - joined <= 1800000
         && value.left
@@ -880,6 +956,7 @@ fn signal_job(
         role: "system".into(),
         state: "JOINED".into(),
         revision: "0".into(),
+        created_at_ms: None,
     };
     Job {
         event,
@@ -925,7 +1002,7 @@ pub fn confirm_left(
         return Ok(());
     }
     let row:Option<(i64,bool,i64,i64,String)>=tx.query_row("SELECT joined,first,visits,messages,last_text FROM oc_members WHERE square=?1 AND member=?2",params![member.square_id,member.member_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).optional()?;
-    let Some((joined, first, visits, messages, last_text)) = row else {
+    let Some((joined, mut first, visits, messages, last_text)) = row else {
         return Ok(());
     };
     let elapsed = identity(&job.event).4 - joined;
@@ -938,6 +1015,20 @@ pub fn confirm_left(
         )?
     {
         return Ok(());
+    }
+    let created = member.created_at_ms.or(match &job.event {
+        CoreEvent::MemberChanged {
+            member_created_at_ms,
+            ..
+        } => *member_created_at_ms,
+        _ => None,
+    });
+    if !first && visits == 1 && first_join(created, joined) {
+        first = true;
+        tx.execute(
+            "UPDATE oc_members SET first=1 WHERE square=?1 AND member=?2",
+            params![member.square_id, member.member_id],
+        )?;
     }
     tx.execute(
         "UPDATE oc_members SET state='LEFT',last=?3 WHERE square=?1 AND member=?2",
@@ -972,13 +1063,23 @@ pub fn confirm_left(
                 &job.event,
                 "returning-leave-log",
                 &room,
-                message!(
-                    message_catalog,
-                    "moderation.confirm_left_02",
-                    arg0 = member.name,
-                    arg1 = member.member_id,
-                    reason = reason
-                ),
+                if visits > 1 {
+                    message!(
+                        message_catalog,
+                        "moderation.confirm_left_02",
+                        arg0 = member.name,
+                        arg1 = member.member_id,
+                        reason = reason
+                    )
+                } else {
+                    message!(
+                        message_catalog,
+                        "moderation.confirm_left_unknown",
+                        arg0 = member.name,
+                        arg1 = member.member_id,
+                        reason = reason
+                    )
+                },
                 TextDelivery::default(),
                 now,
             )?;

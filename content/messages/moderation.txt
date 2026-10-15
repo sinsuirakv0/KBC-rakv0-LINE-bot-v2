@@ -4,6 +4,7 @@ moderation.case_01 = "OC管理ログ\n{reason}\n対象: {arg0}\n実行トーク:
 moderation.confirm_left_01 = "OC全体の退会を確認。\n参加時間: {arg0} / 発言数: {messages}件\n最後の発言: {last_text}"
 moderation.confirm_left_02 = "【監視ログ】再参加者の本OC短時間退室\n対象: {arg0} ({arg1})\n{reason}\n処分: 未実行\n初参加ではないため、自動再参加禁止や審議は行いません。"
 moderation.confirm_left_03 = "【確認待ち】参加後30分以内の退会\n{reason}\n処分: 未実行\n再参加禁止 / 無視 / 解除で審議できます。"
+moderation.confirm_left_unknown = "【監視ログ】初参加未確認の本OC短時間退室\n対象: {arg0} ({arg1})\n{reason}\n処分: 未実行\n初参加を確認する情報が不足しているため、自動再参加禁止や審議は行いません。"
 moderation.execute_01 = "未許可URL"
 moderation.execute_02 = "未許可URL。1 完全一致 / 2 パス / 3 配下 / 4 ドメイン / 5 却下"
 moderation.execute_03 = "未許可URLを含む投稿の削除を要求しました。HTTPSの許可ルールは管理者が設定できます。"

@@ -57,8 +57,10 @@ const displayName = (value: string) => Array.from(value.replace(/[\r\n]/g, " "))
 export function memberDto(member: Member): OcMember {
   if (!member || [member.squareMemberMid, member.squareMid].some(id => typeof id !== "string" || !id || id.length > 256)
       || !/^[0-9]{1,19}$/.test(String(member.revision))) throw new Error("InvalidSquareMemberResponse");
+  const createdAtMs = Number(member.createdAt);
   return { memberId: member.squareMemberMid, squareId: member.squareMid, name: displayName(member.displayName ?? ""),
-    role: String(member.role), state: String(member.membershipState), revision: String(member.revision) };
+    role: String(member.role), state: String(member.membershipState), revision: String(member.revision),
+    createdAtMs: Number.isSafeInteger(createdAtMs) && createdAtMs > 0 ? createdAtMs : undefined };
 }
 
 export class SquareDirectory {

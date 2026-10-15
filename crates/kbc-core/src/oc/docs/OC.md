@@ -46,7 +46,7 @@ setupは1 URL、2 media、3副官部屋、4 early、5 danger、6 cohort、7基�
 
 URLはNFKCで抽出し、同じorigin（scheme・host・port）のHTTPSだけを許可する。prefixはパス境界を含めて照合するため `/docs` は `/docs-evil` を許可しない。1投稿65種類以上のURLは許可判定上限を超えた投稿として削除候補にする。審議への通知は1投稿3URLまで。画像グループのGSEQ / GTOTALがある場合も最初の6件を残す。
 
-参加・退出はSquare Eventのcreate/update member、create/join/leave/update chat memberをplain DTOへ正規化する。OC全体とトーク内の所属を分け、同状態・古い状態を重複通知しない。OC全体の通知先は明示した本OCトーク。参加時刻とmember作成時刻が2分以内で、今回の状態保存に過去参加がない場合だけ初参加とみなす。長期ログと短期の処分判定状態は分け、作成時刻不明の参加者を初参加と推定しない。
+参加・退出はSquare Eventのcreate/update member、create/join/leave/update chat memberをplain DTOへ正規化する。OC全体とトーク内の所属を分け、同状態・古い状態を重複通知しない。OC全体の通知先は明示した本OCトーク。参加時刻とmember作成時刻が2分以内で、今回の状態保存に過去参加がない場合だけ初参加とみなす。作成時刻は後続の同一参加通知と既存の退出確認APIでも補完する。長期ログと短期の処分判定状態は分け、作成時刻不明の参加者を初参加と推定しない。
 
 - 初参加2分以内の「チート」「代行」はNFKCで検知し、投稿削除とKICK_OUT。reportがONの場合だけSCAM通報を先に要求する。失敗・不明の通報は自動再送しない。
 - earlyは、OC全体LEFTまたは設定した本OCトークのLEFTを契機に現在のOC全体LEFTを照会する。初参加5分以内だけBANNED、5〜30分は審議。サブトーク退出をOC全体退会とみなさない。再参加者の即抜けは副官ログだけで、自動処分・審議を作らない。
@@ -129,3 +129,19 @@ commands::targetのoff / del / remove / 解除は、対象MIDの保存された�
 最小検証は既存smoke:oc。名前一致で期限・silentを保存、改名後もMIDで投稿削除、部分一致と別OCを除外、通知未設定の名前補完と再起動、補完失敗後の初回投稿での継承、改名後の解除による旧MIDの一括解除、解除後・期限切れ後の非継承をSDK mockで確認する。実LINEでの参加者名取得範囲は未確認。
 
 検証結果（2026-10-09）: Native build・TypeScript check・Clippy（release/all-targets/警告拒否）・fmt check・文面キー監査とsmoke:oc / smoke:messages / smokeが成功。実LINEへの接続・本番での再参加試験は行っていない。
+
+## 初参加者の即抜け誤判定の修正（2026-10-15）
+
+利用者から、新規参加者の退出で「再参加者の本OC短時間退室」と表示され、自動処分されないとの報告。修正前のNativeで、作成時刻なしの本トークJOINED→作成時刻付きのOC全体JOINEDを再生するとfirst=0が残ることを再現した。member_eventが同じJOINEDを早期returnし、後続情報で初参加を補完しなかった。またfirst=false / visits=1という未確認の状態も、再参加と同じ文面になっていた。実際の報告対象のイベント列は未取得で、この再現を本番の唯一の原因と断定しない。
+
+- `first_join`は正の有限なmember作成時刻と保存済み参加時刻の差が2分以内かを共通判定する。
+- `track_join`はJOINEDの状態保存と補完を担当する。最初の通知に時刻がなくても、同じ参加（state=JOINED、visits=1）の後続通知でfirstだけを補完する。参加時刻・参加回数・発言数は変えない。同じトークの重複、同じ参加の時刻が前後した通知、OC全体と本トークの別経路にも適用する。初参加が新たに確認された場合は既存cohort判定も共用するが、参加から2分経過した人の遅い補完で新しい監視を始めない。
+- 退出後に届いた、退出時刻以前のJOINEDを新しい参加として数えない。OC全体と本トークの過去状態もlastと照合する。本当に退出より後のJOINEDは従来どおりvisitsを増やし、初参加へ戻さない。
+- `confirm_left`は既存Member照会でLEFT・対象保護を確認した後、`OcMember.createdAtMs`（なければ退出イベントのmemberCreatedAtMs）でvisits=1の不足情報を補完する。Protocol v23でこの任意項目を追加。旧保存Jobはdefault=Noneで復元し、API照会数を増やさない。
+- 5分以内のBANNED、5〜30分の審議、サブトークだけの退出除外、現在のOC全体LEFT確認、BOT権限・OC管理者等の保護は維持する。時刻不明・作成時刻が古い人を推測で処分しない。visits>1だけを「再参加者」と表示し、不足情報で初参加を確認できない場合は`moderation.confirm_left_unknown`で区別する。
+
+既にvisitsが複数になった過去の記録を一括で初参加へ戻したり、以前の退出を遡って自動処分したりしない。状態は既存SQLiteとGitHub snapshotで復元し、新しいTable・常時取得・Queueは追加しない。
+
+既存smoke:ocで、後続通知・同じトークの重複と逆順・再起動・退出後の別scope古いJOINED・既存Member APIでの時刻補完・時刻不足と古い作成時刻の非処分・本当の再参加者の非処分を確認する。前版での再現失敗は`first: 0 !== 1`。実LINEでの再参加/退出試験・本番配備は別途行う。
+
+検証結果: Protocol生成、Native release build、TypeScript check/build、Core/ProtocolのClippy（release/all-targets/警告拒否）、Rust format、smoke:oc / smoke:messages / smoke、文面キー・BOM・資料リンク検査が成功。Member API補完ケースはmember照会1件でBANNEDとなり、新しい照会を発行しないことをSDK mockで確認した。
