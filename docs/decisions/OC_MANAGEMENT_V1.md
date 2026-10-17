@@ -10,7 +10,7 @@ OC APIは型付きOcRequest/Resultを既存Outboxへ接続する。解析・権�
 
 権限は旧版を維持する。kickはBOT mod以上、muteはBOT mod以上またはOC ADMIN、設定変更はBOT mod以上またはOC ADMIN/CO_ADMIN、setup・副官部屋・入退室設定・審議はBOT adminまたはOC ADMIN/CO_ADMIN。BOT権限は明示した機密permissionsファイルから読む。旧コードの個人MIDを公開ソースへコピーしない。
 
-旧資料と異なり、現行ocSquareBan.tsの手動kickは直接BANNED。通常の危険語自動処分はKICK_OUTだけ、確認リプライでBANNED。即抜けはOC全体の退会を確認でき、記録した初参加から5分以内の場合だけBANNED。サブトーク退室からOC退会を推測しない。PUSHから得られない参加を常時巡回で補う処理は今回持ち込まず、検知範囲を実運用で観測する。
+旧資料と異なり、現行ocSquareBan.tsの手動kickは直接BANNED。通常の危険語自動処分はKICK_OUTだけ、確認リプライでBANNED。即抜けはOC全体の退会を確認でき、記録した参加から5分以内ならBANNED。2026-10-17の利用者指定により、初参加・再参加・初参加未確認を区別しない方式へ変更した。情報不足で新規参加者が除外される問題を避ける代わりに、再参加者も同じ処分になる。5分超の審議条件・対象保護は維持する。サブトーク退室からOC退会を推測しない。PUSHから得られない参加を常時巡回で補う処理は今回持ち込まず、検知範囲を実運用で観測する。
 
 新しい呼び方はjoin/leave、media on/off、main、historyなどに整理し、従来のjoinmes/leavemes/del/hisもaliasとして受け付ける。setupと副官部屋の対象選択、審議は送信済みの本人・トーク・最新promptへのリプライを使う。通常の数字や別人の返信は設定変更にしない。
 

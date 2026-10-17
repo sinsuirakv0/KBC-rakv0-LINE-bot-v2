@@ -598,21 +598,31 @@ try {
   const unconfirmed = "p" + "65".repeat(16), unconfirmedAt = Date.now();
   await signal(unconfirmed, "JOINED", "chat", chat, unconfirmedAt, { memberCreatedAtMs: undefined }); await drain();
   states.set(unconfirmed, "LEFT"); await signal(unconfirmed, "LEFT", "square", chat, unconfirmedAt + 1, { memberCreatedAtMs: undefined });
-  const unknownLeave = await drain(); assert(texts(unknownLeave).includes("初参加未確認"));
-  assert(!texts(unknownLeave).includes("再参加者") && states.get(unconfirmed) === "LEFT");
-  const existingMember = "p" + "66".repeat(16), existingAt = Date.now();
+  const unknownLeave = await drain(); assert(states.get(unconfirmed) === "BANNED");
+  assert(!texts(unknownLeave).includes("初参加未確認"));
+  // 本トークJOINEDだけで再参加した場合も、前回のOC全体LEFTで重複扱いしない。
+  const existingMember = joined, existingAt = Date.now();
   memberCreatedTimes.set(existingMember, BigInt(existingAt - 3600000));
   await signal(existingMember, "JOINED", "chat", chat, existingAt, { memberCreatedAtMs: undefined }); await drain();
   states.set(existingMember, "LEFT"); await signal(existingMember, "LEFT", "square", chat, existingAt + 1, { memberCreatedAtMs: undefined });
-  await drain(); assert.equal(states.get(existingMember), "LEFT");
+  await drain(); assert.equal(states.get(existingMember), "BANNED");
+  const boundary = "p" + "68".repeat(16), boundaryAt = Date.now();
+  await signal(boundary, "JOINED", "square", chat, boundaryAt - 300000, { memberCreatedAtMs: undefined }); await drain();
+  states.set(boundary, "LEFT"); await signal(boundary, "LEFT", "square", chat, boundaryAt, { memberCreatedAtMs: undefined });
+  await drain(); assert.equal(states.get(boundary), "BANNED");
+  const overBoundary = "p" + "69".repeat(16), overBoundaryAt = Date.now();
+  await signal(overBoundary, "JOINED", "square", chat, overBoundaryAt - 300001, { memberCreatedAtMs: undefined }); await drain();
+  states.set(overBoundary, "LEFT"); await signal(overBoundary, "LEFT", "square", chat, overBoundaryAt, { memberCreatedAtMs: undefined });
+  const overBoundaryLeave = await drain(); assert.equal(states.get(overBoundary), "LEFT");
+  assert(!overBoundaryLeave.some(action => action.type === "ocApi" && action.request.type === "membership"));
   await message("!oc leftmessage set <name>さん退出"); await drain();
   const returning = mid("p", "b"); const returnAt = Date.now();
   await signal(returning, "JOINED", "square", chat, returnAt); await drain();
   await signal(returning, "BANNED", "square", chat, returnAt + 1); assert.equal((await drain()).length, 0);
   await signal(returning, "JOINED", "square", chat, returnAt + 2); await drain(); states.set(returning, "LEFT");
   await signal(returning, "LEFT", "square", chat, returnAt + 3); const returningLeft = await drain();
-  assert(texts(returningLeft).includes("再参加者"));
-  assert(!returningLeft.some(action => action.type === "ocApi" && action.request.type === "membership"));
+  assert.equal(states.get(returning), "BANNED");
+  assert(returningLeft.some(action => action.type === "ocApi" && action.request.type === "membership"));
   for (const digit of ["8", "9", "a"]) { await signal(mid("p", digit), "JOINED"); await drain(); }
   const cohortMember = mid("p", "a"); await message("招待はこちら https://example.com/docs/", cohortMember); const watched = await drain();
   assert(texts(watched).includes("自動処分なし")); assert.equal(states.get(cohortMember), undefined);

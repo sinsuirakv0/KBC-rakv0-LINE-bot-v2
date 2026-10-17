@@ -6,7 +6,7 @@
   このトークを副官部屋へ設定・解除・テスト
 !oc main / main set
   本OCトークを選択・このトークを指定
-  送信先一覧は1ページ10件。数字で選択、次・前で移動、3pで3ページへ。終了で閉じます。
+  一覧は10件。数字で選択、次・前・3pで移動、終了で閉じる。
 !oc join set [--mention] [--id] 本文
 !oc leave set [--mention] [--id] 本文
   入退室通知。<name>を参加者名へ置換。複数行対応
@@ -20,6 +20,7 @@
   30秒に7枚目以降の画像・動画を削除
 !oc watch early|danger|cohort|report on|off
   即抜け・危険語・一斉参加・危険語通報
+  early: 参加5分以内のOC退会を再参加禁止（初参加不問）。サブトーク退出は除外。
 !oc mute @対象 170 / 0:17 / 8/7-0:17 / inf
 !oc mute @対象 off / mute list
   発言の管理者削除。OC管理者またはBOT mod以上

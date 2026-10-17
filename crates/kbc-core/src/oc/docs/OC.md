@@ -49,7 +49,7 @@ URLはNFKCで抽出し、同じorigin（scheme・host・port）のHTTPSだけを
 参加・退出はSquare Eventのcreate/update member、create/join/leave/update chat memberをplain DTOへ正規化する。OC全体とトーク内の所属を分け、同状態・古い状態を重複通知しない。OC全体の通知先は明示した本OCトーク。参加時刻とmember作成時刻が2分以内で、今回の状態保存に過去参加がない場合だけ初参加とみなす。作成時刻は後続の同一参加通知と既存の退出確認APIでも補完する。長期ログと短期の処分判定状態は分け、作成時刻不明の参加者を初参加と推定しない。
 
 - 初参加2分以内の「チート」「代行」はNFKCで検知し、投稿削除とKICK_OUT。reportがONの場合だけSCAM通報を先に要求する。失敗・不明の通報は自動再送しない。
-- earlyは、OC全体LEFTまたは設定した本OCトークのLEFTを契機に現在のOC全体LEFTを照会する。初参加5分以内だけBANNED、5〜30分は審議。サブトーク退出をOC全体退会とみなさない。再参加者の即抜けは副官ログだけで、自動処分・審議を作らない。
+- earlyは、OC全体LEFTまたは設定した本OCトークのLEFTを契機に現在のOC全体LEFTを照会する。記録した参加から5分以内（ちょうど5分を含む）は初参加・再参加・初参加未確認を区別せずBANNED。5分超〜30分は従来どおり初参加確認済みだけ審議し、再参加者・未確認は副官ログのみ。サブトーク退出をOC全体退会とみなさない。
 - 初参加3人以上が2分以内に参加すると30分監視。危険語・URL・招待らしい投稿を副官部屋へ通知し、一斉参加だけで自動処分しない。
 
 副官部屋のURL審議は1 exact / 2 path / 3 prefix / 4 domain / 5却下。処分審議は再参加禁止 / 無視 / 解除。解除は依頼を記録するだけで、BANNED解除APIは実装していない。審議権限と現在の対象所属を再確認する。kick対象のBot・管理者・副官・BOT管理権限・未知roleは保護する。
@@ -145,3 +145,13 @@ commands::targetのoff / del / remove / 解除は、対象MIDの保存された�
 既存smoke:ocで、後続通知・同じトークの重複と逆順・再起動・退出後の別scope古いJOINED・既存Member APIでの時刻補完・時刻不足と古い作成時刻の非処分・本当の再参加者の非処分を確認する。前版での再現失敗は`first: 0 !== 1`。実LINEでの再参加/退出試験・本番配備は別途行う。
 
 検証結果: Protocol生成、Native release build、TypeScript check/build、Core/ProtocolのClippy（release/all-targets/警告拒否）、Rust format、smoke:oc / smoke:messages / smoke、文面キー・BOM・資料リンク検査が成功。Member API補完ケースはmember照会1件でBANNEDとなり、新しい照会を発行しないことをSDK mockで確認した。
+
+## 5分以内の退出条件の変更（2026-10-17）
+
+利用者指定で、`confirm_left`の5分以内BANNEDからfirst / visits条件を外す。作成時刻が不明・古い場合も、記録したJOINEDから退出までが0〜300,000msなら同じ処分にする。初参加の情報は危険語・一斉参加・5分超の審議に引き続き使用する。参加時刻自体が記録されていない場合に、滞在時間を推測して処分する変更はしない。
+
+現在のOC全体LEFT、監視ON、Bot・管理者・副官・BOT権限・未知roleの対象保護、過去の別scope通知による状態巻戻し防止を維持する。以前の退出を一括で再処分しない。表示・履歴の判断理由は「参加から5分以内」へ変更。smoke:ocは初参加未確認・古い作成時刻・再参加者の5分以内BANNEDと、300,000ms / 300,001msの境界・サブトーク退出の除外を検証する。
+
+再参加を本トークJOINEDだけで観測すると、OC全体presenceには前回のLEFTが残る。この後のOC全体LEFTを単純な同一状態の重複として捨てていた。`member_event`は監視ON・OC全体または本トークのLEFTに限り、前回通知より新しく今回退出以前のJOINEDが`oc_members`にあれば、新しい退出として受理する。同じ退出の重複は従来どおり抑止する。既存smoke:ocで本トークだけの再参加→OC全体退出もBANNEDとなることを検証する。
+
+検証結果: Native release build、Core/ProtocolのClippy（release/all-targets/警告拒否）、TypeScript check/build、Rust format、smoke:oc / smoke:messages / smoke、文面キー・BOM・資料リンク検査が成功。本トークだけの再参加ケースは修正前NativeでLEFTのまま、修正後はBANNEDとなった。実LINEでの退出・処分と本番配備は未実施。

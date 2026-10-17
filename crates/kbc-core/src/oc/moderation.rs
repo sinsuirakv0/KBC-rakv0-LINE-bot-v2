@@ -658,7 +658,13 @@ pub fn member_event(
     {
         inherit_mute(tx, event, name, now, &mut value)?;
     }
-    if previous.as_ref().is_some_and(|(old, _, _)| old == state) {
+    let repeated = previous.as_ref().is_some_and(|(old, _, _)| old == state);
+    // 本トークで再参加を観測した後なら、OC全体の前回LEFTと同じ状態でも新しい退出。
+    let rejoined = repeated && state == "LEFT" && value.left
+        && (scope == "square" || value.main.as_ref() == Some(chat_id))
+        && tx.query_row("SELECT EXISTS(SELECT 1 FROM oc_members WHERE square=?1 AND member=?2 AND state='JOINED' AND joined>?3 AND joined<=?4)",
+            params![square_id,member_id,previous.as_ref().map_or(0, |(_,at,_)| *at),created_at_ms], |r|r.get::<_,bool>(0))?;
+    if repeated && !rejoined {
         if state == "JOINED" {
             track_join(
                 runtime,
@@ -1041,7 +1047,7 @@ pub fn confirm_left(
         messages = messages,
         last_text = last_text
     );
-    if first && visits == 1 && elapsed <= 300000 {
+    if elapsed <= 300000 {
         job.operation = "left-ban".into();
         job.results.push(reason);
         request(
