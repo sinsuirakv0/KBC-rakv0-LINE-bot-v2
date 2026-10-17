@@ -663,12 +663,18 @@ pub fn complete(
             job.results.push(message!(
                 message_catalog,
                 "mod.complete_01",
-                target = target
+                target = target,
+                code = result.code
             ));
             return commands::next_target(message_catalog, tx, &mut job, now);
         }
         if job.input.name != "moderate" {
-            reply(tx, &job, message!(message_catalog, "mod.complete_02"), now)?;
+            reply(
+                tx,
+                &job,
+                message!(message_catalog, "mod.complete_02", code = result.code),
+                now,
+            )?;
         }
         return Ok(());
     }

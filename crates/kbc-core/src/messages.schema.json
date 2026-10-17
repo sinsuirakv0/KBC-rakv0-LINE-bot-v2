@@ -363,9 +363,9 @@
     "url"
   ],
   "mod.complete_01": [
-    "target"
+    "target", "code"
   ],
-  "mod.complete_02": [],
+  "mod.complete_02": ["code"],
   "mod.complete_03": [],
   "mod.complete_04": [],
   "mod.complete_05": [],
@@ -958,5 +958,6 @@
   "bot.runtime_unavailable": [],
   "bot.scope_container": [],
   "bot.scope_process": [],
-  "moderation.confirm_left_unknown": ["arg0", "arg1", "reason"]
+  "moderation.confirm_left_unknown": ["arg0", "arg1", "reason"],
+  "commands.api_detail": ["code"]
 }

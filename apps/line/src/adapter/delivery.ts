@@ -1,7 +1,7 @@
 ﻿import type { BaseClient } from "@evex/linejs/base";
 import type { CoreAction, NativeCore } from "../protocol/native.js";
 import { setTimeout as delay } from "node:timers/promises";
-import { ApiScheduler, errorCode, type SendAttempt } from "./api.js";
+import { ApiScheduler, errorCode, squareRequestRejected, type SendAttempt } from "./api.js";
 import { SquareDirectory, messageMetadata } from "./square.js";
 
 export async function deliverAction(client: BaseClient, core: NativeCore, gate: ApiScheduler, action: CoreAction, directory?: SquareDirectory): Promise<{ status: "sent" | "failed" | "unknown" | "queued"; code: string }> {
@@ -41,6 +41,9 @@ export async function deliverAction(client: BaseClient, core: NativeCore, gate: 
       // 件数・引数の明確な拒否だけをfailedにし、Coreで小さい削除バッチへ変更する。
       if (action.request.type === "deleteMessages" && code === "ILLEGAL_ARGUMENT"
           && (error as { data?: { errorCode?: unknown } })?.data?.errorCode !== undefined) {
+        core.completeAction({ actionId: action.actionId, status: "failed", code }); return { status: "failed", code };
+      }
+      if (action.request.type === "membership" && squareRequestRejected(error)) {
         core.completeAction({ actionId: action.actionId, status: "failed", code }); return { status: "failed", code };
       }
       core.completeAction({ actionId: action.actionId, status: "unknown", code }); return { status: "unknown", code };

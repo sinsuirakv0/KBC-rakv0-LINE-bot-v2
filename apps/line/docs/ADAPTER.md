@@ -121,3 +121,5 @@ Protocol v20のHistoryは採用LINEJS 3.4.2の生成Thrift定義でfetchSquareCh
 Protocol v22のRuntimeMonitorは既存60秒metrics Timerへ接続し、cgroup CPU/メモリを計測する。mainの照会・配送loop数は共通定数から起動と表示へ渡す。ApiScheduler.snapshotで待機・実行枠・制限待機を取得し、createCoreはBatch受付前に型付きDTOをNativeへ渡す。healthとmetricsも同じsnapshotを使う。LINE照会・受信cursor・RPCの並列数は変更しない。[値の意味と全関数](RUNTIME_STATUS.md)。
 
 2026-10-15、Protocol v23のmemberDtoはSquareMember.createdAtを正のsafe integerとして任意createdAtMsへ保持する。既存の退出確認getSquareMemberの返値をCoreの初参加補完に使い、追加API・キャッシュ・受信方式の変更はない。旧返値で時刻がない場合は省略する。[誤判定の再現・関数・検証](../../../crates/kbc-core/src/oc/docs/OC.md)。npm公開版は同日3.5.0を確認したが、今回の判定修正は採用済み3.4.2で検証し、受信/通信内部を使うSDK更新は別の互換性確認へ分離する。package/lockは変更しない。
+
+2026-10-17、membershipは更新応答の状態を確認できればプロフィール項目の省略だけでunknownにしない。状態を確認できない応答とILLEGAL_ARGUMENTの場合だけ、共通RPC枠でgetSquareMemberを最大1回行う。ILLEGAL_ARGUMENT後も希望する処分状態なら成功、異なれば元の拒否でfailed、確認GETの失敗は専用codeを付けunknownに分ける。他の明確なSquareExceptionはfailed。自動再処分しない。Profile/rolesやPUSH・認証・Protocol v23の境界は変更しない。[全分岐・code・検証](MEMBERSHIP_RESULTS.md)。

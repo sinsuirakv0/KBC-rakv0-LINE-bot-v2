@@ -919,7 +919,7 @@ pub fn mutation(
         detail = if result.code == "OK" {
             String::new()
         } else {
-            format!(" / {}", result.code)
+            message!(message_catalog, "commands.api_detail", code = result.code)
         }
     ));
     if let Some(case) = &job.case_id {

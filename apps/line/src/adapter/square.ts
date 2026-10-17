@@ -6,6 +6,7 @@ import type { OcMember } from "../protocol/generated/OcMember.js";
 import type { OcChat } from "../protocol/generated/OcChat.js";
 import type { MessageMention } from "../protocol/generated/MessageMention.js";
 import type { MessageEmoji } from "../protocol/generated/MessageEmoji.js";
+import { errorCode, squareRequestRejected } from "./api.js";
 
 export function mentionMetadata(mention?: MessageMention | null): Record<string, string> | undefined {
   if (!mention) return undefined;
@@ -213,12 +214,38 @@ export class SquareDirectory {
       if (result.members.some(member => member.squareId !== request.squareId)) throw new Error("MemberSearchScopeMismatch");
       result.continuationToken = continuationToken || undefined;
     } else if (request.type === "membership") {
-      if (!["BANNED", "KICK_OUT"].includes(request.state)) throw new Error("InvalidMembershipState");
-      const response = await this.client.square.updateSquareMember({ request: { updatedAttrs: [5], updatedPreferenceAttrs: [],
-        squareMember: { squareMemberMid: request.memberId, squareMid: request.squareId, revision: BigInt(request.revision), membershipState: request.state as "BANNED" | "KICK_OUT" } } });
-      result.member = memberDto(response.squareMember);
-      if (result.member.memberId !== request.memberId || result.member.squareId !== request.squareId) throw new Error("UnconfirmedMembershipTarget");
-      if (![request.state, request.state === "BANNED" ? "6" : "5"].includes(result.member.state)) throw new Error("UnconfirmedMembershipChange");
+      if (!["BANNED", "KICK_OUT"].includes(request.state) || !/^[0-9]{1,19}$/.test(request.revision)) throw new Error("InvalidMembershipState");
+      let updated: Member | undefined, rejection: unknown;
+      try {
+        const response = await this.client.square.updateSquareMember({ request: { updatedAttrs: [5], updatedPreferenceAttrs: [],
+          squareMember: { squareMemberMid: request.memberId, squareMid: request.squareId, revision: BigInt(request.revision), membershipState: request.state as "BANNED" | "KICK_OUT" } } });
+        updated = response?.squareMember;
+      } catch (error) {
+        if (!squareRequestRejected(error) || !["ILLEGAL_ARGUMENT", "400"].includes(errorCode(error))) throw error;
+        // 退会済み・処分済みの要求拒否は、現在の処分状態を1回確認する。再更新しない。
+        rejection = error;
+      }
+      if ((updated?.squareMemberMid && updated.squareMemberMid !== request.memberId)
+          || (updated?.squareMid && updated.squareMid !== request.squareId)) throw new Error("UnconfirmedMembershipTarget");
+      if (updated) {
+        try { result.member = memberDto(updated); }
+        catch { /* 更新応答にプロフィール全項目は必須ではない。 */ }
+      }
+      const states = [request.state, request.state === "BANNED" ? "6" : "5"];
+      if (!states.includes(String(updated?.membershipState))) {
+        try {
+          const verified = await this.client.square.getSquareMember({ squareMemberMid: request.memberId });
+          result.member = memberDto(verified.squareMember);
+          if (result.member.memberId !== request.memberId || result.member.squareId !== request.squareId) throw new Error("UnconfirmedMembershipTarget");
+        } catch (error) {
+          // 更新後の確認拒否を、更新要求自体の拒否と混ぜない。自動再処分しない。
+          throw new Error(`MembershipVerificationFailed_${errorCode(error).slice(0, 48)}`);
+        }
+        if (!states.includes(result.member.state)) {
+          if (rejection) throw rejection;
+          throw new Error("UnconfirmedMembershipChange");
+        }
+      }
     } else if (request.type === "profile") {
       if (!request.name || !/^[0-9]{1,19}$/.test(request.revision)) throw new Error("InvalidBotName");
       const chat = await this.chat(chatId);

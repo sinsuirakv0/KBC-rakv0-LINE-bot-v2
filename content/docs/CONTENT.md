@@ -54,3 +54,7 @@ help/test-mention.txtは!test mention-labelの専用案内。入口のhelp/test.
 2026-10-09、bot.statusを時間分秒・資源計測・共有待機枠表示へ更新した。CPU・メモリ・稼働ビルド・受信/APIの文面は同じmessages/bot.txtのbot.runtime_status、単位とラベルはbot.duration / cpu_usage / cpu_allocation / memory_limit / scope_* / receiver_*へ集約する。差し込み項目はschemaと同時更新し、help/bot.txtへ案内を追記した。indexの一覧は変更しない。[項目の意味](../../apps/line/docs/RUNTIME_STATUS.md)。
 
 2026-10-15、即抜けの初参加未確認はmessages/moderation.txtのmoderation.confirm_left_unknown（arg0・arg1・reason）で表示する。参加回数が複数の場合のconfirm_left_02と分け、情報不足を再参加と断定しない。[判定と補完](../../crates/kbc-core/src/oc/docs/OC.md)。
+
+2026-10-17、5分以内の退出処分は初参加条件を外した。help/oc-admin.txtへ対象を明記し、commands.mutation_05 / commands.reason_02を「参加から5分以内」へ変更した。confirm_left_unknownと再参加者のログは5分超の判定で引き続き使用する。[現行条件](../../crates/kbc-core/src/oc/docs/OC.md)。
+
+同日、処分結果の非OK codeはcommands.api_detail（code）でAPI見出し付きにする。対象・OC情報の取得失敗もmod.complete_01 / 02へcodeを渡す。文面・schema・Rustの呼出を同時更新し、失敗段階を省略しない標準表示とした。[結果の確定と確認失敗](../../apps/line/docs/MEMBERSHIP_RESULTS.md)。

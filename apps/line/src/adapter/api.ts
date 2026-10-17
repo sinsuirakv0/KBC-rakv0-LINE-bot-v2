@@ -9,6 +9,13 @@ export function errorCode(error: unknown): string {
   return /^[A-Za-z0-9_-]{1,80}$/.test(code) ? code : "Unknown";
 }
 
+export function squareRequestRejected(error: unknown): boolean {
+  // SquareExceptionの明確な拒否だけ。通信失敗や5xxを処分失敗と断定しない。
+  const code = (error as { data?: { errorCode?: unknown } } | null)?.data?.errorCode;
+  return ["ILLEGAL_ARGUMENT", "AUTHENTICATION_FAILURE", "FORBIDDEN", "NOT_FOUND", "REVISION_MISMATCH",
+    "PRECONDITION_FAILED", "NOT_IMPLEMENTED", "400", "401", "403", "404", "409", "410", "501"].includes(String(code));
+}
+
 type Job = { execute: () => Promise<unknown>; resolve: (value: unknown) => void; reject: (error: unknown) => void };
 const MAX_API_QUEUE = 32;
 export type SendAttempt = { started: boolean; method?: "sendMessage" | "sendSquareThreadMessage" | "destroyMessage" | "destroyMessages" | "uploadMedia" | "updateSquareMember" | "updateSquareMembers" | "reportSquareMessage"; beforeSend: () => void };

@@ -43,11 +43,16 @@ const client = new BaseClient({ device: "DESKTOPWIN" });
 const member = (id: string) => ({ squareMemberMid: id, squareMid: labMembers.has(id) ? labSquare : square, displayName: names.get(id) ?? (id === user ? "参加者🙂" : "メンバー"),
   role: roles.get(id) ?? "MEMBER", membershipState: states.get(id) ?? "JOINED", revision: 7n, createdAt: memberCreatedTimes.get(id) });
 let failMutation = false;
+let membershipResponse: "full" | "partial" | "empty" = "full";
+let membershipRejection: string | number | undefined;
+let failMembershipVerification = false, unverifiedMember = "";
+const membershipCalls: string[] = [];
 client.square.getSquareChat = async ({ squareChatMid }) => ({ squareChat: { squareChatMid, squareMid: [labChat, labSub].includes(squareChatMid) ? labSquare : square, name: "検証", type: "SQUARE_DEFAULT" },
   squareChatMember: { squareMemberMid: [labChat, labSub].includes(squareChatMid) ? labBot : bot } }) as Awaited<ReturnType<typeof client.square.getSquareChat>>;
 const memberLookups: string[] = [], failedNameLookups = new Set<string>();
 client.square.getSquareMember = async ({ squareMemberMid }) => {
   memberLookups.push(squareMemberMid);
+  if (squareMemberMid === unverifiedMember) throw Object.assign(new Error("RequestError"), { data: { errorCode: "NOT_FOUND" } });
   if (failedNameLookups.has(squareMemberMid)) throw new Error("NameLookupUnavailable");
   return { squareMember: member(squareMemberMid) } as Awaited<ReturnType<typeof client.square.getSquareMember>>;
 };
@@ -74,9 +79,17 @@ client.square.updateSquareMember = async options => gate.run("updateSquareMember
     profileCalls.push({ member: updated.squareMemberMid, square: updated.squareMid!, name: updated.displayName!, revision: BigInt(updated.revision!) });
   }
   gate.beforeFetch(); assert.equal(core.stats().sendingActions, 1);
+  if (!profile) {
+    membershipCalls.push(updated.squareMemberMid);
+    if (failMembershipVerification) unverifiedMember = updated.squareMemberMid;
+    if (membershipRejection !== undefined) throw Object.assign(new Error("RequestError"), { data: { errorCode: membershipRejection } });
+  }
   if (failMutation) throw new Error("DisconnectedAfterRequest");
   if (profile) names.set(updated.squareMemberMid, updated.displayName!);
   else states.set(updated.squareMemberMid, String(updated.membershipState));
+  if (!profile && membershipResponse !== "full") return (membershipResponse === "empty" ? {} : {
+    squareMember: { squareMemberMid: updated.squareMemberMid, membershipState: updated.membershipState },
+  }) as Awaited<ReturnType<typeof client.square.updateSquareMember>>;
   return (profile ? {} : { squareMember: member(updated.squareMemberMid) }) as Awaited<ReturnType<typeof client.square.updateSquareMember>>;
 });
 let denyRole = false;
@@ -521,6 +534,57 @@ try {
   await deliverAction(client, core, gate, ping, service); assert.equal(core.stats().queryingActions, 1);
   core.shutdown(); core = createCore(config); await drain(); assert(settings().media);
   assert.equal((db.prepare("SELECT count(*) AS n FROM oc_test_squares").get() as { n: number }).n, 1);
+  // 更新応答の処分状態が一致すれば、プロフィール欠落だけでunknownにしない。
+  membershipResponse = "partial";
+  const partialLookups = memberLookups.filter(id => id === user).length;
+  await message(`!oc kick ${user}`, mod); assert(texts(await drain()).includes("成功"));
+  assert.equal(memberLookups.filter(id => id === user).length - partialLookups, 1);
+  // 状態もない成功応答は1回の読み取りで確認し、処分自体は1回だけ。
+  membershipResponse = "empty";
+  const verifyLookups = memberLookups.filter(id => id === user).length, verifyUpdates = membershipCalls.length;
+  await message(`!oc kick ${user}`, mod); assert(texts(await drain()).includes("成功"));
+  assert.equal(memberLookups.filter(id => id === user).length - verifyLookups, 2);
+  assert.equal(membershipCalls.length - verifyUpdates, 1);
+  for (const code of ["ILLEGAL_ARGUMENT", 400]) {
+    membershipRejection = code;
+    // 退会済みで禁止されていない場合は拒否、既に禁止済みなら確認結果を成功とする。
+    for (const state of ["LEFT", "BANNED"]) {
+      states.set(user, state);
+      const reads = memberLookups.filter(id => id === user).length, updates = membershipCalls.length;
+      await message(`!oc kick ${user}`, mod); const verified = texts(await drain());
+      assert(verified.includes(state === "BANNED" ? "成功" : "失敗"));
+      if (state === "LEFT") assert(verified.includes(`API: ${code}`));
+      assert.equal(memberLookups.filter(id => id === user).length - reads, 2);
+      assert.equal(membershipCalls.length - updates, 1);
+      assert.equal(core.stats().unknownActions, 0);
+    }
+  }
+  for (const code of ["FORBIDDEN", 409]) {
+    membershipRejection = code;
+    await message(`!oc kick ${user}`, mod); const rejected = texts(await drain());
+    assert(rejected.includes("失敗") && rejected.includes(`API: ${code}`) && !rejected.includes("結果不明"));
+    assert.equal(core.stats().unknownActions, 0);
+  }
+  failMembershipVerification = true;
+  for (const code of [undefined, "ILLEGAL_ARGUMENT"]) {
+    membershipRejection = code; unverifiedMember = "";
+    const updatesBeforeVerificationFailure = membershipCalls.length;
+    await message(`!oc kick ${user}`, mod); const unverified = await drain();
+    assert(texts(unverified).includes("MembershipVerificationFailed_NOT_FOUND"));
+    assert.equal(core.stats().unknownActions, 1);
+    await drain(); assert.equal(membershipCalls.length - updatesBeforeVerificationFailure, 1);
+    const unverifiedAction = unverified.find(action => action.type === "ocApi" && action.request.type === "membership"); assert(unverifiedAction);
+    core.resolveAction({ actionId: unverifiedAction.actionId, status: "sent", code: "ConfirmedInFixture" });
+  }
+  membershipRejection = undefined;
+  failMembershipVerification = false; unverifiedMember = ""; membershipResponse = "full";
+  states.delete(user);
+  failedNameLookups.add(user);
+  const callsBeforeLookupFailure = membershipCalls.length;
+  await message(`!oc kick ${user}`, mod); const lookupFailure = texts(await drain());
+  assert(lookupFailure.includes("未処分") && lookupFailure.includes("API: NameLookupUnavailable"));
+  assert.equal(membershipCalls.length, callsBeforeLookupFailure);
+  failedNameLookups.delete(user);
   await message(`o.oc kick ${user}`, mod); failMutation = true; const unknown = await drain(); failMutation = false;
   assert(unknown.some(a => a.type === "ocApi" && a.request.type === "membership")); assert.equal(core.stats().unknownActions, 1);
   core.shutdown(); core = createCore(config); assert.equal(core.stats().unknownActions, 1);
