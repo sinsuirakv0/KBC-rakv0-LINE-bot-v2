@@ -8,7 +8,7 @@
 
 | 入力 | 動作 |
 | --- | --- |
-| !ut / !tut / !st | JDB検索ページ |
+| !ut / !tut / !st | KBC検索ページ（末尾jdbでJDB） |
 | !ut 0 / !ut ネコ | 正式な形態名と別称を検索。ヒットした形態・別称を表示 |
 | !ut 検索語 -f | 正規化なし・正式な形態名だけを検索。-forceはutのflagではない |
 | !tut わんこ / !tut 0 | 現行Enemynameの名称と別称。ダミーは対応する別称を表示 |
@@ -29,7 +29,7 @@
 
 prefixは `!` を既定とし、`o.` も受け付ける。コマンド名はASCII大文字小文字を区別しない。`unit / enemy / stage` は別名。検索引数は16語・512byteまで。通常はDiscordと同じNFKC・小文字・かな・長音・波線の正規化。空白区切りの語は一つの名称内でAND照合する。形態名と別称を連結して語を跨がせない。utの通常検索は正式形態名を優先し、その後に別称を調べる。
 
-数値IDはDiscordと同じASCII数字。stはrawキーまたは最長分類名を使うtypeキーへ変換し、完全一致で1件を返す。IDで解決したマップはJDBのid=rawを使い、名前検索はtype/map、ステージはstage付きリンクを使う。マップ名とsale別称の両方で検索し、旧マップの表示名は維持する。[snapshotの元資料・更新](../../../../../data/search/docs/SNAPSHOT.md)。
+数値IDはDiscordと同じASCII数字。stはrawキーまたは最長分類名を使うtypeキーへ変換し、完全一致で1件を返す。通常はKBCのmap/stageへ対応させる。末尾jdbの指定時は、IDで解決したマップにJDBのid=raw、名前検索にtype/map、ステージにstage付きリンクを使う。マップ名とsale別称の両方で検索し、旧マップの表示名は維持する。[snapshotの元資料・更新](../../../../../data/search/docs/SNAPSHOT.md)。
 
 motionはpng/mp4/gif、f/c/s/u（utだけ）、a=攻撃・w=歩行・i=待機・k=ノックバック。PNGはFrame番号省略0、動画は範囲省略・開始~~終了・開始 終了。複数segmentを順番に描画し、--fullで全体表示。[描画の関数・上限](../../motion/docs/MOTION.md)。
 
@@ -104,3 +104,6 @@ Bridgeの非同期受付は最大4受付・実処理1件。外部素材の取得
 
 
 niseclubは組込みコマンドとして予約し、help/niseclub.txtを必須にする。URLkeyの署名・設定と関数の関係はdocs/implementation/NISECLUB.md。
+
+
+2026-10-17: ut/tut/stの標準リンクをKBCへ変更し、末尾jdbで従来リンクを選択する。関数・ID対応・選択時の保持はdocs/implementation/DATABASE_LINKS.md。

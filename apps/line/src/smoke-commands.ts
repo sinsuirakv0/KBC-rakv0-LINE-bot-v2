@@ -71,8 +71,12 @@ try {
   await submit("!help bot"); action = await take();
   assert.equal(action.text, (await readFile(join(directory, "content/help/bot.txt"), "utf8")).replace(/^\ufeff/, "").replaceAll("\r\n", "\n").trim()); sent(action);
   assert.equal((await submit("!bot help")).actionsCreated, 0);
-  for (const [command, expected] of [["o.unit 0", "ネコ"], ["o.st N0", "id=0"], ["o.tut 0", "わんこ"], ["o.st N000-000", "大地を揺るがす"], ["o.st 3000-000", "長崎県"]]) {
-    await submit(command); action = await take(); assert(action.text.includes(expected) && action.text.includes("https://jarjarblink.github.io/JDB/"), action.text); sent(action);
+  for (const [command, expected] of [["o.unit 0", "ネコ"], ["o.st N0", "map=N000"], ["o.tut 0", "わんこ"], ["o.st N000-000", "大地を揺るがす"], ["o.st 3000-000", "長崎県"]]) {
+    await submit(command); action = await take(); assert(action.text.includes(expected) && action.text.includes("https://kbc-rakv0.pages.dev/pages/"), action.text); sent(action);
+  }
+
+  for (const command of ["!ut 0 jdb", "o.tut 0 jdb", "!st N000-000 jdb"]) {
+    await submit(command); action = await take(); assert(action.text.includes("https://jarjarblink.github.io/JDB/"), action.text); sent(action);
   }
 
   await submit("o.ut ﾈｺﾋﾞﾙﾀﾞｰ"); action = await take();
@@ -115,7 +119,7 @@ try {
   await submit("3p", "alice", "prompt-two"); action = await take(); assert(action.text.includes("21〜30")); sent(action, "prompt-three");
   await submit("前", "alice", "prompt-three"); action = await take(); assert(action.text.includes("11〜20"));
   const tenth = action.text.split("\n").find(line => line.startsWith("10．"))!.slice(3); sent(action, "prompt-four");
-  await submit("10", "alice", "prompt-four"); action = await take(); assert(action.text.includes(tenth) && action.text.includes("https://jarjarblink.github.io/JDB/")); sent(action);
+  await submit("10", "alice", "prompt-four"); action = await take(); assert(action.text.includes(tenth) && action.text.includes("https://kbc-rakv0.pages.dev/pages/")); sent(action);
   assert(deleted.includes("prompt-one")); assert.equal(core.stats().activeSessions, 0);
   assert.equal((await submit("1", "alice", "prompt-three")).actionsCreated, 0);
   // 末尾の少数候補に存在しない番号を選ばず、古い8件表示は再起動で失効する。
@@ -202,7 +206,7 @@ try {
   assert.equal(result.status, "unknown"); assert.equal(result.code, "403"); assert.equal(core.stats().unknownActions, 1); assert.equal(sdkSends, 0);
   await submit("o.ut ねこ"); const prompt = await take();
   assert.equal((await deliverAction(client, core, gate, prompt)).status, "sent");
-  await submit("1", "alice", "prompt-message"); action = await take(); assert(action.text.includes("https://jarjarblink.github.io/JDB/")); sent(action);
+  await submit("1", "alice", "prompt-message"); action = await take(); assert(action.text.includes("https://kbc-rakv0.pages.dev/pages/")); sent(action);
   const cleanup = await core.nextAction(); assert(cleanup?.type === "deleteMessage" && cleanup.messageId === "prompt-message");
   client.square.destroyMessage = async options => gate.run("destroyMessage", async () => {
     gate.beforeFetch(); assert.equal(options.messageId, "prompt-message"); throw new Error("AdminDeleteDenied");

@@ -1,4 +1,5 @@
 ﻿pub use super::pagination::PAGE_SIZE;
+use crate::database_links::DatabaseSite;
 use crate::messages::message;
 use crate::{
     Result,
@@ -73,6 +74,8 @@ pub struct FileOption {
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SearchSession {
+    #[serde(default)]
+    pub(crate) site: DatabaseSite,
     #[serde(default)]
     pub revision: String,
     pub kind: String,
@@ -337,8 +340,10 @@ impl SearchCatalog {
         Some(stage.map_or(key.clone(), |s| format!("{key}:stage:{s}")))
     }
     pub fn search(&self, kind: &str, args: &[&str]) -> Option<SearchSession> {
+        let (args, site) = DatabaseSite::split_arguments(args);
         let (query, force, operation) = parse(kind, args)?;
         let mut session = SearchSession {
+            site,
             revision: self.session_revision(),
             kind: kind.into(),
             query,
@@ -441,6 +446,10 @@ impl SearchCatalog {
             e.raw_url.as_ref().unwrap_or(&e.url)
         } else {
             &e.url
+        };
+        let url = match s.site {
+            DatabaseSite::Jdb => url.to_owned(),
+            DatabaseSite::Kbc => s.site.detail_url(&s.kind, &e.id, e.url.clone()),
         };
         message!(
             self.messages(),

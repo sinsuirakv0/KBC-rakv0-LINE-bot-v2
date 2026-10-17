@@ -14,6 +14,7 @@ use tokio::sync::Notify;
 
 mod assets;
 mod commands;
+mod database_links;
 mod event_data;
 mod logs;
 mod media;

@@ -1,3 +1,4 @@
+use crate::database_links::DatabaseSite;
 use crate::messages::message;
 pub mod content;
 pub mod pagination;
@@ -167,16 +168,9 @@ pub fn prepare(
         };
     }
     if matches!(name, "ut" | "tut" | "st") {
-        if args.is_empty() {
-            let page = match name {
-                "ut" => "unit",
-                "tut" => "tunit",
-                _ => "map",
-            };
-            return CommandPlan::Text(vec![(
-                format!("https://jarjarblink.github.io/JDB/{page}_search.html?cc=ja"),
-                now,
-            )]);
+        let (search_args, site) = DatabaseSite::split_arguments(&args);
+        if search_args.is_empty() {
+            return CommandPlan::Text(vec![(site.search_url(name), now)]);
         }
         if args.join(" ").len() > 512 || args.len() > 16 {
             return CommandPlan::Text(vec![(
