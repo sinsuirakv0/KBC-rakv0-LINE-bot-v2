@@ -101,3 +101,6 @@ Bridgeの非同期受付は最大4受付・実処理1件。外部素材の取得
 2026-10-08、idのメンバー検索とoc muteへtalkID:mMIDを追加。別トークの利用はBOT管理者専用。mute alltalkはOCの参加トーク全体の本人投稿を20件ずつ削除し、返信は実行元へ固定。[入力と共通処理](../../oc/docs/REMOTE_MUTE.md)。
 
 2026-10-08、!bot statusはLINE照会を省いて通常配送へ登録する。oc mute alltalkは参加地点・取得終端で各トークの履歴削除を終了し、開始返信への本人の「停止」リプライを受け付ける。いずれもミュートは変更しない。[状態確認](../../oc/docs/BOT.md)・[履歴と制御Session](../../oc/docs/REMOTE_MUTE.md)。
+
+
+niseclubは組込みコマンドとして予約し、help/niseclub.txtを必須にする。URLkeyの署名・設定と関数の関係はdocs/implementation/NISECLUB.md。

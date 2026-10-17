@@ -66,3 +66,6 @@ npm run smoke:oc
 既存の非公開GitHubデータrepoから旧権限・OC設定を取り込み、永続Volumeなしで認証・Coreを退避・復元する。[保存・復旧の限界](docs/operations/GITHUB_RECOVERY.md)。旧ログは軽量形式へ変換する方針へ更新。[ログ設計](docs/decisions/OC_LOG_STORAGE_V2.md)。
 
 本環境でPUSH受信と既存GitHubへの状態退避を確認した。ログはOC / トークの階層で発言・名前・参加退出を分け、同じ追記先を4MiBまで更新する。[新しい保存形式](docs/decisions/OC_LOG_STORAGE_V2.md)、[変換Workflow](scripts/logs/docs/MIGRATION.md)。
+
+
+クラブ用リンクは [niseclub](docs/implementation/NISECLUB.md)。Webと両botで共通の `URLKEY_SECRET` を設定して再起動する。

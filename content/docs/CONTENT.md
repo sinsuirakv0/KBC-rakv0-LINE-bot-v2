@@ -58,3 +58,6 @@ help/test-mention.txtは!test mention-labelの専用案内。入口のhelp/test.
 2026-10-17、5分以内の退出処分は初参加条件を外した。help/oc-admin.txtへ対象を明記し、commands.mutation_05 / commands.reason_02を「参加から5分以内」へ変更した。confirm_left_unknownと再参加者のログは5分超の判定で引き続き使用する。[現行条件](../../crates/kbc-core/src/oc/docs/OC.md)。
 
 同日、処分結果の非OK codeはcommands.api_detail（code）でAPI見出し付きにする。対象・OC情報の取得失敗もmod.complete_01 / 02へcodeを渡す。文面・schema・Rustの呼出を同時更新し、失敗段階を省略しない標準表示とした。[結果の確定と確認失敗](../../apps/line/docs/MEMBERSHIP_RESULTS.md)。
+
+
+niseclubは組込みコマンドとして予約し、help/niseclub.txtを必須にする。URLkeyの署名・設定と関数の関係はdocs/implementation/NISECLUB.md。

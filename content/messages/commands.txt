@@ -85,3 +85,6 @@ purge.started = "{text}\n過去投稿の削除を開始します。\nこのメ�
 purge.stop_usage = "この削除を止めるには、開始メッセージに「停止」「終了」「stop」をリプライしてください。"
 purge.stop_requested = "過去投稿の一括削除の停止を受け付けました。開始済みの通信が終わり次第、後続処理を止めます。ミュート設定は変更しません。"
 purge.cancelled = "リプライによる停止、または制御メッセージの設定変更により、過去投稿の一括削除を終了しました。"
+
+niseclub.link = "{url}"
+niseclub.unavailable = "URLkeyの生成設定が未設定です。Bot管理者に連絡してください。"

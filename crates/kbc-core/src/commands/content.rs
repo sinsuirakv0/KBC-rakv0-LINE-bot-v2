@@ -23,7 +23,8 @@ impl ContentCatalog {
         if responses.keys().any(|key| {
             matches!(
                 key.as_str(),
-                "pushsetting"
+                "niseclub"
+                    | "pushsetting"
                     | "push"
                     | "gatya"
                     | "sale"
@@ -49,6 +50,7 @@ impl ContentCatalog {
         let help = read_folder(&root.join("help"))?;
         for key in [
             "index",
+            "niseclub",
             "pushsetting",
             "push",
             "skd",

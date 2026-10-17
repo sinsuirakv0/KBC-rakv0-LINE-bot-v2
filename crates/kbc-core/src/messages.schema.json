@@ -959,5 +959,7 @@
   "bot.scope_container": [],
   "bot.scope_process": [],
   "moderation.confirm_left_unknown": ["arg0", "arg1", "reason"],
-  "commands.api_detail": ["code"]
+  "commands.api_detail": ["code"],
+  "niseclub.link": ["url"],
+  "niseclub.unavailable": []
 }

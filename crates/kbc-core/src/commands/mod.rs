@@ -1,4 +1,4 @@
-﻿use crate::messages::message;
+use crate::messages::message;
 pub mod content;
 pub mod pagination;
 pub mod search;
@@ -75,6 +75,7 @@ pub fn prepare(
     let known = matches!(
         name,
         "skd"
+            | "niseclub"
             | "gatya"
             | "sale"
             | "item"
@@ -105,6 +106,16 @@ pub fn prepare(
                 .unwrap_or(message!(message_catalog, "search.prepare_01").into()),
             now,
         )]);
+    }
+    if name == "niseclub" {
+        let body = if !args.is_empty() {
+            content.command_help("niseclub").unwrap_or_default()
+        } else {
+            crate::url_key::club_link(now)
+                .map(|url| message!(message_catalog, "niseclub.link", url = url))
+                .unwrap_or_else(|| message!(message_catalog, "niseclub.unavailable").into())
+        };
+        return CommandPlan::Text(vec![(body, now)]);
     }
     if name == "push" {
         return if args.is_empty() || args == ["help"] {
