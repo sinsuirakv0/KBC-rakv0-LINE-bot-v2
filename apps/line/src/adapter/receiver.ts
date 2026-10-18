@@ -7,6 +7,7 @@ import type { CoreEvent } from "../protocol/generated/CoreEvent.js";
 import { ApiScheduler, errorCode } from "./api.js";
 import { normalizeEvents } from "./events.js";
 import { joinedChatPage, type SquareDirectory } from "./square.js";
+import type { LineRecovery } from "./recovery.js";
 
 type AccountPage = Awaited<ReturnType<BaseClient["square"]["fetchMyEvents"]>>;
 type ChatPage = Awaited<ReturnType<BaseClient["square"]["fetchSquareChatEvents"]>>;
@@ -20,11 +21,15 @@ export class Receiver {
   readonly metrics = { sessions: 0, signOns: 0, pushHints: 0, leaseRenewals: 0, pages: 0, events: 0, accepted: 0, duplicates: 0, ignored: 0, maxLagMs: 0,
     pendingChats: 0, chatFailures: 0, pollingChats: 0, priorityChats: 0, listedChats: 0, unlistedPriorityChats: 0, pollCycles: 0, pollPages: 0, pollFailures: 0, discoveryFailures: 0, maxPollDelayMs: 0,
     types: {} as Record<string, number> };
-  status = "starting";
+  private phase = "starting";
+  get status(): string { return this.signal.aborted ? "stopped" : this.recovery?.blocked ? this.recovery.state : this.phase; }
+  private closeSession?: () => void;
   private outgoingBytes = 0;
   private chatRequests = new Map<string, Promise<boolean>>();
 
-  constructor(private client: BaseClient, private core: NativeCore, private gate: ApiScheduler, private signal: AbortSignal, private directory?: SquareDirectory) {
+  constructor(private client: BaseClient, private core: NativeCore, private gate: ApiScheduler, private signal: AbortSignal,
+    private directory?: SquareDirectory, private recovery?: LineRecovery) {
+    if (recovery) recovery.onPause = () => this.closeSession?.();
     const nativePush = client.fetchPush;
     const transport = client as unknown as { fetchPush: typeof client.fetchPush };
     transport.fetchPush = (input, init) => {
@@ -50,17 +55,19 @@ export class Receiver {
   private async runPush(): Promise<void> {
     let backoff = 1000;
     while (!this.signal.aborted) {
-      try { await this.session(); backoff = 1000; }
+      try { await this.recovery?.beforeConnect(); await this.session(); this.phase = "reconnecting"; backoff = 1000; }
       catch (error) {
         if (this.signal.aborted) break;
-        this.status = "reconnecting";
+        this.phase = "reconnecting";
         console.log(JSON.stringify({ kind: "receiver-error", code: errorCode(error), backoffMs: backoff }));
         if ((error as Error).name === "CoreStoreError") throw error;
+        this.recovery?.failed(error);
       }
+      if (this.recovery?.blocked) continue;
       if (!this.signal.aborted) await delay(backoff + Math.floor(Math.random() * 300), undefined, { signal: this.signal });
       backoff = Math.min(60000, backoff * 2);
     }
-    this.status = "stopped";
+    this.phase = "stopped";
   }
 
   private readCheckpoint(stream: string, originMs: number): Checkpoint {
@@ -160,6 +167,8 @@ export class Receiver {
     let discoverAt = 0;
     let listed: Set<string> | undefined;
     while (!this.signal.aborted) {
+      await this.gate.waitReady().catch(error => { if (!this.signal.aborted) throw error; });
+      if (this.signal.aborted) break;
       const now = Date.now();
       let priority: Set<string>;
       try { priority = new Set(this.core.priorityChats()); }
@@ -266,8 +275,12 @@ export class Receiver {
 
   private async session(): Promise<void> {
     const push = this.client.push;
+    const version = this.recovery?.version;
+    let checking = this.recovery?.blocked ?? false;
+    const verify = <T>(operation: () => Promise<T>) => checking ? this.gate.withProbe(operation) : operation();
     let checkpoint = this.readCheckpoint("account", Date.now());
-    checkpoint = await this.completePending(checkpoint);
+    if (!this.recovery?.blocked) checkpoint = await this.completePending(checkpoint);
+    if (version !== this.recovery?.version) throw new Error("LineApiUnavailable");
     this.client.poll.sync.square = checkpoint.syncToken;
     let dirty = false;
     let closed = false;
@@ -312,8 +325,10 @@ export class Receiver {
     await this.gate.pace();
     this.outgoingBytes = 0;
     const initialize = push.initializeConn.bind(push) as unknown as (state: number, services: number[]) => ReturnType<typeof push.initializeConn>;
-    const conn = await initialize(1, [3]);
-    const close = () => { closed = true; wake?.(); void conn.close(); };
+    const conn = await this.gate.withProbe(() => initialize(1, [3]));
+    const close = () => { closed = true; initialReject(new Error("PushClosed")); wake?.(); void conn.close(); };
+    this.closeSession = close;
+    if (version !== this.recovery?.version) close();
     this.signal.addEventListener("abort", close, { once: true });
     const watchdog = setInterval(() => { if (Date.now() - lastFrameAt > 90000) close(); }, 30000);
     let read: Promise<void> | undefined;
@@ -340,18 +355,23 @@ export class Receiver {
       };
       this.metrics.sessions++;
       this.metrics.signOns++;
-      this.status = "syncing";
+      this.phase = "syncing";
       read = push.InitAndRead([3]);
       void read.then(() => initialReject(new Error("PushClosed")), initialReject).finally(close);
       const initialTimer = setTimeout(() => initialReject(new Error("SignOnTimeout")), 15000);
       let page: AccountPage;
       try { page = await initial; } finally { clearTimeout(initialTimer); }
+      // HTTP接続やpingだけでは再開しない。Square購読の正常応答を確認してから共通RPCを戻す。
+      if (!Array.isArray(page.events) || page.events.length > 100 || typeof page.syncToken !== "string"
+          || !Number.isSafeInteger(Number(page.subscription?.subscriptionId)) || Number(page.subscription?.subscriptionId) <= 0) throw new Error("InvalidAccountPage");
+      if (version !== this.recovery?.version) throw new Error("LineApiUnavailable");
       // 継続中のsnapshotはsignup応答で上書きせず、保存済みのページ位置から再開する。
-      if (checkpoint.continuationToken) page = await this.client.square.fetchMyEvents({ syncToken: checkpoint.syncToken,
-        continuationToken: checkpoint.continuationToken, subscriptionId: Number(page.subscription.subscriptionId), limit: 100 });
+      if (checkpoint.continuationToken) page = await verify(() => this.client.square.fetchMyEvents({ syncToken: checkpoint.syncToken,
+        continuationToken: checkpoint.continuationToken, subscriptionId: Number(page.subscription.subscriptionId), limit: 100 }));
       let pages = 0;
       while (!closed && !this.signal.aborted) {
-        if (!Array.isArray(page.events) || page.events.length > 100 || typeof page.syncToken !== "string") throw new Error("InvalidAccountPage");
+        if (!Array.isArray(page.events) || page.events.length > 100 || typeof page.syncToken !== "string"
+            || !Number.isSafeInteger(Number(page.subscription?.subscriptionId)) || Number(page.subscription?.subscriptionId) <= 0) throw new Error("InvalidAccountPage");
         const chats = [...new Set(page.events.filter(event => event.payload?.notificationMessage?.requiredToFetchChatEvents)
           .map(event => event.payload.notificationMessage.squareChatMid))];
         if (chats.length > 100 || chats.some(chat => typeof chat !== "string" || !chat)) throw new Error("InvalidChatHint");
@@ -360,10 +380,13 @@ export class Receiver {
         checkpoint = { ...checkpoint, syncToken: page.syncToken,
           continuationToken: page.continuationToken || undefined, pendingChats };
         this.metrics.pendingChats = pendingChats.length;
-        await this.accept("account", checkpoint, page.events);
+        await verify(() => this.accept("account", checkpoint, page.events));
         this.client.poll.sync.square = checkpoint.syncToken;
         push.subscriptionId = Number(page.subscription.subscriptionId);
         if (!Number.isSafeInteger(push.subscriptionId) || push.subscriptionId <= 0) throw new Error("InvalidSubscription");
+        if (version !== this.recovery?.version) throw new Error("LineApiUnavailable");
+        this.recovery?.healthy();
+        checking = false;
         const ttl = Number(page.subscription.ttlMillis);
         // 購読期限でだけ更新する。ttlが得られない応答は30分を仮の観測値にする。
         const renewAt = Date.now() + (Number.isFinite(ttl) && ttl > 0 ? Math.max(1000, Math.min(86400000, ttl * 0.8)) : 1800000);
@@ -372,7 +395,7 @@ export class Receiver {
           if (++pages >= 100) throw new Error("AccountPageBudget");
         } else {
           pages = 0;
-          this.status = "receiving";
+          this.phase = "receiving";
           while (!dirty && !closed && !this.signal.aborted && Date.now() < renewAt) {
             checkpoint = await this.completePending(checkpoint);
             if (dirty || closed || this.signal.aborted) break;
@@ -393,12 +416,14 @@ export class Receiver {
       }
     } finally {
       clearInterval(watchdog);
+      this.closeSession = undefined;
       this.signal.removeEventListener("abort", close);
       close();
       await read?.catch(() => {});
       await noopTask;
       await conn.resStream?.cancel().catch(() => {});
       push.conns = [];
+      push.signOnRequests = {};
     }
   }
 }

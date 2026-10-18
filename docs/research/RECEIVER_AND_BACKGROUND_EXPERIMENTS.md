@@ -195,3 +195,9 @@ Receiver.runPollingは、一覧を全ページ取得できた場合だけ、そ�
 予約を未来dueのOutboxへ直接保存し、受信とは独立した既存Timerで配送する。イベント・ガチャ・dailyは共有公開データSourceと既存監視の寿命へ接続し、LINE側の取得APIを増やさない。5秒ごとのDB確認、公開データ60秒更新・最大120秒保持、1分先の配送準備を採用した。[判断・トレードオフ・有限上限](../decisions/PUSH_NOTIFICATIONS_V1.md)。
 
 実LINEの通知、NorthflankのCPU・常駐メモリ、多OCの継続負荷は未検証。オフライン検証と公開データの単発確認を行い、結果を[機能資料](../../crates/kbc-core/src/push/docs/PUSH.md)へ記録する。LINEJS公開版はnpm registryで3.4.2を再確認し、依存版は変更しない。
+
+## 2026-10-18：認証失敗が続く本番ログ
+
+利用者指定のChrome上のNorthflankログを読み取り確認した。稼働commit 3722cc8、0.2vCPU / 512MB、1 instance。日本時間9:31頃からAUTHENTICATION_FAILUREがトーク取得へ発生し、10:17時点でも参加一覧で継続。PUSHも再接続・PushConnectTimeoutとなり、取得済みイベント数とPUSH hint数が進まず、queuedActions / queuedQueries / queuedDeliveriesは0、rateLimitsは0だった。コンテナの生存だけでは受信の正常性を示さない。tokenの失効かアカウント制限かは、このcodeから断定しない。画面のログを更新して確認したが、再起動・設定変更・認証値の取得は行っていない。
+
+3.4.2と最新公開3.5.0のRequestClientはMUST_REFRESH_V3_TOKENの場合だけSDK自動refreshを行い、SquareのAUTHENTICATION_FAILUREを対象としない。SDK更新だけに頼らず、利用者指定の最大3回の復旧と、失敗後の1分監視を共通API停止へ接続する。[採用版の照合](../../apps/line/docs/LINEJS_VERSION.md)と[状態・関数・検証](../../apps/line/docs/RECOVERY.md)を参照。実LINEでの制限解除と復旧成功は配備後の確認事項。

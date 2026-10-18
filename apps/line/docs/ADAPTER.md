@@ -11,7 +11,7 @@
 | 関数・状態 | 働き・相互関係 |
 | --- | --- |
 | `AuthStorage` | SDKの認証・reqseqを直列更新し、tmp書込・fsync・renameで保存。成功後だけメモリを更新。保存エラー・64件の待機上限到達をglobal abortへ伝え、以後の読書きを拒否。`flush`は全保存を待つ |
-| `installApiScheduler` | 3.4.2の`requestCore`を包み、通常・LEGY・SDK token更新を共通枠へ接続。RPC本文の処理完了まで枠を持つ |
+| `installApiScheduler` | 3.5.0の`requestCore`を包み、通常・LEGY・SDK token更新を共通枠へ接続。RPC本文の処理完了まで枠を持つ |
 | `ApiScheduler.run / pace / pump` | 最大2実行・32待機のFIFOと開始間隔250ms。enqueue・完了・cooldown終了で自律的に起きる。初期値はLINEの許容制限値ではない |
 | `Receiver.session` | OCのservice 3だけをHTTP/2で購読。初期応答をSDK Thriftで読み、SDK既定Stream・先行cursor更新を使わない |
 | `accept` | SDK Eventをplain DTOへ変換。sender・REPLYの返信先もDTOへ正規化し、非同期Nativeのcommit後だけSDKの再接続用syncを進める |
@@ -32,7 +32,7 @@ HTTP 429の数値Retry-After、`EXCESSIVE_ACCESS`等の識別できる制限応�
 
 HTTP/2の初期接続とsign-on待ちは各15秒。PUSH入力の組立Bufferは1MiB、SDKへ書込む未消費のBufferは64KiBを上限とし、ACK失敗の未監視rejectをcatchする。無フレーム90秒で接続を閉じる。定期チェックは30秒、keepaliveの`noop`も共通RPC枠へ通す。
 
-各取得は100件、accountの連続100ページで一度復旧へ戻り、保存済みcontinuationから再開する。補完の指示は1ページ最大100chat、持ち越しと合わせ最大256chat。通常接続復旧は1〜60秒のbackoffと小さなjitter。旧接続と取得が終わるまで次の接続を開始しない。Core保存失敗・checkpoint破損・容量超過は局所復旧へ逃がさずプロセス停止する。
+各取得は100件、accountの連続100ページで一度復旧へ戻り、保存済みcontinuationから再開する。補完の指示は1ページ最大100chat、持ち越しと合わせ最大256chat。2026-10-18から本起動では接続・認証の復旧を最大3回、失敗後はAPI利用停止として60秒ごとの1回監視へ変更した。旧接続と取得が終わるまで次の接続を開始しない。Core保存失敗・checkpoint破損・容量超過は局所復旧へ逃がさずプロセス停止する。[状態・全関数・検証](RECOVERY.md)。
 
 終了はglobal signalで通信を取消し、Coreの待機を起こす。`claimed`は次回起動で再待機、`sending`は`unknown`になり自動再投稿されない。Receiverはreadとkeepalive noopをjoinし、mainは受信・配送終了後にStorage全体の`flush`を待つ。flush失敗でもhealth server等の後始末は実施する。停止の強制上限20秒。SDK内部のLEGY通信はSDK自身の15秒timeoutで取消す。DBと外部通信は原子的でないため、送信開始記録直後の終了は結果不明になり得る。
 

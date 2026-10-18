@@ -2,6 +2,14 @@
 
 作成日: 2026-10-02、更新日: 2026-10-04。状態: Native build・型生成・TS build・オフラインSmoke・公開素材による動画生成済み。既存NorthflankへProtocol v7を配備し、PUSH・独立したトーク取得・GitHubへの暗号化退避・軽量ログへの追記を確認。実Commandごとの表示と多数OCの長期負荷は運用観測を続ける。
 
+## 2026-10-18：認証復旧とAPI利用停止
+
+LINEJSを3.5.0へ更新し、認証更新・再接続を最大3回、失敗後は1分ごとに1回監視する処理を追加した。追加の環境変数・認証方式・有料リソースは不要。起動時の認証失敗でも保存済みrefresh情報で同じ復旧を試す。通常APIとPUSHを止めている間も、既存の暗号化GitHub退避を続ける。
+
+healthと毎分metricsの`recovery.state`、`attempts / maxAttempts`、`checks`、`nextAttemptAtMs`、`code`を確認する。api-recovering / api-suspendedではhealth 503。Square購読の最初のページを保存できればAPIを再開し、追い付き後receivingで200になる。API利用停止はBot側の保護状態であり、アカウント制限の確定ではない。ログにtoken等は出さない。
+
+通常利用が戻らなくても、認証・Core DB・checkpoint・unknownを削除しない。保存済みrefresh情報が無効な場合は自動復旧できない可能性があり、継続するcodeを調査する。プロセス再起動で復旧カウンターは初期化されるため、監視中の再起動を繰り返さない。[関数・停止対象・期限・オフライン検証](../../apps/line/docs/RECOVERY.md)。本番配備と実LINEでの復旧確認は未実施。
+
 ## 起動
 
 Node 24以降、Rust 1.98、SQLite Cコードをコンパイルできる環境を使う。Windows GNU LLVMではLLVM MinGWのbinをPATHまたは`LLVM_MINGW_BIN`へ指定。今回のローカル検証では`.tools/llvm-mingw-20260922-ucrt-x86_64/bin`を利用した。LinuxはC compilerが必要。依存lockと生成済みProtocolはGitへ保存する。

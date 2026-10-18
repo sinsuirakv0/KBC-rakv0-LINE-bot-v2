@@ -6,7 +6,8 @@ import { AuthStorage } from "./adapter/storage.js";
 import { GitHubPersistence } from "./adapter/persistence.js";
 import { LogSync } from "./adapter/logs.js";
 import { SearchDataUpdater } from "./adapter/search-data.js";
-import { ApiScheduler, errorCode, installApiScheduler } from "./adapter/api.js";
+import { ApiScheduler, authenticationFailed, errorCode, installApiScheduler } from "./adapter/api.js";
+import { LineRecovery } from "./adapter/recovery.js";
 import { Receiver } from "./adapter/receiver.js";
 import { deliverAction } from "./adapter/delivery.js";
 import { createCore, type NativeCore } from "./protocol/native.js";
@@ -51,11 +52,13 @@ async function main(): Promise<void> {
     client.authToken = token;
     void storage.set(".auth", token).catch(() => {});
   });
+  const recovery = new LineRecovery(client, gate, controller.signal, () => storage.flush());
   let core: NativeCore | undefined;
   let receiver: Receiver | undefined;
   let logs: LogSync | undefined;
+  const connectionState = () => recovery.blocked ? recovery.state : receiver?.status ?? "starting";
   const monitor = new RuntimeMonitor(gate, QUERY_WORKERS, DELIVERY_WORKERS,
-    () => ({ state: receiver?.status ?? "starting", chats: receiver?.metrics.listedChats ?? 0 }));
+    () => ({ state: connectionState(), chats: receiver?.metrics.listedChats ?? 0 }));
   await monitor.initialize();
   let started = false;
   let shutdownTimer: NodeJS.Timeout | undefined;
@@ -71,8 +74,8 @@ async function main(): Promise<void> {
   const server = createServer((request, response) => {
     const healthy = started && !controller.signal.aborted && receiver?.status === "receiving";
     response.writeHead(request.url === "/health" ? (healthy ? 200 : 503) : 404, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ state: receiver?.status ?? "starting", core: core?.stats(), api: gate.metrics,
-      receiver: receiver?.metrics, deliveries, backup: persistence?.metrics,
+    response.end(JSON.stringify({ state: connectionState(), core: core?.stats(), api: gate.metrics,
+      receiver: receiver?.metrics, recovery: recovery.snapshot(), deliveries, backup: persistence?.metrics,
       logs: logs?.metrics, searchData: searchData.metrics,
       runtime: monitor.snapshot(), rssBytes: process.memoryUsage().rss, uptimeSeconds: process.uptime() }));
   });
@@ -82,14 +85,24 @@ async function main(): Promise<void> {
   });
   const metricsTimer = setInterval(() => {
     void monitor.refresh().then(() => {
-      console.log(JSON.stringify({ kind: "metrics", state: receiver?.status, core: core?.stats(), api: gate.metrics,
-        receiver: receiver?.metrics, deliveries, runtime: monitor.snapshot(),
+      console.log(JSON.stringify({ kind: "metrics", state: connectionState(), core: core?.stats(), api: gate.metrics,
+        receiver: receiver?.metrics, recovery: recovery.snapshot(), deliveries, runtime: monitor.snapshot(),
         cpuCorePercent: monitor.snapshot().cpuCorePercent, searchData: searchData.metrics, memory: process.memoryUsage() }));
     }).catch(error => console.error(JSON.stringify({ kind: "runtimeMetricsFailure", code: errorCode(error) })));
   }, 60000);
   const tasks: Promise<void>[] = [];
   try {
-    await client.loginProcess.login({ authToken: token });
+    while (!controller.signal.aborted) {
+      try {
+        await recovery.beforeConnect();
+        await gate.withProbe(() => client.loginProcess.login({ authToken: client.authToken ?? token }));
+        break;
+      } catch (error) {
+        if (controller.signal.aborted || (!recovery.blocked && !authenticationFailed(error))) throw error;
+        recovery.failed(error);
+      }
+    }
+    controller.signal.throwIfAborted();
     await storage.flush();
     if (!client.profile?.mid) throw new Error("MissingAccountOwner");
     core = createCore({ databasePath, ownerId: client.profile.mid, restoredFromBackup,
@@ -102,14 +115,18 @@ async function main(): Promise<void> {
       motionRemoteUrl: process.env.MOTION_REMOTE_URL?.trim() || undefined,
       motionRemoteSecret: process.env.MOTION_REMOTE_SECRET?.trim() || undefined }, () => monitor.snapshot());
     const directory = new SquareDirectory(client);
-    receiver = new Receiver(client, core, gate, controller.signal, directory);
+    receiver = new Receiver(client, core, gate, controller.signal, directory, recovery);
     const activeCore = core;
     if (persistence && process.env.OC_LOGS_ENABLED === "1") logs = new LogSync(activeCore, persistence);
     await persistence?.backup(activeCore);
     const deliver = async (query = false) => {
       while (!controller.signal.aborted) {
+        await gate.waitReady().catch(error => { if (!controller.signal.aborted) throw error; });
+        if (controller.signal.aborted) return;
         const action = await (query ? activeCore.nextQueryAction() : activeCore.nextAction());
         if (!action) return;
+        await gate.waitReady().catch(error => { if (!controller.signal.aborted) throw error; });
+        if (controller.signal.aborted) return;
         const queuedMs = Date.now() - action.createdAtMs;
         if (action.type === "sendMessage") deliveries.maxQueueWaitMs = Math.max(deliveries.maxQueueWaitMs, queuedMs);
         const { status, code } = await deliverAction(client, activeCore, gate, action, directory);

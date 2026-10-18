@@ -16,6 +16,12 @@ export function squareRequestRejected(error: unknown): boolean {
     "PRECONDITION_FAILED", "NOT_IMPLEMENTED", "400", "401", "403", "404", "409", "410", "501"].includes(String(code));
 }
 
+export function authenticationFailed(error: unknown): boolean {
+  const value = error as { data?: { errorCode?: unknown; code?: unknown }; code?: unknown } | null;
+  return ["AUTHENTICATION_FAILURE", "AUTHENTICATION_FAILED", "MUST_REFRESH_V3_TOKEN", "NOT_AUTHORIZED_DEVICE", "401"]
+    .includes(String(value?.data?.errorCode ?? value?.data?.code ?? value?.code));
+}
+
 type Job = { execute: () => Promise<unknown>; resolve: (value: unknown) => void; reject: (error: unknown) => void };
 const MAX_API_QUEUE = 32;
 export type SendAttempt = { started: boolean; method?: "sendMessage" | "sendSquareThreadMessage" | "destroyMessage" | "destroyMessages" | "uploadMedia" | "updateSquareMember" | "updateSquareMembers" | "reportSquareMessage"; beforeSend: () => void };
@@ -28,11 +34,17 @@ export class ApiScheduler {
   private scope = new AsyncLocalStorage<boolean>();
   private methodScope = new AsyncLocalStorage<string>();
   private sendScope = new AsyncLocalStorage<SendAttempt | undefined>();
+  private probeScope = new AsyncLocalStorage<boolean>();
+  private paused = false;
+  private ready = Promise.resolve();
+  private resumeReady?: () => void;
+  onAuthenticationFailure?: (error: unknown) => void;
   readonly metrics = { requests: 0, errors: 0, rateLimits: 0, maxActive: 0, totalWaitMs: 0, totalApiMs: 0, methods: {} as Record<string, number> };
 
   constructor(private signal: AbortSignal, private concurrency = 2, private intervalMs = 250) {
     signal.addEventListener("abort", () => {
       for (const job of this.queue.splice(0)) job.reject(new Error("Stopping"));
+      this.resumeReady?.();
     }, { once: true });
   }
 
@@ -44,9 +56,11 @@ export class ApiScheduler {
 
   async run<T>(method: string, operation: () => Promise<T>): Promise<T> {
     this.signal.throwIfAborted();
+    this.assertAvailable();
     const queuedAt = Date.now();
     const execute = async () => {
       await this.pace();
+      this.assertAvailable();
       const started = Date.now();
       this.metrics.totalWaitMs += started - queuedAt;
       this.metrics.requests++;
@@ -58,6 +72,7 @@ export class ApiScheduler {
       catch (error) {
         this.metrics.errors++;
         this.cooldownFor(error);
+        if (authenticationFailed(error)) this.onAuthenticationFailure?.(error);
         throw error;
       } finally { this.metrics.totalApiMs += Date.now() - started; }
     };
@@ -66,8 +81,9 @@ export class ApiScheduler {
     if (this.queue.length >= MAX_API_QUEUE) throw Object.assign(new Error("ApiQueueFull"), { code: "ApiQueueFull" });
     // 空いた枠を起こす別RPCのContextではなく、この要求の送信境界を引き継ぐ。
     const attempt = this.sendScope.getStore();
+    const probe = this.probeScope.getStore() ?? false;
     return new Promise<T>((resolve, reject) => {
-      this.queue.push({ execute: () => this.sendScope.run(attempt, execute), resolve: value => resolve(value as T), reject });
+      this.queue.push({ execute: () => this.probeScope.run(probe, () => this.sendScope.run(attempt, execute)), resolve: value => resolve(value as T), reject });
       this.pump();
     });
   }
@@ -76,7 +92,24 @@ export class ApiScheduler {
     return this.sendScope.run(attempt, operation);
   }
 
+  pause(): void {
+    if (this.paused) return;
+    this.paused = true;
+    this.ready = new Promise(resolve => { this.resumeReady = resolve; });
+    // 未通信の要求は既存Outboxへ戻せるよう、待機中のRPCだけを取り消す。
+    for (const job of this.queue.splice(0)) job.reject(new Error("LineApiUnavailable"));
+  }
+
+  resume(): void { this.paused = false; this.resumeReady?.(); this.resumeReady = undefined; }
+  async waitReady(): Promise<void> {
+    while (this.paused && !this.signal.aborted) await this.ready;
+    this.signal.throwIfAborted();
+  }
+  withProbe<T>(operation: () => Promise<T>): Promise<T> { return this.probeScope.run(true, operation); }
+  assertAvailable(): void { if (this.paused && !this.probeScope.getStore()) throw new Error("LineApiUnavailable"); }
+
   beforeFetch(): void {
+    this.assertAvailable();
     const attempt = this.sendScope.getStore();
     if (!attempt || this.methodScope.getStore() !== (attempt.method ?? "sendMessage") || attempt.started) return;
     attempt.beforeSend();
@@ -136,7 +169,7 @@ async function checkRateLimit(response: Response, gate: ApiScheduler): Promise<R
 }
 
 export function installApiScheduler(client: BaseClient, gate: ApiScheduler, signal: AbortSignal): void {
-  // 3.4.2配布物の内部境界。LEGY・通常RPCとも、本文の処理完了まで枠を保持する。
+  // 3.5.0配布物で確認した内部境界。LEGY・通常RPCとも、本文の処理完了まで枠を保持する。
   const request = client.request as unknown as { requestCore: (...args: unknown[]) => Promise<unknown> };
   if (typeof request.requestCore !== "function") throw new Error("UnsupportedLinejsRequest");
   const original = request.requestCore.bind(client.request);
@@ -158,6 +191,7 @@ export function installApiScheduler(client: BaseClient, gate: ApiScheduler, sign
   // Node標準のHTTP/2 transportは保持し、PUSH接続をRPC枠へ混ぜない。
   const nativePush = client.fetchPush;
   transport.fetchPush = async (input, init) => {
+    gate.assertAvailable();
     const request = new Request(input, init);
     return checkRateLimit(await nativePush(new Request(request, { signal: AbortSignal.any([request.signal, signal]) })), gate);
   };

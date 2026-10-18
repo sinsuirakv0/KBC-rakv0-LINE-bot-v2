@@ -10,6 +10,7 @@
     "build": "npm run generate:protocol && npm run build:native && tsc",
     "check": "tsc --noEmit",
     "smoke": "node dist/smoke.js",
+    "smoke:recovery": "node dist/smoke-recovery.js",
     "smoke:commands": "node dist/smoke-commands.js",
     "smoke:messages": "node dist/smoke-messages.js",
     "smoke:oc": "node dist/smoke-oc.js",
