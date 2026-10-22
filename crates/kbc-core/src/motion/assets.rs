@@ -20,6 +20,7 @@ pub(super) async fn load_motion_assets(
     plan: &MotionPlan,
     source: &RemoteAssetSource,
 ) -> Result<MotionAssets, RemoteDataError> {
+    let source = source.pinned().await?;
     let (sprite, imgcut, model) = tokio::try_join!(
         source.bytes(&plan.sprite_path),
         source.bytes(&plan.imgcut_path),

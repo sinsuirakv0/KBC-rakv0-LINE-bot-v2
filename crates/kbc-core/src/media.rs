@@ -327,6 +327,9 @@ impl Runtime {
                 if files.is_empty() {
                     return Err("NoAvailableFiles".into());
                 }
+                for file in &mut files {
+                    file.url = Some(assets.resolved_url(&file.path).await?);
+                }
                 session.files = Some(files);
                 // 索引全体を非同期処理の間保持せず、一覧文面だけを成果へ残す。
                 let search = crate::commands::search::SearchCatalog::load(

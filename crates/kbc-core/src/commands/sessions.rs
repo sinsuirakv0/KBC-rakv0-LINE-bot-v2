@@ -316,7 +316,10 @@ fn selected(
                     "{}\n{}\n{}",
                     catalog.entry_label(session, 0),
                     file.label,
-                    catalog.asset_url(&file.path)?
+                    file.url
+                        .clone()
+                        .map(Ok)
+                        .unwrap_or_else(|| catalog.asset_url(&file.path))?
                 ),
                 now,
                 None,

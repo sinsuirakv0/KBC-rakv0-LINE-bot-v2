@@ -12,6 +12,7 @@ use kbc_protocol::*;
 use rusqlite::{Connection, OptionalExtension, params};
 use tokio::sync::Notify;
 
+mod asset_platform;
 mod assets;
 mod commands;
 mod database_links;

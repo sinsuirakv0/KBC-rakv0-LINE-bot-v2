@@ -1,4 +1,5 @@
-﻿use reqwest::{Client, Url, redirect::Policy};
+﻿use crate::asset_platform::{AssetPlatform, INDEX_LIMIT, RAW_BASE, ResolvedAsset, split_url};
+use reqwest::{Client, Url, redirect::Policy};
 use std::{fmt, sync::Arc, time::Duration};
 use tokio::sync::Semaphore;
 
@@ -10,6 +11,7 @@ pub struct AssetService {
     revision: String,
     client: Client,
     permits: Arc<Semaphore>,
+    platform: Arc<AssetPlatform>,
 }
 
 #[derive(Debug)]
@@ -43,6 +45,7 @@ impl AssetService {
                 .redirect(Policy::none())
                 .build()?,
             permits: Arc::new(Semaphore::new(2)),
+            platform: Arc::new(AssetPlatform::default()),
         })
     }
     pub fn at_revision(&self, revision: &str) -> crate::Result<Self> {
@@ -59,6 +62,7 @@ impl AssetService {
             ),
             client: self.client.clone(),
             permits: Arc::clone(&self.permits),
+            platform: Arc::clone(&self.platform),
         })
     }
     fn url(&self, path: &str) -> Result<Url, AssetError> {
@@ -79,6 +83,17 @@ impl AssetService {
 
     pub(crate) fn revision(&self) -> &str {
         &self.revision
+    }
+    pub(crate) async fn pinned(&self) -> Result<Self, AssetError> {
+        let dataset = self
+            .platform
+            .load(&self.revision, |url, limit| {
+                self.repository_read(url, limit)
+            })
+            .await
+            .map_err(|e| AssetError::new("dataset", e))?;
+        self.at_revision(&dataset.revision)
+            .map_err(|e| AssetError::new("dataset", e))
     }
 
     // 代行APIも既存ClientとHTTP枠を共有し、応答本文の処理中は枠を保持する。
@@ -103,6 +118,12 @@ impl AssetService {
     }
     pub async fn exists(&self, path: &str) -> Result<bool, AssetError> {
         let url = self.url(path)?;
+        let Some(resolved) = self.resolve(&self.revision, path).await? else {
+            return Ok(false);
+        };
+        if resolved.proof.is_some() {
+            return Ok(true);
+        }
         let _permit = self
             .permits
             .acquire()
@@ -133,20 +154,84 @@ impl AssetService {
         {
             return Err(AssetError::new("asset", "invalid host/path"));
         }
-        let _permit = self
-            .permits
-            .acquire()
+        let prefix = format!("{}/", self.base);
+        let path = url
+            .as_str()
+            .strip_prefix(&prefix)
+            .ok_or_else(|| AssetError::new("asset", "invalid path"))?;
+        self.asset_bytes(&self.revision, path, MAX_ASSET_BYTES)
+            .await?
+            .ok_or_else(|| AssetError::new("asset", "not found"))
+    }
+    async fn resolve(
+        &self,
+        revision: &str,
+        path: &str,
+    ) -> Result<Option<ResolvedAsset>, AssetError> {
+        self.platform
+            .load(revision, |url, limit| self.repository_read(url, limit))
             .await
-            .map_err(|e| AssetError::new("permit", e))?;
-        let response = self
+            .map_err(|e| AssetError::new("dataset", e))?
+            .resolve(path)
+            .map_err(|e| AssetError::new("dataset", e))
+    }
+    pub(crate) async fn resolved_url(&self, path: &str) -> Result<String, AssetError> {
+        self.resolve(&self.revision, path)
+            .await?
+            .map(|file| file.url)
+            .ok_or_else(|| AssetError::new("asset", "not found"))
+    }
+    async fn asset_bytes(
+        &self,
+        revision: &str,
+        path: &str,
+        limit: usize,
+    ) -> Result<Option<Vec<u8>>, AssetError> {
+        let Some(file) = self.resolve(revision, path).await? else {
+            return Ok(None);
+        };
+        let bytes = self
+            .repository_read(file.url, limit)
+            .await
+            .map_err(|e| AssetError::new("asset", e))?
+            .ok_or_else(|| AssetError::new("asset", "payload missing"))?;
+        if let Some(proof) = file.proof {
+            proof
+                .verify(&bytes)
+                .map_err(|e| AssetError::new("asset", e))?;
+        }
+        Ok(Some(bytes))
+    }
+    async fn repository_read(&self, url: String, limit: usize) -> Result<Option<Vec<u8>>, String> {
+        if limit > INDEX_LIMIT
+            || !(url.starts_with(RAW_BASE)
+                || url
+                    .starts_with("https://api.github.com/repos/sinsuirakv0/KBC-rakv0-assets/git/"))
+        {
+            return Err("Invalid dataset request".into());
+        }
+        let _permit = self.permits.acquire().await.map_err(|e| e.to_string())?;
+        let mut request = self
             .client
-            .get(url)
+            .get(&url)
             .header(reqwest::header::CACHE_CONTROL, "no-cache")
-            .send()
+            .header(reqwest::header::USER_AGENT, "KBC-LINEbot-v2");
+        if url.starts_with("https://api.github.com/")
+            && let Ok(token) = std::env::var("GITHUB_TOKEN")
+                .or_else(|_| std::env::var("PUSH_SUBSCRIPTIONS_GITHUB_TOKEN"))
+            && !token.is_empty()
+        {
+            request = request.bearer_auth(token);
+        }
+        let response = request.send().await.map_err(|e| e.to_string())?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let response = response.error_for_status().map_err(|e| e.to_string())?;
+        read_body_limit(response, limit)
             .await
-            .and_then(reqwest::Response::error_for_status)
-            .map_err(|e| AssetError::new("GET", e))?;
-        read_body(response).await
+            .map(Some)
+            .map_err(|e| e.to_string())
     }
     // 素材・ストア・スケジュールでClient、HTTP上限2枠、15秒timeout、4MiB上限を共有する。
     pub(crate) async fn get_text(&self, url: &str) -> Result<String, AssetError> {
@@ -173,6 +258,18 @@ impl AssetService {
         body: Option<Vec<u8>>,
         allow_not_found: bool,
     ) -> Result<Option<String>, AssetError> {
+        if method == reqwest::Method::GET
+            && let Some((revision, path)) = split_url(url)
+        {
+            let bytes = self.asset_bytes(revision, path, MAX_ASSET_BYTES).await?;
+            if bytes.is_none() && !allow_not_found {
+                return Err(AssetError::new("asset", "not found"));
+            }
+            return bytes
+                .map(String::from_utf8)
+                .transpose()
+                .map_err(|e| AssetError::new("UTF8", e));
+        }
         let url = Url::parse(url).map_err(|e| AssetError::new("URL", e))?;
         if url.scheme() != "https"
             || !(matches!(url.host_str(), Some("play.google.com" | "itunes.apple.com"))
@@ -230,10 +327,16 @@ impl AssetService {
             .map_err(|e| AssetError::new("UTF8", e))
     }
 }
-async fn read_body(mut response: reqwest::Response) -> Result<Vec<u8>, AssetError> {
+async fn read_body(response: reqwest::Response) -> Result<Vec<u8>, AssetError> {
+    read_body_limit(response, MAX_ASSET_BYTES).await
+}
+async fn read_body_limit(
+    mut response: reqwest::Response,
+    maximum: usize,
+) -> Result<Vec<u8>, AssetError> {
     if response
         .content_length()
-        .is_some_and(|n| n > MAX_ASSET_BYTES as u64)
+        .is_some_and(|n| n > maximum as u64)
     {
         return Err(AssetError::new("asset", "too large"));
     }
@@ -243,10 +346,40 @@ async fn read_body(mut response: reqwest::Response) -> Result<Vec<u8>, AssetErro
         .await
         .map_err(|e| AssetError::new("body", e))?
     {
-        if bytes.len() + chunk.len() > MAX_ASSET_BYTES {
+        if bytes.len() + chunk.len() > maximum {
             return Err(AssetError::new("asset", "too large"));
         }
         bytes.extend_from_slice(&chunk);
     }
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod platform_live {
+    use super::*;
+    #[tokio::test]
+    #[ignore = "公開assetsの疎通検証。LINEへ接続しない"]
+    async fn asset_platform_live() {
+        let revision = std::env::var("KBC_ASSET_TEST_REF").unwrap_or("main".into());
+        let source = AssetService::new(&revision).unwrap();
+        let pinned = source.pinned().await.unwrap();
+        let chars = pinned.bytes("character-index.json").await.unwrap();
+        let value: serde_json::Value =
+            serde_json::from_slice(chars.strip_prefix(b"\xef\xbb\xbf").unwrap_or(&chars)).unwrap();
+        assert!(value["units"].as_array().unwrap().len() > 800);
+        for path in [
+            "Data/unitbuy.csv",
+            "res/Enemyname.tsv",
+            "res/Map_Name.csv",
+            "res/All_day_event.tsv",
+            "res/Mission_Name.csv",
+            "Data/GatyaData_Option_SetR.tsv",
+        ] {
+            assert!(!pinned.bytes(path).await.unwrap().is_empty());
+        }
+        let image = pinned.bytes("Number/000_f.png").await.unwrap();
+        assert!(image.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(!pinned.exists("Number/not-selected.png").await.unwrap());
+        println!("LINE verified assets: {}", pinned.revision());
+    }
 }

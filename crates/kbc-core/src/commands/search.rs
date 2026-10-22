@@ -71,6 +71,8 @@ pub struct SearchMatch {
 pub struct FileOption {
     pub path: String,
     pub label: String,
+    #[serde(default)]
+    pub url: Option<String>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SearchSession {
@@ -570,7 +572,13 @@ pub fn file_options(
     filter: Option<&str>,
 ) -> Vec<FileOption> {
     let mut result = Vec::new();
-    let mut add = |path, label| result.push(FileOption { path, label });
+    let mut add = |path, label| {
+        result.push(FileOption {
+            path,
+            label,
+            url: None,
+        })
+    };
     let forms: Vec<&str> = if kind == "tut" {
         vec!["e"]
     } else {
