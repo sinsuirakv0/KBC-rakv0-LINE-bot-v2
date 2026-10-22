@@ -2,11 +2,13 @@
 
 2026-10-05。既存search-snapshot.cjsの変換を本番にも再利用する。DiscordのURL・変換をRustへ二重実装する負担を避け、公開資料の取得・前処理を短命の別プロセスへ隔離する。検索・番号の解釈・権限・Session・配送は引き続きRust Coreが所有する。
 
+2026-10-22。旧sitedata廃止に対応し、asset-platform.cjsのopenAssetsがcommit固定のcurrent・manifest・採用元索引を照合してキャラJSONとCSVを読む。--liveでもassetsだけは毎回SHAを解決し、同じcommitのファイルを使う。event/別称repoのmain・ETagは維持する。索引だけ16MiB、ディスクのsource cacheは1ファイル20MiB・128件まで。readはBOMを保持してhash検査し、parse時にだけ除去する。buildIdをcatalog revisionへ含める。通常本文・生成catalogの上限と最新性120秒は変更しない。[全関数・配置・検証](../../crates/kbc-core/docs/ASSET_PLATFORM.md)。
+
 | 関数 | 働きと関係 |
 | --- | --- |
-| read | raw mainをCache-Control: no-cacheとETagで取得。304だけディスク本文を使用し、404は許可された代替資料へ進む。失敗でstaleを返さない |
+| read | rawの固定commitまたはmainをCache-Control: no-cacheとETagで取得。304だけディスク本文を使用し、404は許可された代替資料へ進む。失敗でstaleを返さない |
 | map | 素材資料を最大4並列に制限 |
-| main | 通常モードはcommit固定。--liveはmainを取得し、全変換・上限検証後にvalidatedAtMs付き索引をrenameで公開 |
+| main | 通常モードは全repoをcommit固定。--liveはassetsを固定し、他はmainを取得。全変換・上限検証後にvalidatedAtMs付き索引をrenameで公開 |
 | SearchDataUpdater.refresh | Node子プロセス1件、90秒期限・中断・stderr末尾2KiBを管理。失敗はmetricsへ記録して受信を止めない |
 | SearchDataUpdater.run | 開始から90秒周期。前回終了まで次を起動せず、AbortSignalで取得・待機を終了 |
 | SearchCatalog::load | Coreの利用時だけ読込・正規化。mainはsearchDataLive=trueで確認時刻の欠落・未来・120秒以上を拒否 |

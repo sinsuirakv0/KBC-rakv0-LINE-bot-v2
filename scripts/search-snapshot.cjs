@@ -1,8 +1,9 @@
 ﻿const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const openAssets = require('./asset-platform.cjs');
 
-// Discord版と同じ資料・検証・ID経路。通常は固定版、--liveはmainを条件付き取得する。
+// Discord版と同じ資料・検証・ID経路。assetsはcommit固定、--liveの他資料はmainを条件付き取得する。
 const repos = ['sinsuirakv0/KBC-rakv0-assets', 'sinsuirakv0/KBC-rakv0-event', 'Sugar2550/omoroirie'];
 const live = process.argv.includes('--live');
 const output = path.resolve(process.argv.slice(2).find(arg => arg !== '--live') ?? path.join(__dirname, '../data/search/catalog.json'));
@@ -13,22 +14,24 @@ const pad = n => String(n).padStart(3, '0');
 const integer = value => { check(/^\d+$/.test(value) && Number.isSafeInteger(Number(value)), 'Invalid integer'); return Number(value); };
 const lines = text => text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\n+$/, '').split('\n');
 const name = value => { const text = value.trim(); check(text.length <= 200, 'Name too long'); return text && !['@', '＠'].includes(text) ? text : null; };
-async function read(url, optional = false) {
+async function read(url, optional = false, maximum = 10 * 1024 * 1024) {
   const cachePath = path.join(sourceDirectory, crypto.createHash('sha256').update(url).digest('hex') + '.json');
   usedSources.add(path.basename(cachePath));
   check(usedSources.size <= 128, 'Too many sources');
   let cached;
   if (live) {
-    try { if (fs.statSync(cachePath).size <= 12 * 1024 * 1024) cached = JSON.parse(fs.readFileSync(cachePath, 'utf8')); } catch { /* 未取得・破損時は全量取得する。 */ }
+    try { if (fs.statSync(cachePath).size <= 20 * 1024 * 1024) cached = JSON.parse(fs.readFileSync(cachePath, 'utf8')); } catch { /* 未取得・破損時は全量取得する。 */ }
   }
   const headers = { 'User-Agent': 'KBC-LINE-v2-snapshot', 'Cache-Control': 'no-cache' };
+  const token = process.env.GITHUB_TOKEN || process.env.PUSH_SUBSCRIPTIONS_GITHUB_TOKEN;
+  if (url.startsWith('https://api.github.com/') && token) headers.Authorization = `Bearer ${token}`;
   if (typeof cached?.etag === 'string') headers['If-None-Match'] = cached.etag;
   const res = await fetch(url, { signal: AbortSignal.timeout(20000), headers });
-  if (res.status === 304 && typeof cached?.text === 'string') return cached.text;
+  if (res.status === 304 && typeof cached?.text === 'string') { check(Buffer.byteLength(cached.text) <= maximum, 'Cached source too large'); return cached.text; }
   if (optional && res.status === 404) { if (live) fs.rmSync(cachePath, { force: true }); return null; }
   check(res.ok, `HTTP ${res.status}: ${url}`); let size = 0; const chunks = [];
-  for await (const chunk of res.body) { size += chunk.length; check(size <= 10 * 1024 * 1024, 'Source too large'); chunks.push(chunk); }
-  const text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)).replace(/^\uFEFF/, '');
+  for await (const chunk of res.body) { size += chunk.length; check(size <= maximum, 'Source too large'); chunks.push(chunk); }
+  const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(Buffer.concat(chunks));
   if (live) {
     fs.mkdirSync(sourceDirectory, { recursive: true });
     const files = fs.readdirSync(sourceDirectory).filter(file => /^[a-f0-9]{64}\.json$/.test(file));
@@ -44,7 +47,7 @@ async function read(url, optional = false) {
 async function map(items, operation) {
   const result = new Array(items.length); let cursor = 0;
   await Promise.all(Array.from({ length: Math.min(4, items.length) }, async () => {
-    while (cursor < items.length) { const i = cursor++; result[i] = await operation(items[i]); }
+    while (cursor < items.length) { const i = cursor++; result[i] = await operation(items[i], i); }
   })); return result;
 }
 function idNames(text, negative = false) {
@@ -63,24 +66,24 @@ function stageRows(text) {
 }
 async function main() {
   const startedAt = Date.now();
-  const commits = live ? repos.map(() => 'main') : await map(repos, async repo => { const sha = JSON.parse(await read(`https://api.github.com/repos/${repo}/commits/main`)).sha; check(/^[0-9a-f]{40}$/.test(sha), 'Invalid commit'); return sha; });
+  const commits = await map(repos, async (repo, i) => { if (live && i > 0) return 'main'; const sha = JSON.parse(await read(`https://api.github.com/repos/${repo}/commits/main`)).sha; check(/^[0-9a-f]{40}$/.test(sha), 'Invalid commit'); return sha; });
   const [asset, event, legacy] = repos.map((repo, i) => `https://raw.githubusercontent.com/${repo}/${commits[i]}`);
-  const site = `${asset}/jp/sitedata`;
-  const [chars, buy, enemy, aliases, types, mapNames, saleNames] = await map([
-    `${site}/character-index.json`, `${site}/Data/unitbuy.csv`, `${site}/res/Enemyname.tsv`, `${legacy}/data/enemyname.json`,
-    `${event}/data/stage_type.csv`, `${site}/res/Map_Name.csv`, `${event}/data/sale_name.csv`,
-  ], url => read(url));
+  const dataset = await openAssets(asset, read);
+  const [buy, enemy, aliases, types, mapNames, saleNames] = await map([
+    () => dataset.text('Data/unitbuy.csv'), () => dataset.text('res/Enemyname.tsv'), () => read(`${legacy}/data/enemyname.json`),
+    () => read(`${event}/data/stage_type.csv`), () => dataset.text('res/Map_Name.csv'), () => read(`${event}/data/sale_name.csv`),
+  ], operation => operation());
   const shared = lines(buy).filter(row => row.trim()).map(row => {
     const cells = row.split(','); check(cells.length >= 63, 'Invalid UnitBuy');
     return cells.slice(61, 63).map(value => { check(/^-?\d+$/.test(value) && Number(value) >= -1, 'Invalid shared form'); return value === '-1' ? null : pad(integer(value)); });
   });
-  const units = JSON.parse(chars).units; check(units.length > 0 && units.length <= shared.length, 'Invalid units');
+  const units = dataset.characters.units; check(units.length > 0 && units.length <= shared.length, 'Invalid units');
   const ut = units.map((unit, i) => {
     check(unit.id === pad(i) && unit.forms.length >= 1 && unit.forms.length <= 4 && unit.forms.every(form => typeof form.name === 'string' && form.name.trim()), 'Invalid unit forms');
     check(Array.isArray(unit.aliases) && unit.aliases.every(value => typeof value === 'string' && value.trim()) && new Set(unit.aliases).size === unit.aliases.length, 'Invalid aliases');
     return { id: unit.id, displayName: unit.forms[0].name, names: [...unit.forms.map(form => form.name), ...unit.aliases], formCount: unit.forms.length, sharedForms: shared[i], lookupIds: [String(i)], url: `https://jarjarblink.github.io/JDB/u000.html?cc=ja&unit=${unit.id}` };
   });
-  const aliasIndex = new Map(); for (const row of JSON.parse(aliases)) {
+  const aliasIndex = new Map(); for (const row of JSON.parse(aliases.replace(/^\ufeff/, ''))) {
     check(Number.isSafeInteger(row.id) && row.id >= 0 && !aliasIndex.has(row.id) && Array.isArray(row.names) && row.names.every(value => typeof value === 'string' && value.trim()), 'Invalid enemy aliases'); aliasIndex.set(row.id, row.names);
   }
   const tut = []; lines(enemy).forEach((value, id) => {
@@ -117,15 +120,15 @@ async function main() {
     return entry(raw, route(raw), (value.includes('(旧)') || value.includes('（旧）')) ? value : alias ?? value, [...new Set([value, ...(alias ? [alias] : [])])]);
   });
   const documents = await map([...ranges.map(range => ({ ...range, normal: true })), ...chapters.map(range => ({ ...range, normal: false }))], async range => {
-    let text = range.normal ? await read(`${site}/res/StageName_R${range.type}_ja.csv`, true) : await read(`${legacy}/data/StageName${range.type}_ja.csv`);
-    if (text === null) text = await read(`${site}/res/StageName_${range.type}_ja.csv`);
+    let text = range.normal ? await dataset.text(`res/StageName_R${range.type}_ja.csv`, true) : await read(`${legacy}/data/StageName${range.type}_ja.csv`);
+    if (text === null) text = await dataset.text(`res/StageName_${range.type}_ja.csv`);
     const rows = stageRows(text); check(range.normal ? rows.length - 1 <= range.to - range.from : rows.length === 3, 'Stage row range mismatch');
     return rows.flatMap((row, map) => row.flatMap((value, stage) => value ? [entry(range.from + map, { type: range.type, map, displayType: range.normal ? range.type : null }, value, [value], stage)] : []));
   });
   const stages = documents.flat().sort((a, b) => { const parts = e => e.lookupIds[0].split(':'); return Number(parts(a)[1]) - Number(parts(b)[1]) || Number(parts(a)[3]) - Number(parts(b)[3]); });
   const keys = [...maps, ...stages].flatMap(row => row.lookupIds); check(new Set(keys).size === keys.length, 'Duplicate stage keys');
   const entries = { ut, tut, st: [...maps, ...stages] };
-  const revision = crypto.createHash('sha256').update(JSON.stringify(entries)).digest('hex');
+  const revision = crypto.createHash('sha256').update(JSON.stringify([entries, dataset.buildId])).digest('hex');
   const source = { discordCommit: '02e6e9bbaeaabd93625a80056c372dc4f1733419', repositories: Object.fromEntries(repos.map((repo, i) => [repo, commits[i]])) };
   // 最初の資料の取得開始から2分。取得終了時刻で古い資料の寿命を延長しない。
   const payload = '\ufeff' + JSON.stringify({ schemaVersion: 2, revision, source, entries, ...(live ? { validatedAtMs: startedAt } : {}) }) + '\n'; check(Buffer.byteLength(payload) <= 4 * 1024 * 1024, 'Snapshot too large');

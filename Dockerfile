@@ -26,6 +26,7 @@ COPY package.json ./
 COPY content ./content
 COPY data/search ./data/search
 COPY scripts/search-snapshot.cjs ./scripts/search-snapshot.cjs
+COPY scripts/asset-platform.cjs ./scripts/asset-platform.cjs
 COPY --from=core /build/target/release/libkbc_node.so ./native/kbc_node.node
 RUN mkdir storage && chown -R node:node /app
 USER node
