@@ -7,6 +7,7 @@
 | 関数 | 働きと関係 |
 | --- | --- |
 | read | rawの固定commitまたはmainをCache-Control: no-cacheとETagで取得。304だけディスク本文を使用し、404は許可された代替資料へ進む。失敗でstaleを返さない |
+| openAssets | storageVersion未指定・1の旧配置と2の数字版配置を判定し、後者のCSVをIntegrated-dataから読む。音源を含む全索引と@入りpathを検証し、charactersとtextをmainへ渡す |
 | map | 素材資料を最大4並列に制限 |
 | main | 通常モードは全repoをcommit固定。--liveはassetsを固定し、他はmainを取得。全変換・上限検証後にvalidatedAtMs付き索引をrenameで公開 |
 | SearchDataUpdater.refresh | Node子プロセス1件、90秒期限・中断・stderr末尾2KiBを管理。失敗はmetricsへ記録して受信を止めない |

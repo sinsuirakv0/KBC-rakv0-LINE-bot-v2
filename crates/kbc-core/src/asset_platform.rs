@@ -21,7 +21,7 @@ fn safe_path(path: &str) -> bool {
             && !matches!(part, "." | "..")
             && part
                 .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+                .all(|byte| byte.is_ascii_alphanumeric() || b"._-@".contains(&byte))
     })
 }
 fn hash(bytes: &[u8]) -> String {
@@ -64,6 +64,7 @@ struct Header {
 #[serde(rename_all = "camelCase")]
 struct Current {
     schema_version: u32,
+    storage_version: Option<u32>,
     status: String,
     generated_path: String,
     manifest_sha256: String,
@@ -89,6 +90,7 @@ pub(crate) struct Dataset {
     pub revision: String,
     base: String,
     generated: String,
+    integrated: bool,
     files: Option<HashMap<String, File>>,
     characters: Option<Proof>,
 }
@@ -110,7 +112,11 @@ impl Dataset {
             }));
         }
         Ok(files.get(path).map(|file| ResolvedAsset {
-            url: format!("{}{}", self.base, file.path),
+            url: if self.integrated {
+                format!("{}jp/Integrated-data/{path}", self.base)
+            } else {
+                format!("{}{}", self.base, file.path)
+            },
             proof: Some(file.proof.clone()),
         }))
     }
@@ -173,14 +179,28 @@ impl AssetPlatform {
         let dataset = if let Some(bytes) = current {
             let current: Current = json(&bytes)?;
             let header = &current.header;
+            let storage_version = current.storage_version.unwrap_or(1);
+            let integrated = storage_version == 2;
+            let raw_version = if integrated {
+                header.version_code.to_string()
+            } else {
+                header.dataset_id.clone()
+            };
+            let generated_version = if integrated {
+                &raw_version
+            } else {
+                &header.build_id
+            };
             if current.schema_version != 1
+                || !matches!(storage_version, 1 | 2)
+                || (integrated && header.version_code == 0)
                 || current.status != "verified"
                 || header.source_region != "jp"
                 || !safe_path(&header.build_id)
                 || header.build_id.contains('/')
                 || !safe_path(&header.dataset_id)
                 || header.dataset_id.contains('/')
-                || current.generated_path != format!("generated/jp/datasets/{}", header.build_id)
+                || current.generated_path != format!("generated/jp/datasets/{generated_version}")
             {
                 return Err("Unverified asset dataset".into());
             }
@@ -216,9 +236,10 @@ impl AssetPlatform {
                 return Err("Invalid asset index".into());
             }
             let prefixes = [
-                format!("jp/Local/{}/", header.dataset_id),
+                format!("jp/Local/{raw_version}/"),
                 "jp/server/".into(),
                 "overrides/jp/assets/".into(),
+                "overrides/jp/music/".into(),
             ];
             for (name, file) in &index.files {
                 if !safe_path(name)
@@ -232,6 +253,7 @@ impl AssetPlatform {
                 revision,
                 base,
                 generated: current.generated_path,
+                integrated,
                 files: Some(index.files),
                 characters: Some(
                     manifest
@@ -247,6 +269,7 @@ impl AssetPlatform {
                 revision,
                 base,
                 generated: String::new(),
+                integrated: false,
                 files: None,
                 characters: None,
             }
@@ -271,70 +294,90 @@ mod tests {
 
     #[tokio::test]
     async fn verified_platform_rejects_corruption_and_expired_stale() {
-        let revision = "a".repeat(40);
-        let base = format!("{RAW_BASE}{revision}/");
-        let header = json!({"datasetId":"jp-1", "buildId":"build-1", "sourceRegion":"jp", "versionName":"1", "versionCode":1});
-        let bytes = |v: serde_json::Value| serde_json::to_vec(&v).unwrap();
-        let index = bytes(
-            json!({"header":header, "files":{"Number/000_f.png":{"path":"overrides/jp/assets/Number/000_f.png", "size":3,"sha256":hash(b"png")}}}),
-        );
-        let manifest = bytes(
-            json!({"header":header,"artifacts":{"indexes/assets.json":{"size":index.len(),"sha256":hash(&index)},"site/characters.json":{"size":2,"sha256":hash(b"{}")}}}),
-        );
-        let current = bytes(
-            json!({"schemaVersion":1,"status":"verified","sourceRegion":"jp","datasetId":"jp-1","buildId":"build-1","versionName":"1","versionCode":1,"generatedPath":"generated/jp/datasets/build-1","manifestSha256":hash(&manifest)}),
-        );
-        let mut files = HashMap::from([
-            (format!("{base}metadata/jp/current.json"), current),
-            (
-                format!("{base}generated/jp/datasets/build-1/manifest.json"),
-                manifest,
-            ),
-            (
-                format!("{base}generated/jp/datasets/build-1/indexes/assets.json"),
-                index,
-            ),
-        ]);
-        let platform = AssetPlatform::default();
-        let dataset = platform
-            .load(&revision, |url, _| ready(Ok(files.get(&url).cloned())))
-            .await
-            .unwrap();
-        let selected = dataset.resolve("Number/000_f.png").unwrap().unwrap();
-        assert!(
-            selected
-                .url
-                .ends_with("overrides/jp/assets/Number/000_f.png")
-        );
-        selected.proof.unwrap().verify(b"png").unwrap();
-        assert!(dataset.resolve("Number/missing.png").unwrap().is_none());
-        assert!(dataset.resolve("../escape").is_err());
-        assert!(
-            dataset
-                .resolve("character-index.json")
-                .unwrap()
-                .unwrap()
-                .url
-                .ends_with("site/characters.json")
-        );
-        files
-            .get_mut(&format!(
-                "{base}generated/jp/datasets/build-1/indexes/assets.json"
-            ))
-            .unwrap()
-            .push(b' ');
-        assert!(
-            AssetPlatform::default()
+        for storage_version in [None, Some(1), Some(2)] {
+            let revision = "a".repeat(40);
+            let base = format!("{RAW_BASE}{revision}/");
+            let integrated = storage_version == Some(2);
+            let raw_version = if integrated { "1" } else { "jp-1" };
+            let generated = format!(
+                "generated/jp/datasets/{}",
+                if integrated { "1" } else { "build-1" }
+            );
+            let header = json!({"datasetId":"jp-1", "buildId":"build-1", "sourceRegion":"jp", "versionName":"1", "versionCode":1});
+            let bytes = |v: serde_json::Value| serde_json::to_vec(&v).unwrap();
+            let index = bytes(json!({"header":header, "files":{
+                "Number/000_f.png":{"path":"overrides/jp/assets/Number/000_f.png", "size":3,"sha256":hash(b"png")},
+                "assets/close@2x.png":{"path":format!("jp/Local/{raw_version}/assets/close@2x.png"), "size":3,"sha256":hash(b"png")},
+                "music/snd000.ogg":{"path":"overrides/jp/music/snd000.ogg", "size":3,"sha256":hash(b"ogg")}
+            }}));
+            let manifest = bytes(
+                json!({"header":header,"artifacts":{"indexes/assets.json":{"size":index.len(),"sha256":hash(&index)},"site/characters.json":{"size":2,"sha256":hash(b"{}")}}}),
+            );
+            let current = json!({"schemaVersion":1,"storageVersion":storage_version,"status":"verified","sourceRegion":"jp","datasetId":"jp-1","buildId":"build-1","versionName":"1","versionCode":1,"generatedPath":generated,"manifestSha256":hash(&manifest)});
+            let mut files = HashMap::from([
+                (
+                    format!("{base}metadata/jp/current.json"),
+                    bytes(current.clone()),
+                ),
+                (format!("{base}{generated}/manifest.json"), manifest),
+                (format!("{base}{generated}/indexes/assets.json"), index),
+            ]);
+            let platform = AssetPlatform::default();
+            let dataset = platform
                 .load(&revision, |url, _| ready(Ok(files.get(&url).cloned())))
                 .await
-                .is_err()
-        );
-        platform.cached.lock().await.as_mut().unwrap().at -= Duration::from_secs(121);
-        assert!(
-            platform
-                .load(&revision, |_, _| ready(Err("offline".into())))
-                .await
-                .is_err()
-        );
+                .unwrap();
+            let selected = dataset.resolve("Number/000_f.png").unwrap().unwrap();
+            assert!(selected.url.ends_with(if integrated {
+                "jp/Integrated-data/Number/000_f.png"
+            } else {
+                "overrides/jp/assets/Number/000_f.png"
+            }));
+            selected.proof.unwrap().verify(b"png").unwrap();
+            assert!(dataset.resolve("assets/close@2x.png").unwrap().is_some());
+            assert!(dataset.resolve("music/snd000.ogg").unwrap().is_some());
+            assert!(dataset.resolve("Number/missing.png").unwrap().is_none());
+            assert!(dataset.resolve("../escape").is_err());
+            assert!(
+                dataset
+                    .resolve("character-index.json")
+                    .unwrap()
+                    .unwrap()
+                    .url
+                    .ends_with("site/characters.json")
+            );
+            let mut invalid_files = files.clone();
+            let mut invalid_current = current;
+            invalid_current["storageVersion"] = json!(3);
+            invalid_files.insert(
+                format!("{base}metadata/jp/current.json"),
+                bytes(invalid_current),
+            );
+            assert!(
+                AssetPlatform::default()
+                    .load(&revision, |url, _| ready(Ok(invalid_files
+                        .get(&url)
+                        .cloned())))
+                    .await
+                    .is_err()
+            );
+            files
+                .get_mut(&format!("{base}{generated}/indexes/assets.json"))
+                .unwrap()
+                .push(b' ');
+            assert!(
+                AssetPlatform::default()
+                    .load(&revision, |url, _| ready(Ok(files.get(&url).cloned())))
+                    .await
+                    .is_err()
+            );
+            platform.cached.lock().await.as_mut().unwrap().at -= Duration::from_secs(121);
+            assert!(
+                platform
+                    .load(&revision, |_, _| ready(Err("offline".into())))
+                    .await
+                    .is_err()
+            );
+        }
     }
 }

@@ -2,6 +2,8 @@
 
 2026-10-03。Rust Core共通のMedia Workerを実装。検索origin/file/motionが同じ仕組みを使う。
 
+2026-10-29。storageVersion=2は数字の生成物フォルダとjp/Integrated-dataの統合実体を使う。キャラJSONは生成物、画像・imgcut・model・animationとfileの実体URLは統合先へ解決し、既存のhash照合・commit固定を維持する。音源の索引と@入りファイル名も受け付ける。詳細は[Assets保存契約](ASSET_PLATFORM.md)。
+
 2026-10-22。AssetServiceは旧logical pathを検証済みcurrentと採用元索引から新しい実体へ解決する。motionは最初にpinnedでcommitを確定し、fileの候補にはresolved_urlを保存する。通常ファイルの4MiB上限・2 HTTP枠は維持し、索引だけ16MiBとする。[取得契約・関数・新配置](ASSET_PLATFORM.md)。
 
 受付は `MediaRequest` を `PrepareMedia` ActionとしてSQLiteへ保存し、Event・Session・checkpointと同じtransactionでcommitする。以後は元のCommand本文を必要としない。通常のnext_actionはPrepareMediaを除外し、run_media_jobsが1件ずつ `queued → preparing` として取得する。preparingは通常のトーク直列配送を占有しないため、同じトークのpingも配送できる。処理後は同じAction IDでSendMessageへ変換して既存Outboxを起こす。

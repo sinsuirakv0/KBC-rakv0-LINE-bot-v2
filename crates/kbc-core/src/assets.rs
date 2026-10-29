@@ -73,7 +73,7 @@ impl AssetService {
                     || matches!(part, "." | "..")
                     || !part
                         .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+                        .all(|byte| byte.is_ascii_alphanumeric() || b"._-@".contains(&byte))
             })
         {
             return Err(AssetError::new("asset", "invalid path"));
@@ -374,11 +374,21 @@ mod platform_live {
             "res/All_day_event.tsv",
             "res/Mission_Name.csv",
             "Data/GatyaData_Option_SetR.tsv",
+            "ImageData/000_f.imgcut",
+            "ImageData/000_f.mamodel",
+            "ImageData/000_f00.maanim",
         ] {
             assert!(!pinned.bytes(path).await.unwrap().is_empty());
         }
         let image = pinned.bytes("Number/000_f.png").await.unwrap();
         assert!(image.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(
+            pinned
+                .bytes("assets/close@2x.png")
+                .await
+                .unwrap()
+                .starts_with(b"\x89PNG\r\n\x1a\n")
+        );
         assert!(!pinned.exists("Number/not-selected.png").await.unwrap());
         println!("LINE verified assets: {}", pinned.revision());
     }
